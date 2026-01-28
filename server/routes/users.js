@@ -3,10 +3,12 @@ const router = express.Router();
 const db = require('../database');
 const crypto = require('crypto');
 
-// Simple password hashing function (using SHA256)
-// Note: In production, use bcrypt or similar for better security
+// Simple password hashing function (using SHA256 with salt)
+// Note: In production, use bcrypt or argon2 for better security
 function hashPassword(password) {
-    return crypto.createHash('sha256').update(password).digest('hex');
+    // Add a salt to make the hash more secure
+    const salt = 'order-management-salt-2026'; // In production, use a random salt per user
+    return crypto.createHash('sha256').update(password + salt).digest('hex');
 }
 
 // Get all users
