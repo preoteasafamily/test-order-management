@@ -142,7 +142,7 @@ const ExportScreen = ({
       xml += "    <Observatii>\n";
       xml += "      <txtObservatii></txtObservatii>\n";
       xml += "      <SoldClient></SoldClient>\n";
-      xml += "      <ModalitatePlata></ModalitatePlata>\n`;
+      xml += "      <ModalitatePlata></ModalitatePlata>\n";
       xml += "    </Observatii>\n";
       xml += "  </Factura>\n";
 

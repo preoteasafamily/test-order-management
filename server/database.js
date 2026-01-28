@@ -105,6 +105,45 @@ function initializeDatabase() {
             console.log('Order items table ready');
         }
     });
+
+    // Create agents table
+    db.run(`
+        CREATE TABLE IF NOT EXISTS agents (
+            id TEXT PRIMARY KEY,
+            code TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            status TEXT DEFAULT 'active',
+            zones TEXT,
+            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `, (err) => {
+        if (err) {
+            console.error('Error creating agents table:', err);
+        } else {
+            console.log('Agents table ready');
+        }
+    });
+
+    // Create users table
+    db.run(`
+        CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            role TEXT NOT NULL,
+            name TEXT NOT NULL,
+            status TEXT DEFAULT 'active',
+            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `, (err) => {
+        if (err) {
+            console.error('Error creating users table:', err);
+        } else {
+            console.log('Users table ready');
+        }
+    });
 }
 
 module.exports = db;
