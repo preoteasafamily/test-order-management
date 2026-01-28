@@ -12,6 +12,8 @@ import ClientsScreen from "./pages/ClientsScreen";
 import ProductsScreen from "./pages/ProductsScreen";
 import ConfigScreen from "./pages/ConfigScreen";
 import ContractsScreen from "./pages/ContractsScreen";
+import AgentManager from "./pages/AgentManager";
+import UserManager from "./pages/UserManager";
 
 const App = () => {
   // API Configuration
@@ -26,6 +28,7 @@ const App = () => {
   const [company, setCompany] = useState(null);
   const [gestiuni, setGestiuni] = useState([]);
   const [agents, setAgents] = useState([]);
+  const [users, setUsers] = useState([]);
   const [priceZones, setPriceZones] = useState([]);
   const [products, setProducts] = useState([]);
   const [clients, setClients] = useState([]);
@@ -81,6 +84,24 @@ const App = () => {
           return await response.json();
         }
         console.warn('API not available for products, using localStorage fallback');
+        const result = localStorage.getItem(key);
+        return result ? JSON.parse(result) : null;
+      } else if (key === 'agents') {
+        const response = await fetch(`${API_URL}/api/agents`);
+        if (response.ok) {
+          const result = await response.json();
+          return result.success ? result.data : [];
+        }
+        console.warn('API not available for agents, using localStorage fallback');
+        const result = localStorage.getItem(key);
+        return result ? JSON.parse(result) : null;
+      } else if (key === 'users') {
+        const response = await fetch(`${API_URL}/api/users`);
+        if (response.ok) {
+          const result = await response.json();
+          return result.success ? result.data : [];
+        }
+        console.warn('API not available for users, using localStorage fallback');
         const result = localStorage.getItem(key);
         return result ? JSON.parse(result) : null;
       } else {
@@ -292,6 +313,7 @@ const App = () => {
         companyData,
         gestiuniData,
         agentsData,
+        usersData,
         zonesData,
         productsData,
         clientsData,
@@ -302,6 +324,7 @@ const App = () => {
         loadData("company"),
         loadData("gestiuni"),
         loadData("agents"),
+        loadData("users"),
         loadData("priceZones"),
         loadData("products"),
         loadData("clients"),
@@ -313,6 +336,7 @@ const App = () => {
       setCompany(companyData || getDefaultCompany());
       setGestiuni(gestiuniData || getDefaultGestiuni());
       setAgents(agentsData || getDefaultAgents());
+      setUsers(usersData || []);
       setPriceZones(zonesData || getDefaultPriceZones());
       setProducts(productsData || getDefaultProducts());
       setClients(clientsData || getDefaultClients());
@@ -673,6 +697,25 @@ const App = () => {
         );
       case "reports":
         return <ReportsScreen />;
+      case "agents":
+        return (
+          <AgentManager
+            agents={agents}
+            setAgents={setAgents}
+            priceZones={priceZones}
+            showMessage={showMessage}
+            API_URL={API_URL}
+          />
+        );
+      case "users":
+        return (
+          <UserManager
+            users={users}
+            setUsers={setUsers}
+            showMessage={showMessage}
+            API_URL={API_URL}
+          />
+        );
       case "export":
         return (
           <ExportScreen

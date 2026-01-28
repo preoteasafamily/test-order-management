@@ -8,7 +8,8 @@ import {
   Download,
   X,
   Home,
-  Menu
+  Menu,
+  UserCog
 } from 'lucide-react';
 
 const Navigation = ({ currentUser, activeSection, setActiveSection, mobileMenuOpen, setMobileMenuOpen }) => {
@@ -54,6 +55,18 @@ const Navigation = ({ currentUser, activeSection, setActiveSection, mobileMenuOp
       label: "Contracte",
       icon: FileText,
       roles: ["admin", "birou"],
+    },
+    {
+      id: "agents",
+      label: "Agenți",
+      icon: UserCog,
+      roles: ["admin"],
+    },
+    {
+      id: "users",
+      label: "Utilizatori",
+      icon: Users,
+      roles: ["admin"],
     },
     { id: "config", label: "Configurare", icon: Settings, roles: ["admin"] },
     {
