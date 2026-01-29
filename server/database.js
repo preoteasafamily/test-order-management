@@ -12,10 +12,18 @@ const createTables = () => {
   // Orders table
   db.exec(`
     CREATE TABLE IF NOT EXISTS orders (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL,
-      description TEXT,
-      status TEXT DEFAULT 'pending',
+      id TEXT PRIMARY KEY,
+      date TEXT NOT NULL,
+      clientId TEXT NOT NULL,
+      agentId TEXT,
+      paymentType TEXT,
+      dueDate TEXT,
+      items TEXT,
+      total REAL,
+      totalTVA REAL,
+      totalWithVAT REAL,
+      invoiceExported INTEGER DEFAULT 0,
+      receiptExported INTEGER DEFAULT 0,
       createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
       updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
     )

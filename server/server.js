@@ -30,8 +30,15 @@ app.get('/api/health', (req, res) => {
 // Get all orders
 app.get('/api/orders', (req, res) => {
     try {
-        const rows = db.prepare('SELECT * FROM orders ORDER BY createdAt DESC').all();
-        res.json(rows || []);
+        const rows = db.prepare('SELECT * FROM orders ORDER BY date DESC, createdAt DESC').all();
+        // Parse JSON fields
+        const orders = (rows || []).map(row => ({
+            ...row,
+            invoiceExported: row.invoiceExported === 1,
+            receiptExported: row.receiptExported === 1,
+            items: row.items ? JSON.parse(row.items) : []
+        }));
+        res.json(orders);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -39,20 +46,33 @@ app.get('/api/orders', (req, res) => {
 
 // Create order
 app.post('/api/orders', (req, res) => {
-    const { title, description } = req.body;
-    if (!title) {
-        return res.status(400).json({ error: 'Title is required' });
+    const order = req.body;
+    
+    if (!order.id || !order.date || !order.clientId) {
+        return res.status(400).json({ error: 'ID, date, and clientId are required' });
     }
     
     try {
-        const result = db.prepare('INSERT INTO orders (title, description) VALUES (?, ?)').run(title, description);
-        res.json({ 
-            id: result.lastInsertRowid, 
-            title, 
-            description, 
-            status: 'pending',
-            createdAt: new Date().toISOString()
-        });
+        const result = db.prepare(
+            `INSERT INTO orders (
+                id, date, clientId, agentId, paymentType, dueDate, items,
+                total, totalTVA, totalWithVAT, invoiceExported, receiptExported
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(
+            order.id,
+            order.date,
+            order.clientId,
+            order.agentId || null,
+            order.paymentType || 'immediate',
+            order.dueDate || null,
+            JSON.stringify(order.items || []),
+            order.total || 0,
+            order.totalTVA || 0,
+            order.totalWithVAT || 0,
+            order.invoiceExported ? 1 : 0,
+            order.receiptExported ? 1 : 0
+        );
+        res.json({ ...order, createdAt: new Date().toISOString() });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -60,13 +80,33 @@ app.post('/api/orders', (req, res) => {
 
 // Update order
 app.put('/api/orders/:id', (req, res) => {
-    const { status } = req.body;
-    if (!status) {
-        return res.status(400).json({ error: 'Status is required' });
+    const order = req.body;
+    
+    if (!order.date || !order.clientId) {
+        return res.status(400).json({ error: 'date and clientId are required' });
     }
     
     try {
-        const result = db.prepare('UPDATE orders SET status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?').run(status, req.params.id);
+        const result = db.prepare(
+            `UPDATE orders SET 
+                date = ?, clientId = ?, agentId = ?, paymentType = ?, dueDate = ?,
+                items = ?, total = ?, totalTVA = ?, totalWithVAT = ?,
+                invoiceExported = ?, receiptExported = ?, updatedAt = CURRENT_TIMESTAMP
+            WHERE id = ?`
+        ).run(
+            order.date,
+            order.clientId,
+            order.agentId || null,
+            order.paymentType || 'immediate',
+            order.dueDate || null,
+            JSON.stringify(order.items || []),
+            order.total || 0,
+            order.totalTVA || 0,
+            order.totalWithVAT || 0,
+            order.invoiceExported ? 1 : 0,
+            order.receiptExported ? 1 : 0,
+            req.params.id
+        );
         if (result.changes === 0) {
             res.status(404).json({ error: 'Order not found' });
         } else {
