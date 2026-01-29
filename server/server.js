@@ -8,6 +8,8 @@ const agentsRouter = require('./routes/agents');
 const usersRouter = require('./routes/users');
 const zonesRouter = require('./routes/zones');
 const authRouter = require('./routes/auth');
+const clientProductsRouter = require('./routes/client-products');
+const { initializeClientProducts } = require('./routes/client-products');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -21,6 +23,7 @@ app.use('/api/agents', agentsRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/zones', zonesRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/clients', clientProductsRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -203,6 +206,10 @@ app.post('/api/clients', (req, res) => {
             client.priceZone, client.afiseazaKG ? 1 : 0, 
             JSON.stringify(client.productCodes || {})
         );
+        
+        // Initialize all products as active for this new client
+        initializeClientProducts(client.id);
+        
         res.json({ ...client, createdAt: new Date().toISOString() });
     } catch (err) {
         res.status(500).json({ error: err.message });

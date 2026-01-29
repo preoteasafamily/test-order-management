@@ -140,6 +140,21 @@ const createTables = () => {
     )
   `);
 
+  // Client Products table (for managing which products are available per client)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS client_products (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      client_id TEXT NOT NULL,
+      product_id TEXT NOT NULL,
+      is_active INTEGER DEFAULT 1,
+      createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+      UNIQUE(client_id, product_id)
+    )
+  `);
+
   console.log('Database tables initialized');
 };
 
