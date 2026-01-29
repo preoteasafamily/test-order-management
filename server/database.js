@@ -50,6 +50,18 @@ const createTables = () => {
     )
   `);
 
+  // Zones table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS zones (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      description TEXT,
+      createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   // Clients table
   db.exec(`
     CREATE TABLE IF NOT EXISTS clients (
