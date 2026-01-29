@@ -7,6 +7,33 @@ const db = new Database(path.join(__dirname, 'data.db'));
 // Enable foreign keys
 db.pragma('foreign_keys = ON');
 
+// Check if we need to migrate the orders table
+const migrateOrdersTable = () => {
+  try {
+    // Check if the old orders table exists with the old schema
+    const tableInfo = db.prepare("PRAGMA table_info(orders)").all();
+    
+    if (tableInfo.length > 0) {
+      // Check if it has the old schema (title column exists)
+      const hasOldSchema = tableInfo.some(col => col.name === 'title');
+      
+      if (hasOldSchema) {
+        console.log('Migrating orders table to new schema...');
+        
+        // Drop old table (we'll lose the simple orders, but they're not compatible anyway)
+        db.exec('DROP TABLE IF EXISTS orders');
+        
+        console.log('Old orders table dropped. New schema will be created.');
+      }
+    }
+  } catch (err) {
+    console.error('Error checking orders table:', err);
+  }
+};
+
+// Migrate before creating tables
+migrateOrdersTable();
+
 // Create tables if they don't exist
 const createTables = () => {
   // Orders table

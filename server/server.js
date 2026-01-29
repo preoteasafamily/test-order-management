@@ -31,13 +31,22 @@ app.get('/api/health', (req, res) => {
 app.get('/api/orders', (req, res) => {
     try {
         const rows = db.prepare('SELECT * FROM orders ORDER BY date DESC, createdAt DESC').all();
-        // Parse JSON fields
-        const orders = (rows || []).map(row => ({
-            ...row,
-            invoiceExported: row.invoiceExported === 1,
-            receiptExported: row.receiptExported === 1,
-            items: row.items ? JSON.parse(row.items) : []
-        }));
+        // Parse JSON fields with error handling
+        const orders = (rows || []).map(row => {
+            let items = [];
+            try {
+                items = row.items ? JSON.parse(row.items) : [];
+            } catch (parseErr) {
+                console.error(`Failed to parse items for order ${row.id}:`, parseErr);
+            }
+            
+            return {
+                ...row,
+                invoiceExported: row.invoiceExported === 1,
+                receiptExported: row.receiptExported === 1,
+                items
+            };
+        });
         res.json(orders);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -49,7 +58,7 @@ app.post('/api/orders', (req, res) => {
     const order = req.body;
     
     if (!order.id || !order.date || !order.clientId) {
-        return res.status(400).json({ error: 'ID, date, and clientId are required' });
+        return res.status(400).json({ error: 'id, date, and clientId are required' });
     }
     
     try {
@@ -74,7 +83,11 @@ app.post('/api/orders', (req, res) => {
         );
         res.json({ ...order, createdAt: new Date().toISOString() });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        if (err.message.includes('UNIQUE constraint failed') || err.message.includes('PRIMARY KEY')) {
+            res.status(409).json({ error: 'Order with this ID already exists' });
+        } else {
+            res.status(500).json({ error: err.message });
+        }
     }
 });
 

@@ -313,22 +313,28 @@ const App = () => {
       // Sync each user
       for (const user of usersList) {
         try {
+          // Create a copy of user without password for updates
+          // Only include password for new users
+          const userToSync = existingIds.has(user.id) 
+            ? { ...user, password: undefined } // Exclude password for updates
+            : user; // Include password for new users
+
           if (existingIds.has(user.id)) {
-            // Update existing user
+            // Update existing user (without password to avoid overwriting hashed passwords)
             const response = await fetch(`${API_URL}/api/users/${user.id}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(user)
+              body: JSON.stringify(userToSync)
             });
             if (!response.ok) {
               throw new Error('Failed to update user');
             }
           } else {
-            // Create new user
+            // Create new user (with password)
             const response = await fetch(`${API_URL}/api/users`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(user)
+              body: JSON.stringify(userToSync)
             });
             if (!response.ok) {
               throw new Error('Failed to create user');
@@ -352,7 +358,8 @@ const App = () => {
         return;
       }
       const data = await response.json();
-      const existingAgents = data.success ? data.data : [];
+      // Handle wrapped response format from agents API
+      const existingAgents = (data.success && Array.isArray(data.data)) ? data.data : [];
       const existingIds = new Set(existingAgents.map(a => a.id));
 
       // Sync each agent

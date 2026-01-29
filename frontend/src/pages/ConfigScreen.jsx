@@ -471,8 +471,8 @@ const ConfigScreen = ({
                         saveData("dayStatus", data.dayStatus || {}),
                       ]);
 
-                      // Sync all data to API
-                      await Promise.all([
+                      // Sync all data to API with better error handling
+                      const syncResults = await Promise.allSettled([
                         syncUsersToAPI(data.users || []),
                         syncAgentsToAPI(data.agents || []),
                         syncOrdersToAPI(data.orders || []),
@@ -480,6 +480,16 @@ const ConfigScreen = ({
                         syncClientsToAPI(data.clients),
                         syncProductsToAPI(data.products),
                       ]);
+
+                      // Check for sync failures
+                      const failedSyncs = syncResults.filter(r => r.status === 'rejected');
+                      if (failedSyncs.length > 0) {
+                        console.warn('Some syncs failed:', failedSyncs);
+                        showMessage(
+                          `⚠️ Date importate cu ${failedSyncs.length} avertismente. Verificați consola.`,
+                          "warning"
+                        );
+                      }
 
                       // Reîncarcă
                       await loadAllData();
