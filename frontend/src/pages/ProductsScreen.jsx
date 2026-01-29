@@ -5,6 +5,7 @@ const ProductsScreen = ({
   products,
   setProducts,
   gestiuni,
+  zones,
   priceZones,
   editingProduct,
   setEditingProduct,
@@ -15,6 +16,9 @@ const ProductsScreen = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [localEditingProduct, setLocalEditingProduct] = useState(null);
+
+  // Use zones if available, fallback to priceZones
+  const displayZones = zones && zones.length > 0 ? zones : priceZones;
 
   // ✅ SYNC cu editingProduct
   useEffect(() => {
@@ -38,7 +42,7 @@ const ProductsScreen = ({
       gestiune: gestiuni[0]?.id || "",
       gramajKg: 0,
       cotaTVA: 11,
-      prices: priceZones.reduce(
+      prices: displayZones.reduce(
         (acc, zone) => ({ ...acc, [zone.id]: 0 }),
         {},
       ),
@@ -290,7 +294,7 @@ const ProductsScreen = ({
               Prețuri pe Zone (fără TVA)
             </h3>
             <div className="grid grid-cols-1 sm: grid-cols-3 gap-4">
-              {priceZones.map((zone) => (
+              {displayZones.map((zone) => (
                 <div key={zone.id}>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     {zone.name}

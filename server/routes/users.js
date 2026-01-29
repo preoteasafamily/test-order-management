@@ -13,26 +13,26 @@ function hashPassword(password) {
 
 // Get all users
 router.get('/', (req, res) => {
-    db.all('SELECT id, username, role, name, status, createdAt, updatedAt FROM users ORDER BY name', [], (err, rows) => {
-        if (err) {
-            res.status(500).json({ success: false, error: err.message });
-        } else {
-            res.json({ success: true, data: rows || [] });
-        }
-    });
+    try {
+        const rows = db.prepare('SELECT id, username, role, name, agent_id, status, createdAt, updatedAt FROM users ORDER BY name').all();
+        res.json({ success: true, data: rows || [] });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
 });
 
 // Get single user
 router.get('/:id', (req, res) => {
-    db.get('SELECT id, username, role, name, status, createdAt, updatedAt FROM users WHERE id = ?', [req.params.id], (err, row) => {
-        if (err) {
-            res.status(500).json({ success: false, error: err.message });
-        } else if (!row) {
+    try {
+        const row = db.prepare('SELECT id, username, role, name, agent_id, status, createdAt, updatedAt FROM users WHERE id = ?').get(req.params.id);
+        if (!row) {
             res.status(404).json({ success: false, error: 'User not found' });
         } else {
             res.json({ success: true, data: row });
         }
-    });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
 });
 
 // Create user
@@ -51,39 +51,39 @@ router.post('/', (req, res) => {
     
     const hashedPassword = hashPassword(user.password);
     
-    db.run(
-        `INSERT INTO users (id, username, password, role, name, status) VALUES (?, ?, ?, ?, ?, ?)`,
-        [
+    try {
+        const stmt = db.prepare(
+            `INSERT INTO users (id, username, password, role, name, agent_id, status) VALUES (?, ?, ?, ?, ?, ?, ?)`
+        );
+        stmt.run(
             user.id,
             user.username,
             hashedPassword,
             user.role,
             user.name,
+            user.agent_id || null,
             user.status || 'active'
-        ],
-        function(err) {
-            if (err) {
-                if (err.message.includes('UNIQUE constraint failed')) {
-                    res.status(400).json({ success: false, error: 'Username already exists' });
-                } else {
-                    res.status(500).json({ success: false, error: err.message });
-                }
-            } else {
-                res.json({ 
-                    success: true, 
-                    data: { 
-                        id: user.id,
-                        username: user.username,
-                        role: user.role,
-                        name: user.name,
-                        status: user.status || 'active',
-                        createdAt: new Date().toISOString() 
-                    },
-                    message: 'User created successfully'
-                });
-            }
+        );
+        res.json({ 
+            success: true, 
+            data: { 
+                id: user.id,
+                username: user.username,
+                role: user.role,
+                name: user.name,
+                agent_id: user.agent_id,
+                status: user.status || 'active',
+                createdAt: new Date().toISOString() 
+            },
+            message: 'User created successfully'
+        });
+    } catch (err) {
+        if (err.message.includes('UNIQUE constraint failed')) {
+            res.status(400).json({ success: false, error: 'Username already exists' });
+        } else {
+            res.status(500).json({ success: false, error: err.message });
         }
-    );
+    }
 });
 
 // Update user
@@ -100,48 +100,50 @@ router.put('/:id', (req, res) => {
         return res.status(400).json({ success: false, error: 'Invalid role. Must be admin, birou, or agent' });
     }
     
-    let query, params;
-    
-    // If password is provided, update it as well
-    if (user.password) {
-        const hashedPassword = hashPassword(user.password);
-        query = `UPDATE users SET 
-            username = ?, password = ?, role = ?, name = ?, status = ?, updatedAt = CURRENT_TIMESTAMP
-        WHERE id = ?`;
-        params = [user.username, hashedPassword, user.role, user.name, user.status || 'active', req.params.id];
-    } else {
-        query = `UPDATE users SET 
-            username = ?, role = ?, name = ?, status = ?, updatedAt = CURRENT_TIMESTAMP
-        WHERE id = ?`;
-        params = [user.username, user.role, user.name, user.status || 'active', req.params.id];
-    }
-    
-    db.run(query, params, function(err) {
-        if (err) {
-            if (err.message.includes('UNIQUE constraint failed')) {
-                res.status(400).json({ success: false, error: 'Username already exists' });
-            } else {
-                res.status(500).json({ success: false, error: err.message });
-            }
-        } else if (this.changes === 0) {
+    try {
+        let stmt, result;
+        
+        // If password is provided, update it as well
+        if (user.password) {
+            const hashedPassword = hashPassword(user.password);
+            stmt = db.prepare(`UPDATE users SET 
+                username = ?, password = ?, role = ?, name = ?, agent_id = ?, status = ?, updatedAt = CURRENT_TIMESTAMP
+            WHERE id = ?`);
+            result = stmt.run(user.username, hashedPassword, user.role, user.name, user.agent_id || null, user.status || 'active', req.params.id);
+        } else {
+            stmt = db.prepare(`UPDATE users SET 
+                username = ?, role = ?, name = ?, agent_id = ?, status = ?, updatedAt = CURRENT_TIMESTAMP
+            WHERE id = ?`);
+            result = stmt.run(user.username, user.role, user.name, user.agent_id || null, user.status || 'active', req.params.id);
+        }
+        
+        if (result.changes === 0) {
             res.status(404).json({ success: false, error: 'User not found' });
         } else {
             res.json({ success: true, message: 'User updated successfully' });
         }
-    });
+    } catch (err) {
+        if (err.message.includes('UNIQUE constraint failed')) {
+            res.status(400).json({ success: false, error: 'Username already exists' });
+        } else {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    }
 });
 
 // Delete user
 router.delete('/:id', (req, res) => {
-    db.run('DELETE FROM users WHERE id = ?', [req.params.id], function(err) {
-        if (err) {
-            res.status(500).json({ success: false, error: err.message });
-        } else if (this.changes === 0) {
+    try {
+        const stmt = db.prepare('DELETE FROM users WHERE id = ?');
+        const result = stmt.run(req.params.id);
+        if (result.changes === 0) {
             res.status(404).json({ success: false, error: 'User not found' });
         } else {
             res.json({ success: true, message: 'User deleted successfully' });
         }
-    });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
 });
 
 module.exports = router;
