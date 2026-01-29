@@ -783,12 +783,14 @@ const App = () => {
             setClients={setClients}
             agents={agents}
             priceZones={priceZones}
+            products={products}
             editingClient={editingClient}
             setEditingClient={setEditingClient}
             showMessage={showMessage}
             createClient={createClient}
             updateClient={updateClient}
             deleteClient={deleteClient}
+            API_URL={API_URL}
           />
         );
       case "products":
@@ -867,6 +869,7 @@ const App = () => {
             showMessage={showMessage}
             saveData={saveData}
             getClientProductPrice={getClientProductPrice}
+            API_URL={API_URL}
           />
         );
       case "orders-matrix":

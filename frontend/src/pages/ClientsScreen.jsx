@@ -6,20 +6,51 @@ const ClientsScreen = ({
   setClients,
   agents,
   priceZones,
+  products,
   editingClient,
   setEditingClient,
   showMessage,
   createClient,
   updateClient,
   deleteClient,
+  API_URL,
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [localEditingClient, setLocalEditingClient] = useState(null);
+  const [clientProducts, setClientProducts] = useState([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
 
   // ✅ SYNC cu editingClient când se schimbă
   useEffect(() => {
     setLocalEditingClient(editingClient);
+    
+    // Load products when editing an existing client
+    if (editingClient && editingClient.id) {
+      loadClientProducts(editingClient.id);
+    } else {
+      setClientProducts([]);
+    }
   }, [editingClient]);
+
+  // Load products with their status for this client
+  const loadClientProducts = async (clientId) => {
+    setLoadingProducts(true);
+    try {
+      const response = await fetch(`${API_URL}/api/clients/${clientId}/products/all`);
+      if (response.ok) {
+        const data = await response.json();
+        setClientProducts(data);
+      } else {
+        console.error('Failed to load client products');
+        setClientProducts([]);
+      }
+    } catch (error) {
+      console.error('Error loading client products:', error);
+      setClientProducts([]);
+    } finally {
+      setLoadingProducts(false);
+    }
+  };
 
   const filteredClients = clients.filter(
     (c) =>
@@ -94,6 +125,86 @@ const ClientsScreen = ({
         showMessage("Eroare la ștergerea clientului!", "error");
         console.error(error);
       }
+    }
+  };
+
+  // Product management functions
+  const handleToggleProduct = async (productId, currentStatus) => {
+    if (!localEditingClient || !localEditingClient.id) return;
+    
+    try {
+      const response = await fetch(
+        `${API_URL}/api/clients/${localEditingClient.id}/products/${productId}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ is_active: !currentStatus })
+        }
+      );
+      
+      if (response.ok) {
+        // Update local state
+        setClientProducts(prev => 
+          prev.map(p => p.id === productId ? { ...p, is_active: !currentStatus } : p)
+        );
+      } else {
+        showMessage("Eroare la actualizarea produsului!", "error");
+      }
+    } catch (error) {
+      console.error('Error toggling product:', error);
+      showMessage("Eroare la actualizarea produsului!", "error");
+    }
+  };
+
+  const handleSelectAllProducts = async () => {
+    if (!localEditingClient || !localEditingClient.id) return;
+    
+    try {
+      const productIds = clientProducts.map(p => p.id);
+      const response = await fetch(
+        `${API_URL}/api/clients/${localEditingClient.id}/products/bulk`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ productIds, is_active: true })
+        }
+      );
+      
+      if (response.ok) {
+        setClientProducts(prev => prev.map(p => ({ ...p, is_active: true })));
+        showMessage("Toate produsele au fost activate!");
+      } else {
+        showMessage("Eroare la activarea produselor!", "error");
+      }
+    } catch (error) {
+      console.error('Error activating all products:', error);
+      showMessage("Eroare la activarea produselor!", "error");
+    }
+  };
+
+  const handleDeselectAllProducts = async () => {
+    if (!localEditingClient || !localEditingClient.id) return;
+    
+    try {
+      const productIds = clientProducts.map(p => p.id);
+      const response = await fetch(
+        `${API_URL}/api/clients/${localEditingClient.id}/products/bulk`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ productIds, is_active: false })
+        }
+      );
+      
+      if (response.ok) {
+        setClientProducts(prev => prev.map(p => ({ ...p, is_active: false })));
+        showMessage("Toate produsele au fost dezactivate!");
+      } else {
+        showMessage("Eroare la dezactivarea produselor!", "error");
+      }
+    } catch (error) {
+      console.error('Error deactivating all products:', error);
+      showMessage("Eroare la dezactivarea produselor!", "error");
     }
   };
 
@@ -321,6 +432,71 @@ const ClientsScreen = ({
               </span>
             </label>
           </div>
+
+          {/* PRODUSE DISPONIBILE - only show for existing clients */}
+          {localEditingClient.id && clients.find((c) => c.id === localEditingClient.id) && (
+            <div className="border-t pt-6">
+              <h3 className="text-lg font-semibold mb-4">
+                Produse Disponibile
+              </h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Selectați produsele pe care agentul le poate comanda pentru acest client.
+              </p>
+
+              {loadingProducts ? (
+                <div className="text-center py-4 text-gray-500">
+                  Se încarcă produsele...
+                </div>
+              ) : clientProducts.length === 0 ? (
+                <div className="text-center py-4 text-gray-500">
+                  Nu există produse în sistem.
+                </div>
+              ) : (
+                <>
+                  <div className="mb-4 flex gap-2">
+                    <button
+                      onClick={handleSelectAllProducts}
+                      className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition text-sm font-medium"
+                    >
+                      Selectează Toate
+                    </button>
+                    <button
+                      onClick={handleDeselectAllProducts}
+                      className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition text-sm font-medium"
+                    >
+                      Deselectează Toate
+                    </button>
+                  </div>
+
+                  <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-lg p-4 space-y-2">
+                    {clientProducts.map((product) => (
+                      <label
+                        key={product.id}
+                        className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={product.is_active}
+                          onChange={() => handleToggleProduct(product.id, product.is_active)}
+                          className="w-4 h-4 rounded text-blue-600"
+                        />
+                        <span className="text-sm flex-1">
+                          <span className="font-medium">{product.descriere}</span>
+                          <span className="text-gray-500 ml-2">
+                            ({product.codArticolFurnizor})
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+
+                  <div className="mt-3 text-sm text-gray-600">
+                    {clientProducts.filter(p => p.is_active).length} din {clientProducts.length} produse active
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           {/* BUTOANE */}
           <div className="border-t pt-6 flex gap-3">

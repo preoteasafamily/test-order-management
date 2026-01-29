@@ -16,10 +16,12 @@ const OrdersAgentScreen = ({
   showMessage,
   saveData,
   getClientProductPrice,
+  API_URL,
 }) => {
   const isDayClosed = dayStatus[selectedDate]?.productionExported || false;
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedClient, setSelectedClient] = useState(null);
+  const [availableProducts, setAvailableProducts] = useState(products);
   const [currentOrder, setCurrentOrder] = useState({
     paymentType: "immediate",
     dueDate: null,
@@ -30,8 +32,11 @@ const OrdersAgentScreen = ({
     (c) => c.agentId === currentUser.agentId,
   );
 
+  // Load active products when client is selected
   useEffect(() => {
     if (selectedClient) {
+      loadClientProducts(selectedClient.id);
+      
       const existingOrder = orders.find(
         (o) => o.clientId === selectedClient.id && o.date === selectedDate,
       );
@@ -49,11 +54,30 @@ const OrdersAgentScreen = ({
           items: [],
         });
       }
+    } else {
+      setAvailableProducts(products);
     }
   }, [selectedClient, selectedDate]);
 
+  // Load active products for selected client
+  const loadClientProducts = async (clientId) => {
+    try {
+      const response = await fetch(`${API_URL}/api/clients/${clientId}/products`);
+      if (response.ok) {
+        const activeProducts = await response.json();
+        setAvailableProducts(activeProducts);
+      } else {
+        console.error('Failed to load client products, using all products');
+        setAvailableProducts(products);
+      }
+    } catch (error) {
+      console.error('Error loading client products:', error);
+      setAvailableProducts(products);
+    }
+  };
+
   const updateQuantity = (productId, quantity) => {
-    const product = products.find((p) => p.id === productId);
+    const product = availableProducts.find((p) => p.id === productId);
     const price = getClientProductPrice(selectedClient, product);
 
     setCurrentOrder((prev) => {
@@ -384,7 +408,7 @@ const OrdersAgentScreen = ({
       )}
       <div className="bg-white rounded-lg shadow p-3 sm:p-4">
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-3">
-          {products.map((product) => {
+          {availableProducts.map((product) => {
             const price = getClientProductPrice(selectedClient, product);
             const quantity = getQuantity(product.id);
 

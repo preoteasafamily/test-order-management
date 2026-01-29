@@ -367,6 +367,54 @@ app.delete('/api/products/:id', (req, res) => {
     }
 });
 
+// ============ CLIENT PRODUCTS BACKUP ENDPOINT ============
+
+// Get all client_products for backup
+app.get('/api/client-products/all', (req, res) => {
+    try {
+        const rows = db.prepare('SELECT * FROM client_products').all();
+        const clientProducts = rows.map(row => ({
+            ...row,
+            is_active: row.is_active === 1
+        }));
+        res.json(clientProducts);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Restore client_products from backup
+app.post('/api/client-products/restore', (req, res) => {
+    try {
+        const clientProducts = req.body;
+        
+        if (!Array.isArray(clientProducts)) {
+            return res.status(400).json({ error: 'Invalid data format' });
+        }
+        
+        // Clear existing client_products
+        db.prepare('DELETE FROM client_products').run();
+        
+        // Insert all client_products
+        const insert = db.prepare(`
+            INSERT INTO client_products (client_id, product_id, is_active)
+            VALUES (?, ?, ?)
+        `);
+        
+        const insertMany = db.transaction((items) => {
+            for (const item of items) {
+                insert.run(item.client_id, item.product_id, item.is_active ? 1 : 0);
+            }
+        });
+        
+        insertMany(clientProducts);
+        
+        res.json({ success: true, restored: clientProducts.length });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);

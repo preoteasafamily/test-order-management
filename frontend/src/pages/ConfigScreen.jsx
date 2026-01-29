@@ -387,33 +387,50 @@ const ConfigScreen = ({
               transfer.
             </p>
             <button
-              onClick={() => {
-                const allData = {
-                  company,
-                  gestiuni,
-                  agents,
-                  users,
-                  priceZones,
-                  products,
-                  clients,
-                  contracts,
-                  orders,
-                  dayStatus,
-                };
+              onClick={async () => {
+                try {
+                  // Fetch client_products data from API
+                  let clientProducts = [];
+                  try {
+                    const response = await fetch(`${API_URL}/api/client-products/all`);
+                    if (response.ok) {
+                      clientProducts = await response.json();
+                    }
+                  } catch (error) {
+                    console.warn('Could not fetch client_products, backup will not include them');
+                  }
 
-                const json = JSON.stringify(allData, null, 2);
-                const blob = new Blob([json], {
-                  type: "application/json",
-                });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `backup-${new Date().toISOString().split("T")[0]}.json`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                showMessage("✅ Date exportate cu succes!");
+                  const allData = {
+                    company,
+                    gestiuni,
+                    agents,
+                    users,
+                    priceZones,
+                    products,
+                    clients,
+                    contracts,
+                    orders,
+                    dayStatus,
+                    client_products: clientProducts,
+                  };
+
+                  const json = JSON.stringify(allData, null, 2);
+                  const blob = new Blob([json], {
+                    type: "application/json",
+                  });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `backup-${new Date().toISOString().split("T")[0]}.json`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                  showMessage("✅ Date exportate cu succes!");
+                } catch (error) {
+                  console.error('Error creating backup:', error);
+                  showMessage("❌ Eroare la crearea backup-ului!", "error");
+                }
               }}
               className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition flex items-center justify-center gap-2 font-medium"
             >
@@ -480,6 +497,22 @@ const ConfigScreen = ({
                         syncClientsToAPI(data.clients),
                         syncProductsToAPI(data.products),
                       ]);
+
+                      // Restore client_products if available
+                      if (data.client_products && Array.isArray(data.client_products)) {
+                        try {
+                          const response = await fetch(`${API_URL}/api/client-products/restore`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(data.client_products)
+                          });
+                          if (!response.ok) {
+                            console.warn('Failed to restore client_products');
+                          }
+                        } catch (error) {
+                          console.error('Error restoring client_products:', error);
+                        }
+                      }
 
                       // Check for sync failures
                       const failedSyncs = syncResults.filter(r => r.status === 'rejected');
