@@ -59,19 +59,31 @@ router.post('/import-clients', async (req, res) => {
             const rowNum = i + 2; // +2 for header row and 0-indexing
 
             // Check required fields
-            if (!record.nume) {
+            if (!record.nume || record.nume.trim() === '') {
                 errors.push(`Row ${rowNum}: 'nume' is required`);
                 continue;
             }
-            if (!record.nrRegCom) {
-                errors.push(`Row ${rowNum}: 'nrRegCom' is required`);
+            if (!record.judet || record.judet.trim() === '') {
+                errors.push(`Row ${rowNum}: 'judet' is required`);
+                continue;
+            }
+            if (!record.localitate || record.localitate.trim() === '') {
+                errors.push(`Row ${rowNum}: 'localitate' is required`);
+                continue;
+            }
+            if (!record.priceZone || record.priceZone.trim() === '') {
+                errors.push(`Row ${rowNum}: 'priceZone' is required`);
                 continue;
             }
 
-            // Check for duplicates in database
-            const existing = db.prepare(
-                'SELECT id FROM clients WHERE cif = ? OR nrRegCom = ?'
-            ).get(record.cif || '', record.nrRegCom);
+            // Check for duplicates in database (only if fields have values)
+            let existing = null;
+            if (record.cif && record.cif.trim() !== '') {
+                existing = db.prepare('SELECT id FROM clients WHERE cif = ?').get(record.cif.trim());
+            }
+            if (!existing && record.nrRegCom && record.nrRegCom.trim() !== '') {
+                existing = db.prepare('SELECT id FROM clients WHERE nrRegCom = ?').get(record.nrRegCom.trim());
+            }
 
             if (existing) {
                 skippedRecords.push({
@@ -125,22 +137,25 @@ router.post('/import-clients', async (req, res) => {
             const imported = [];
             for (const record of records) {
                 const id = `client-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+                // Helper to convert empty strings to null
+                const toNullIfEmpty = (val) => (val && val.trim() !== '') ? val.trim() : null;
+                
                 insertStmt.run(
                     id,
-                    record.nume,
-                    record.cif || null,
-                    record.nrRegCom,
-                    record.codContabil || null,
-                    record.judet || null,
-                    record.localitate || null,
-                    record.strada || null,
-                    record.codPostal || null,
-                    record.telefon || null,
-                    record.email || null,
-                    record.banca || null,
-                    record.iban || null,
-                    record.agentId || null,
-                    record.priceZone || null,
+                    record.nume.trim(),
+                    toNullIfEmpty(record.cif),
+                    toNullIfEmpty(record.nrRegCom),
+                    toNullIfEmpty(record.codContabil),
+                    record.judet.trim(),
+                    record.localitate.trim(),
+                    toNullIfEmpty(record.strada),
+                    toNullIfEmpty(record.codPostal),
+                    toNullIfEmpty(record.telefon),
+                    toNullIfEmpty(record.email),
+                    toNullIfEmpty(record.banca),
+                    toNullIfEmpty(record.iban),
+                    toNullIfEmpty(record.agentId),
+                    record.priceZone.trim(),
                     record.afiseazaKG === 'true' || record.afiseazaKG === '1' ? 1 : 0,
                     '{}'
                 );
