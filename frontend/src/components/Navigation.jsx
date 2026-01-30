@@ -9,7 +9,8 @@ import {
   X,
   Home,
   Menu,
-  UserCog
+  UserCog,
+  Database
 } from 'lucide-react';
 
 const Navigation = ({ currentUser, activeSection, setActiveSection, mobileMenuOpen, setMobileMenuOpen }) => {
@@ -66,6 +67,12 @@ const Navigation = ({ currentUser, activeSection, setActiveSection, mobileMenuOp
       id: "users",
       label: "Utilizatori",
       icon: Users,
+      roles: ["admin"],
+    },
+    {
+      id: "data-management",
+      label: "Gestiune Date",
+      icon: Database,
       roles: ["admin"],
     },
     { id: "config", label: "Configurare", icon: Settings, roles: ["admin"] },
