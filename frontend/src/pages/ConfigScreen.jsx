@@ -561,7 +561,7 @@ const ConfigScreen = ({
             onClick={handleAddZone}
             className="bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 transition flex items-center gap-2 font-medium"
           >
-            <Save className="w-4 h-4" />
+            <Plus className="w-4 h-4" />
             Zonă Nouă
           </button>
         </div>
