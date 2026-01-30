@@ -419,36 +419,13 @@ app.post('/api/client-products/restore', (req, res) => {
 
 // Initialize default zones if none exist
 const initializeDefaultZones = () => {
-    try {
-        const existingZones = db.prepare('SELECT COUNT(*) as count FROM zones').get();
-        
-        if (existingZones.count === 0) {
-            console.log('Initializing default zones...');
-            
-            const defaultZones = [
-                { id: 'zona-a', code: 'zona-a', name: 'Zona A', description: 'Premium' },
-                { id: 'zona-b', code: 'zona-b', name: 'Zona B', description: 'Standard' },
-                { id: 'zona-c', code: 'zona-c', name: 'Zona C', description: 'Discount' }
-            ];
-            
-            const stmt = db.prepare(
-                'INSERT INTO zones (id, code, name, description) VALUES (?, ?, ?, ?)'
-            );
-            
-            for (const zone of defaultZones) {
-                stmt.run(zone.id, zone.code, zone.name, zone.description);
-                console.log(`✅ Created default zone: ${zone.name}`);
-            }
-            
-            console.log('✅ Default zones initialized successfully');
-        }
-    } catch (error) {
-        console.error('Error initializing default zones:', error);
-    }
+    // Function disabled - no default zones should be created
+    // Only zones created by users via Settings should exist
+    console.log('Default zones initialization disabled - only user-created zones will be used');
 };
 
-// Initialize zones on startup
-initializeDefaultZones();
+// Initialize zones on startup - DISABLED
+// initializeDefaultZones();
 
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
