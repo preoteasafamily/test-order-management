@@ -14,6 +14,7 @@ import ConfigScreen from "./pages/ConfigScreen";
 import ContractsScreen from "./pages/ContractsScreen";
 import AgentManager from "./pages/AgentManager";
 import UserManager from "./pages/UserManager";
+import DataManagementScreen from "./pages/DataManagementScreen";
 
 const App = () => {
   // API Configuration
@@ -913,6 +914,14 @@ const App = () => {
             agents={agents}
             showMessage={showMessage}
             API_URL={API_URL}
+          />
+        );
+      case "data-management":
+        return (
+          <DataManagementScreen
+            API_URL={API_URL}
+            showMessage={showMessage}
+            zones={zones}
           />
         );
       case "export":
