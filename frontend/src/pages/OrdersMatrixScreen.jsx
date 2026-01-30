@@ -17,6 +17,7 @@ const OrdersMatrixScreen = ({
   showMessage,
   saveData,
   getClientProductPrice,
+  isClientActive,
 }) => {
   const isDayClosed = dayStatus[selectedDate]?.productionExported || false;
 
@@ -37,10 +38,16 @@ const OrdersMatrixScreen = ({
     const dateOrders = orders.filter((o) => o.date === selectedDate);
     const matrix = {};
 
-    const agentClients =
+    // Filter clients by agent and active status
+    let agentClients =
       selectedAgent === "all"
         ? clients
         : clients.filter((c) => c.agentId === selectedAgent);
+    
+    // Filter by active status for the selected date
+    if (isClientActive) {
+      agentClients = agentClients.filter((c) => isClientActive(c, selectedDate));
+    }
 
     agentClients.forEach((client) => {
       const order = dateOrders.find((o) => o.clientId === client.id);

@@ -16,6 +16,7 @@ const OrdersAgentScreen = ({
   showMessage,
   saveData,
   getClientProductPrice,
+  isClientActive,
   API_URL,
 }) => {
   const isDayClosed = dayStatus[selectedDate]?.productionExported || false;
@@ -28,8 +29,9 @@ const OrdersAgentScreen = ({
     items: [],
   });
 
+  // Filter clients by agent and active status
   const agentClients = clients.filter(
-    (c) => c.agentId === currentUser.agentId,
+    (c) => c.agentId === currentUser.agentId && (isClientActive ? isClientActive(c, selectedDate) : true),
   );
 
   // Load active products when client is selected

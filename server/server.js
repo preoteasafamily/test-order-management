@@ -159,7 +159,10 @@ app.get('/api/clients', (req, res) => {
         const clients = (rows || []).map(row => ({
             ...row,
             afiseazaKG: row.afiseazaKG === 1,
-            productCodes: row.productCodes ? JSON.parse(row.productCodes) : {}
+            productCodes: row.productCodes ? JSON.parse(row.productCodes) : {},
+            status: row.status || 'active',
+            activeFrom: row.activeFrom || null,
+            activeTo: row.activeTo || null
         }));
         res.json(clients);
     } catch (err) {
@@ -177,7 +180,10 @@ app.get('/api/clients/:id', (req, res) => {
             const client = {
                 ...row,
                 afiseazaKG: row.afiseazaKG === 1,
-                productCodes: row.productCodes ? JSON.parse(row.productCodes) : {}
+                productCodes: row.productCodes ? JSON.parse(row.productCodes) : {},
+                status: row.status || 'active',
+                activeFrom: row.activeFrom || null,
+                activeTo: row.activeTo || null
             };
             res.json(client);
         }
@@ -223,26 +229,45 @@ app.post('/api/clients', (req, res) => {
         }
     }
     
+    // Validate status and date fields
+    const status = client.status || 'active';
+    if (!['active', 'inactive', 'periodic'].includes(status)) {
+        return res.status(400).json({ error: 'Status must be active, inactive, or periodic' });
+    }
+    
+    if (status === 'periodic') {
+        if (!client.activeFrom || !client.activeTo) {
+            return res.status(400).json({ error: 'activeFrom and activeTo are required for periodic status' });
+        }
+        if (client.activeFrom > client.activeTo) {
+            return res.status(400).json({ error: 'activeFrom must be before or equal to activeTo' });
+        }
+    }
+    
     try {
         console.log(`💾 Creating client:`, {
             id: client.id,
             nume: client.nume,
             agentId: client.agentId,
-            priceZone: client.priceZone
+            priceZone: client.priceZone,
+            status: status
         });
         
         const result = db.prepare(
             `INSERT INTO clients (
                 id, nume, cif, nrRegCom, codContabil, judet, localitate, strada, 
                 codPostal, telefon, email, banca, iban, agentId, priceZone, 
-                afiseazaKG, productCodes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                afiseazaKG, productCodes, status, activeFrom, activeTo
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).run(
             client.id, client.nume, client.cif, client.nrRegCom, client.codContabil,
             client.judet, client.localitate, client.strada, client.codPostal,
             client.telefon, client.email, client.banca, client.iban, client.agentId,
             client.priceZone, client.afiseazaKG ? 1 : 0, 
-            JSON.stringify(client.productCodes || {})
+            JSON.stringify(client.productCodes || {}),
+            status,
+            client.activeFrom || null,
+            client.activeTo || null
         );
         
         // Initialize all products as active for this new client
@@ -293,11 +318,27 @@ app.put('/api/clients/:id', (req, res) => {
         }
     }
     
+    // Validate status and date fields
+    const status = client.status || 'active';
+    if (!['active', 'inactive', 'periodic'].includes(status)) {
+        return res.status(400).json({ error: 'Status must be active, inactive, or periodic' });
+    }
+    
+    if (status === 'periodic') {
+        if (!client.activeFrom || !client.activeTo) {
+            return res.status(400).json({ error: 'activeFrom and activeTo are required for periodic status' });
+        }
+        if (client.activeFrom > client.activeTo) {
+            return res.status(400).json({ error: 'activeFrom must be before or equal to activeTo' });
+        }
+    }
+    
     try {
         console.log(`💾 Updating client ${req.params.id}:`, {
             nume: client.nume,
             agentId: client.agentId,
-            priceZone: client.priceZone
+            priceZone: client.priceZone,
+            status: status
         });
         
         const result = db.prepare(
@@ -305,13 +346,14 @@ app.put('/api/clients/:id', (req, res) => {
                 nume = ?, cif = ?, nrRegCom = ?, codContabil = ?, judet = ?, 
                 localitate = ?, strada = ?, codPostal = ?, telefon = ?, email = ?, 
                 banca = ?, iban = ?, agentId = ?, priceZone = ?, afiseazaKG = ?, 
-                productCodes = ?, updatedAt = CURRENT_TIMESTAMP
+                productCodes = ?, status = ?, activeFrom = ?, activeTo = ?, updatedAt = CURRENT_TIMESTAMP
             WHERE id = ?`
         ).run(
             client.nume, client.cif, client.nrRegCom, client.codContabil, client.judet,
             client.localitate, client.strada, client.codPostal, client.telefon,
             client.email, client.banca, client.iban, client.agentId, client.priceZone,
             client.afiseazaKG ? 1 : 0, JSON.stringify(client.productCodes || {}),
+            status, client.activeFrom || null, client.activeTo || null,
             req.params.id
         );
         
@@ -338,6 +380,53 @@ app.delete('/api/clients/:id', (req, res) => {
             res.json({ success: true });
         }
     } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Bulk update client status
+app.post('/api/clients/bulk-status', (req, res) => {
+    const { clientIds, status, activeFrom, activeTo } = req.body;
+    
+    if (!clientIds || !Array.isArray(clientIds) || clientIds.length === 0) {
+        return res.status(400).json({ error: 'clientIds array is required' });
+    }
+    
+    if (!status || !['active', 'inactive', 'periodic'].includes(status)) {
+        return res.status(400).json({ error: 'Valid status is required' });
+    }
+    
+    if (status === 'periodic') {
+        if (!activeFrom || !activeTo) {
+            return res.status(400).json({ error: 'activeFrom and activeTo are required for periodic status' });
+        }
+        if (activeFrom > activeTo) {
+            return res.status(400).json({ error: 'activeFrom must be before or equal to activeTo' });
+        }
+    }
+    
+    try {
+        const updateStmt = db.prepare(
+            `UPDATE clients SET 
+                status = ?, activeFrom = ?, activeTo = ?, updatedAt = CURRENT_TIMESTAMP
+            WHERE id = ?`
+        );
+        
+        const updateMany = db.transaction((ids, stat, from, to) => {
+            let updated = 0;
+            for (const clientId of ids) {
+                const result = updateStmt.run(stat, from || null, to || null, clientId);
+                updated += result.changes;
+            }
+            return updated;
+        });
+        
+        const updatedCount = updateMany(clientIds, status, activeFrom, activeTo);
+        
+        console.log(`✅ Bulk status update: ${updatedCount} clients updated to ${status}`);
+        res.json({ success: true, updated: updatedCount });
+    } catch (err) {
+        console.error('❌ Error in bulk status update:', err);
         res.status(500).json({ error: err.message });
     }
 });

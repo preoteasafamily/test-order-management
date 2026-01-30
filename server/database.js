@@ -31,6 +31,35 @@ const migrateOrdersTable = () => {
   }
 };
 
+// Check if we need to add status columns to clients table
+const migrateClientsTable = () => {
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(clients)").all();
+    
+    if (tableInfo.length > 0) {
+      const hasStatus = tableInfo.some(col => col.name === 'status');
+      
+      if (!hasStatus) {
+        console.log('Adding status columns to clients table...');
+        
+        // Add new columns for client status management
+        db.exec(`
+          ALTER TABLE clients ADD COLUMN status TEXT DEFAULT 'active';
+          ALTER TABLE clients ADD COLUMN activeFrom TEXT;
+          ALTER TABLE clients ADD COLUMN activeTo TEXT;
+        `);
+        
+        // Set all existing clients to 'active' status
+        db.exec(`UPDATE clients SET status = 'active' WHERE status IS NULL`);
+        
+        console.log('✅ Clients table migrated successfully. All existing clients set to active status.');
+      }
+    }
+  } catch (err) {
+    console.error('Error checking clients table:', err);
+  }
+};
+
 // Migrate before creating tables
 migrateOrdersTable();
 
@@ -117,6 +146,9 @@ const createTables = () => {
       priceZone TEXT,
       afiseazaKG INTEGER DEFAULT 0,
       productCodes TEXT,
+      status TEXT DEFAULT 'active',
+      activeFrom TEXT,
+      activeTo TEXT,
       createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
       updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
     )
@@ -160,5 +192,8 @@ const createTables = () => {
 
 // Initialize tables
 createTables();
+
+// Run migrations after tables are created
+migrateClientsTable();
 
 module.exports = db;

@@ -601,6 +601,39 @@ const App = () => {
     setTimeout(() => setMessage(null), 3000);
   };
 
+  // Helper function to check if client is active on a given date
+  const isClientActive = (client, dateString) => {
+    if (!client || !client.status) {
+      return true; // Default to active if status is not set
+    }
+    
+    // Active clients are always active
+    if (client.status === 'active') {
+      return true;
+    }
+    
+    // Inactive clients are never active
+    if (client.status === 'inactive') {
+      return false;
+    }
+    
+    // Periodic clients - check date range
+    if (client.status === 'periodic') {
+      if (!client.activeFrom || !client.activeTo) {
+        return false; // No date range set, treat as inactive
+      }
+      
+      // Use current date if dateString is not provided
+      const checkDate = dateString || new Date().toISOString().split('T')[0];
+      
+      // Check if checkDate is within the range (inclusive)
+      return checkDate >= client.activeFrom && checkDate <= client.activeTo;
+    }
+    
+    // Unknown status, default to active
+    return true;
+  };
+
   // ✅ FIXED: Login component
   const LoginScreen = () => {
     const [credentials, setCredentials] = useState({
@@ -808,6 +841,7 @@ const App = () => {
             showMessage={showMessage}
             saveData={saveData}
             getClientProductPrice={getClientProductPrice}
+            isClientActive={isClientActive}
             API_URL={API_URL}
           />
         );
@@ -829,6 +863,7 @@ const App = () => {
             showMessage={showMessage}
             saveData={saveData}
             getClientProductPrice={getClientProductPrice}
+            isClientActive={isClientActive}
           />
         );
       case "reports":
