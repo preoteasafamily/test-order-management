@@ -220,10 +220,15 @@ const OrdersMatrixScreen = ({
     }
   };
 
-  const agentClients =
+  let agentClients =
     selectedAgent === "all"
       ? clients
       : clients.filter((c) => c.agentId === selectedAgent);
+  
+  // Filter by active status for the selected date
+  if (isClientActive) {
+    agentClients = agentClients.filter((c) => isClientActive(c, selectedDate));
+  }
 
   const totalValue = agentClients.reduce(
     (sum, c) => sum + calculateClientTotal(c.id),
