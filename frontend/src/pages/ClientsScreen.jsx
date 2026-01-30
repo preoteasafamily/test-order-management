@@ -85,7 +85,7 @@ const ClientsScreen = ({
   const handleSaveClient = async () => {
     // Validate required fields
     if (!localEditingClient.nume || !localEditingClient.cif) {
-      showMessage("Completați denumirea și CUI!  ", "error");
+      showMessage("Completați denumirea și CUI!", "error");
       return;
     }
 
@@ -134,15 +134,23 @@ const ClientsScreen = ({
         console.log('✅ Update response:', response);
         
         // Reload client from API to ensure we have the latest data
-        const updatedClientResponse = await fetch(`${API_URL}/api/clients/${localEditingClient.id}`);
-        if (updatedClientResponse.ok) {
-          const updatedClient = await updatedClientResponse.json();
-          const updatedClients = [...clients];
-          updatedClients[existingIndex] = updatedClient;
-          setClients(updatedClients);
-          console.log('✅ Client updated in state:', updatedClient);
-        } else {
-          // Fallback to local state if API read fails
+        try {
+          const updatedClientResponse = await fetch(`${API_URL}/api/clients/${localEditingClient.id}`);
+          if (updatedClientResponse.ok) {
+            const updatedClient = await updatedClientResponse.json();
+            const updatedClients = [...clients];
+            updatedClients[existingIndex] = updatedClient;
+            setClients(updatedClients);
+            console.log('✅ Client updated in state:', updatedClient);
+          } else {
+            // Fallback to local state if API read fails
+            const updatedClients = [...clients];
+            updatedClients[existingIndex] = localEditingClient;
+            setClients(updatedClients);
+          }
+        } catch (fetchError) {
+          // If reload fails, use local state - the save itself was successful
+          console.warn('⚠️ Could not reload client from API, using local state:', fetchError);
           const updatedClients = [...clients];
           updatedClients[existingIndex] = localEditingClient;
           setClients(updatedClients);
@@ -163,7 +171,7 @@ const ClientsScreen = ({
       showMessage("Client salvat cu succes!");
     } catch (error) {
       console.error('❌ Error saving client:', error);
-      showMessage("Eroare la salvarea clientului: " + (error.message || "Eroare necunoscută"), "error");
+      showMessage("Eroare la salvarea clientului: " + (error?.message || "Eroare necunoscută"), "error");
     }
   };
 
