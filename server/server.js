@@ -430,11 +430,6 @@ app.post('/api/clients/bulk-status', (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
-        }
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
 
 // ============ PRODUCTS ENDPOINTS ============
 
