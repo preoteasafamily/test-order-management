@@ -529,8 +529,8 @@ const App = () => {
       setGestiuni(gestiuniData || getDefaultGestiuni());
       setAgents(agentsData || getDefaultAgents());
       setUsers(usersData || []);
-      setZones(zonesData || getDefaultPriceZones());
-      setPriceZones(priceZonesData || getDefaultPriceZones());
+      setZones(zonesData || []);
+      setPriceZones(priceZonesData || []);
       setProducts(productsData || getDefaultProducts());
       setClients(clientsData || getDefaultClients());
       setContracts(contractsData || []);
@@ -577,12 +577,6 @@ const App = () => {
   const getDefaultAgents = () => [
     { id: "agent1", code: "Agent1", name: "Ion Popescu" },
     { id: "agent2", code: "Agent2", name: "Maria Ionescu" },
-  ];
-
-  const getDefaultPriceZones = () => [
-    { id: "zona-a", name: "Zona A", description: "Premium" },
-    { id: "zona-b", name: "Zona B", description: "Standard" },
-    { id: "zona-c", name: "Zona C", description: "Discount" },
   ];
 
   const getDefaultProducts = () => [
