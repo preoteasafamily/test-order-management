@@ -71,7 +71,7 @@ const App = () => {
   // ✅ API-aware Storage - uses API for clients/products, localStorage for others
     const loadData = async (key) => {
     try {
-      // Use API for clients, products, agents, and users
+      // Use API for clients, products, agents, users, and zones
       if (key === 'clients') {
         const response = await fetch(`${API_URL}/api/clients`);
         if (response.ok) {
@@ -103,6 +103,14 @@ const App = () => {
           return await response.json();
         }
         console.warn('API not available for users, using localStorage fallback');
+        const result = localStorage.getItem(key);
+        return result ? JSON.parse(result) : null;
+      } else if (key === 'zones') {
+        const response = await fetch(`${API_URL}/api/zones`);
+        if (response.ok) {
+          return await response.json();
+        }
+        console.warn('API not available for zones, using localStorage fallback');
         const result = localStorage.getItem(key);
         return result ? JSON.parse(result) : null;
       } else {
