@@ -177,9 +177,13 @@ router.post('/import-products', async (req, res) => {
             return res.status(400).json({ error: 'CSV file is empty' });
         }
 
-        // Get all zones from database
-        const zones = db.prepare('SELECT id FROM zones').all();
+        // Get all zones from database and create code-to-id mapping
+        const zones = db.prepare('SELECT id, code FROM zones').all();
         const zoneIds = zones.map(z => z.id);
+        const zoneCodeToId = {};
+        for (const zone of zones) {
+            zoneCodeToId[zone.code] = zone.id;
+        }
 
         // Validate records and build products with prices
         const errors = [];
@@ -199,13 +203,24 @@ router.post('/import-products', async (req, res) => {
                 continue;
             }
 
-            // Extract zone prices from dynamic columns (zone_1, zone_2, etc.)
+            // Extract zone prices from dynamic columns
+            // Support both zone codes (Z1, Z2, Z3) and zone IDs (zone_1, zone_2, etc.)
             const prices = {};
             let hasInvalidPrice = false;
             
             for (const key of Object.keys(record)) {
+                let zoneId = null;
+                
+                // Check if it's a zone ID (starts with zone_)
                 if (key.startsWith('zone_')) {
-                    const zoneId = key; // Keep the zone_ prefix
+                    zoneId = key;
+                }
+                // Check if it's a zone code (Z1, Z2, Z3, etc.)
+                else if (zoneCodeToId[key]) {
+                    zoneId = zoneCodeToId[key];
+                }
+                
+                if (zoneId) {
                     const priceValue = record[key];
                     
                     if (priceValue && priceValue.trim() !== '') {
@@ -216,6 +231,14 @@ router.post('/import-products', async (req, res) => {
                         } else {
                             prices[zoneId] = price;
                         }
+                    }
+                } else if (key !== 'codArticolFurnizor' && key !== 'codProductie' && key !== 'codBare' && 
+                          key !== 'descriere' && key !== 'um' && key !== 'gestiune' && 
+                          key !== 'gramajKg' && key !== 'cotaTVA') {
+                    // Check if this looks like it could be a zone column but wasn't found
+                    if (key.match(/^Z\d+$/) || key.startsWith('zone')) {
+                        errors.push(`Row ${rowNum}: Zone code or ID '${key}' not found in database`);
+                        hasInvalidPrice = true;
                     }
                 }
             }
@@ -361,8 +384,8 @@ router.get('/export-products', async (req, res) => {
             return res.status(404).json({ error: 'No products found' });
         }
 
-        // Get all zones to determine columns
-        const zones = db.prepare('SELECT id FROM zones ORDER BY id').all();
+        // Get all zones to determine columns (fetch both id and code)
+        const zones = db.prepare('SELECT id, code FROM zones ORDER BY code').all();
         
         // Build CSV data
         const csvRecords = products.map(product => {
@@ -380,9 +403,9 @@ router.get('/export-products', async (req, res) => {
             // Parse prices JSON and add zone columns
             const prices = product.prices ? JSON.parse(product.prices) : {};
             
-            // Add all zone columns with prices
+            // Add all zone columns with prices - use zone.code as column name
             for (const zone of zones) {
-                record[zone.id] = prices[zone.id] || '';
+                record[zone.code] = prices[zone.id] || '';
             }
 
             return record;
@@ -429,6 +452,13 @@ router.post('/update-prices', async (req, res) => {
             return res.status(400).json({ error: 'CSV file is empty' });
         }
 
+        // Get all zones from database and create code-to-id mapping
+        const zones = db.prepare('SELECT id, code FROM zones').all();
+        const zoneCodeToId = {};
+        for (const zone of zones) {
+            zoneCodeToId[zone.code] = zone.id;
+        }
+
         // Validate records and extract price updates
         const errors = [];
         const validRecords = [];
@@ -456,12 +486,23 @@ router.post('/update-prices', async (req, res) => {
                 continue;
             }
 
-            // Extract zone prices
+            // Extract zone prices - support both zone codes and zone IDs
             const prices = {};
             let hasInvalidPrice = false;
 
             for (const key of Object.keys(record)) {
+                let zoneId = null;
+                
+                // Check if it's a zone ID (starts with zone_)
                 if (key.startsWith('zone_')) {
+                    zoneId = key;
+                }
+                // Check if it's a zone code (Z1, Z2, Z3, etc.)
+                else if (zoneCodeToId[key]) {
+                    zoneId = zoneCodeToId[key];
+                }
+                
+                if (zoneId) {
                     const priceValue = record[key];
                     
                     if (priceValue && priceValue.trim() !== '') {
@@ -470,8 +511,16 @@ router.post('/update-prices', async (req, res) => {
                             errors.push(`Row ${rowNum}: Invalid price for ${key}: '${priceValue}'`);
                             hasInvalidPrice = true;
                         } else {
-                            prices[key] = price;
+                            prices[zoneId] = price;
                         }
+                    }
+                } else if (key !== 'codArticolFurnizor' && key !== 'codProductie' && key !== 'codBare' && 
+                          key !== 'descriere' && key !== 'um' && key !== 'gestiune' && 
+                          key !== 'gramajKg' && key !== 'cotaTVA') {
+                    // Check if this looks like it could be a zone column but wasn't found
+                    if (key.match(/^Z\d+$/) || key.startsWith('zone')) {
+                        errors.push(`Row ${rowNum}: Zone code or ID '${key}' not found in database`);
+                        hasInvalidPrice = true;
                     }
                 }
             }
