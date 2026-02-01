@@ -190,10 +190,50 @@ const createTables = () => {
   console.log('Database tables initialized');
 };
 
+// Create default admin user if users table is empty
+const createDefaultAdminUser = () => {
+  try {
+    // Check if users table is empty
+    const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
+    
+    if (userCount.count === 0) {
+      console.log('Creating default admin user...');
+      
+      // Default admin credentials
+      const defaultAdmin = {
+        id: `user-${Date.now()}`,
+        username: 'admin',
+        password: '947f77500ab536beb4fd1a70cba70729ee7d74729aa3100774e43323234d8d8c', // Pre-hashed password for 'CR5a8oie'
+        name: 'Administrator',
+        role: 'admin',
+        status: 'active'
+      };
+      
+      db.prepare(
+        'INSERT INTO users (id, username, password, name, role, status) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run(
+        defaultAdmin.id,
+        defaultAdmin.username,
+        defaultAdmin.password,
+        defaultAdmin.name,
+        defaultAdmin.role,
+        defaultAdmin.status
+      );
+      
+      console.log('✅ Default admin user created successfully (username: admin)');
+    }
+  } catch (err) {
+    console.error('Error creating default admin user:', err);
+  }
+};
+
 // Initialize tables
 createTables();
 
 // Run migrations after tables are created
 migrateClientsTable();
+
+// Create default admin user if needed
+createDefaultAdminUser();
 
 module.exports = db;
