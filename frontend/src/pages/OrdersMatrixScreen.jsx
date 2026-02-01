@@ -72,7 +72,7 @@ const OrdersMatrixScreen = ({
 
     setMatrixData(matrix);
     setEditMode(false);
-  }, [selectedDate, selectedAgent, orders, contracts]);
+  }, [selectedDate, selectedAgent, orders, contracts, clients, isClientActive]);
 
   const updateQuantity = (clientId, productId, quantity) => {
     setMatrixData((prev) => ({
@@ -244,7 +244,7 @@ const OrdersMatrixScreen = ({
     <div className="flex">
       {/* Sidebar - Hidden in edit mode */}
       {!editMode && (
-        <div style={{ width: "180px", flexShrink: 0 }} className="bg-white border-r border-gray-200 p-3 space-y-3">
+        <div style={{ width: "180px", flexShrink: 0 }} className="bg-white border-r border-gray-200 p-3 space-y-2">
           <h3 className="text-sm font-semibold text-gray-700 mb-2">Filtre</h3>
           <select
             value={selectedAgent}
