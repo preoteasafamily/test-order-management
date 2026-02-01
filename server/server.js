@@ -128,7 +128,15 @@ app.put('/api/orders/:id', (req, res) => {
         if (result.changes === 0) {
             res.status(404).json({ error: 'Order not found' });
         } else {
-            res.json({ success: true });
+            // Fetch the updated order
+            const row = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
+            const updatedOrder = {
+                ...row,
+                invoiceExported: row.invoiceExported === 1,
+                receiptExported: row.receiptExported === 1,
+                items: row.items ? JSON.parse(row.items) : []
+            };
+            res.json(updatedOrder);
         }
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -362,7 +370,17 @@ app.put('/api/clients/:id', (req, res) => {
             res.status(404).json({ error: 'Client not found' });
         } else {
             console.log(`✅ Client updated successfully: ${req.params.id}`);
-            res.json({ success: true, id: req.params.id });
+            // Fetch the updated client
+            const row = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.params.id);
+            const updatedClient = {
+                ...row,
+                afiseazaKG: row.afiseazaKG === 1,
+                productCodes: row.productCodes ? JSON.parse(row.productCodes) : {},
+                status: row.status || 'active',
+                activeFrom: row.activeFrom || null,
+                activeTo: row.activeTo || null
+            };
+            res.json(updatedClient);
         }
     } catch (err) {
         console.error('❌ Error updating client:', err);
@@ -514,7 +532,13 @@ app.put('/api/products/:id', (req, res) => {
         if (result.changes === 0) {
             res.status(404).json({ error: 'Product not found' });
         } else {
-            res.json({ success: true });
+            // Fetch the updated product
+            const row = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
+            const updatedProduct = {
+                ...row,
+                prices: row.prices ? JSON.parse(row.prices) : {}
+            };
+            res.json(updatedProduct);
         }
     } catch (err) {
         res.status(500).json({ error: err.message });
