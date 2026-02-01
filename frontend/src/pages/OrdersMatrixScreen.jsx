@@ -237,117 +237,119 @@ const OrdersMatrixScreen = ({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <h2 className="text-2xl font-bold text-gray-800">
-            Matrice Comenzi
-          </h2>
-          {isDayClosed && (
-            <div className="flex items-center gap-2">
-              <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-semibold">
-                🔒 ZI ÎNCHISĂ
-              </span>
-              {currentUser.role === "admin" && (
-                <button
-                  onClick={handleUnlockDay}
-                  className="px-3 py-1 bg-orange-100 text-orange-800 rounded-full text-sm font-semibold hover:bg-orange-200 transition"
-                >
-                  🔓 Deschide Ziua
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <select
-            value={selectedAgent}
-            onChange={(e) => setSelectedAgent(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
-          >
-            <option value="all">Toți Agenții</option>
-            {agents.map((agent) => (
-              <option key={agent.id} value={agent.id}>
-                {agent.name}
-              </option>
-            ))}
-          </select>
-          <div className="flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-gray-600" />
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
-            />
+      <div className="sticky top-0 z-20 bg-white shadow-md rounded-lg p-4 mb-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <h2 className="text-2xl font-bold text-gray-800">
+              Matrice Comenzi
+            </h2>
+            {isDayClosed && (
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-semibold">
+                  🔒 ZI ÎNCHISĂ
+                </span>
+                {currentUser.role === "admin" && (
+                  <button
+                    onClick={handleUnlockDay}
+                    className="px-3 py-1 bg-orange-100 text-orange-800 rounded-full text-sm font-semibold hover:bg-orange-200 transition"
+                  >
+                    🔓 Deschide Ziua
+                  </button>
+                )}
+              </div>
+            )}
           </div>
-          {editMode ? (
-            <div className="flex gap-2">
-              <button
-                onClick={handleSaveMatrix}
-                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2 text-sm transition"
-              >
-                <Save className="w-4 h-4" />
-                Salvează
-              </button>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <select
+              value={selectedAgent}
+              onChange={(e) => setSelectedAgent(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            >
+              <option value="all">Toți Agenții</option>
+              {agents.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.name}
+                </option>
+              ))}
+            </select>
+            <div className="flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-gray-600" />
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              />
+            </div>
+            {editMode ? (
+              <div className="flex gap-2">
+                <button
+                  onClick={handleSaveMatrix}
+                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2 text-sm transition"
+                >
+                  <Save className="w-4 h-4" />
+                  Salvează
+                </button>
+                <button
+                  onClick={() => {
+                    setEditMode(false);
+                    const dateOrders = orders.filter(
+                      (o) => o.date === selectedDate,
+                    );
+                    const matrix = {};
+                    agentClients.forEach((client) => {
+                      const order = dateOrders.find(
+                        (o) => o.clientId === client.id,
+                      );
+                      if (order) {
+                        matrix[client.id] = {
+                          paymentType: order.paymentType,
+                          dueDate: order.dueDate,
+                          quantities: {},
+                        };
+                        order.items.forEach((item) => {
+                          matrix[client.id].quantities[item.productId] =
+                            item.quantity;
+                        });
+                      } else {
+                        matrix[client.id] = {
+                          paymentType: "immediate",
+                          dueDate: null,
+                          quantities: {},
+                        };
+                      }
+                    });
+                    setMatrixData(matrix);
+                  }}
+                  className="bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 text-sm transition"
+                >
+                  Anulează
+                </button>
+              </div>
+            ) : (
               <button
                 onClick={() => {
-                  setEditMode(false);
-                  const dateOrders = orders.filter(
-                    (o) => o.date === selectedDate,
-                  );
-                  const matrix = {};
-                  agentClients.forEach((client) => {
-                    const order = dateOrders.find(
-                      (o) => o.clientId === client.id,
+                  if (!canEdit) {
+                    showMessage(
+                      "Ziua este închisă!  Doar administratorul poate deschide ziua. ",
+                      "error",
                     );
-                    if (order) {
-                      matrix[client.id] = {
-                        paymentType: order.paymentType,
-                        dueDate: order.dueDate,
-                        quantities: {},
-                      };
-                      order.items.forEach((item) => {
-                        matrix[client.id].quantities[item.productId] =
-                          item.quantity;
-                      });
-                    } else {
-                      matrix[client.id] = {
-                        paymentType: "immediate",
-                        dueDate: null,
-                        quantities: {},
-                      };
-                    }
-                  });
-                  setMatrixData(matrix);
+                    return;
+                  }
+                  setEditMode(true);
                 }}
-                className="bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 text-sm transition"
+                disabled={!canEdit}
+                className={`px-4 py-2 rounded-lg flex items-center gap-2 text-sm transition ${
+                  canEdit
+                    ? "bg-amber-600 text-white hover:bg-amber-700"
+                    : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                }`}
               >
-                Anulează
+                <Edit2 className="w-4 h-4" />
+                {canEdit ? "Editează" : "Blocat"}
               </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => {
-                if (!canEdit) {
-                  showMessage(
-                    "Ziua este închisă!  Doar administratorul poate deschide ziua. ",
-                    "error",
-                  );
-                  return;
-                }
-                setEditMode(true);
-              }}
-              disabled={!canEdit}
-              className={`px-4 py-2 rounded-lg flex items-center gap-2 text-sm transition ${
-                canEdit
-                  ? "bg-amber-600 text-white hover:bg-amber-700"
-                  : "bg-gray-300 text-gray-500 cursor-not-allowed"
-              }`}
-            >
-              <Edit2 className="w-4 h-4" />
-              {canEdit ? "Editează" : "Blocat"}
-            </button>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
@@ -389,8 +391,8 @@ const OrdersMatrixScreen = ({
               {products.map((p) => (
                 <th
                   key={p.id}
-                  className="px-3 py-2 text-center font-semibold"
-                  style={{ minWidth: "80px" }}
+                  className="px-1 py-2 text-center font-semibold"
+                  style={{ minWidth: "65px" }}
                 >
                   <div
                     style={{
@@ -514,7 +516,7 @@ const OrdersMatrixScreen = ({
                   {products.map((p) => {
                     const price = getClientProductPrice(client, p);
                     return (
-                      <td key={p.id} className="px-2 py-2 text-center">
+                      <td key={p.id} className="px-1 py-2 text-center">
                         {editMode && !isExported ? (
                           <div className="flex flex-col items-center gap-1">
                             <input
@@ -558,7 +560,7 @@ const OrdersMatrixScreen = ({
               {products.map((p) => (
                 <td
                   key={p.id}
-                  className="px-2 py-2 text-center font-semibold text-sm"
+                  className="px-1 py-2 text-center font-semibold text-sm"
                 >
                   {calculateProductTotal(p.id) || "-"}
                 </td>
