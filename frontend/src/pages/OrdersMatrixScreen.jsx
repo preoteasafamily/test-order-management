@@ -389,16 +389,16 @@ const OrdersMatrixScreen = ({
               {products.map((p) => (
                 <th
                   key={p.id}
-                  className="px-3 py-3 text-center font-semibold"
+                  className="px-3 py-2 text-center font-semibold"
                   style={{ minWidth: "80px" }}
                 >
                   <div
                     style={{
-                      height: "140px",
+                      height: "75px",
                       display: "flex",
                       alignItems: "flex-end",
                       justifyContent: "center",
-                      paddingBottom: "8px",
+                      paddingBottom: "4px",
                     }}
                   >
                     <div
@@ -406,7 +406,7 @@ const OrdersMatrixScreen = ({
                         writingMode: "vertical-rl",
                         textOrientation: "mixed",
                         transform: "rotate(180deg)",
-                        fontSize: "12px",
+                        fontSize: "11px",
                         fontWeight: "600",
                         whiteSpace: "nowrap",
                         overflow: "hidden",
@@ -419,7 +419,7 @@ const OrdersMatrixScreen = ({
                   </div>
                   <div
                     style={{
-                      fontSize: "11px",
+                      fontSize: "10px",
                       color: "#666",
                       fontWeight: "normal",
                       marginTop: "4px",
