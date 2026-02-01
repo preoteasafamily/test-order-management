@@ -236,7 +236,7 @@ const OrdersMatrixScreen = ({
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" style={{ marginRight: editMode ? "0" : "300px" }}>
       <div className="sticky top-0 z-20 bg-white shadow-md rounded-lg p-4 mb-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
@@ -259,7 +259,23 @@ const OrdersMatrixScreen = ({
               </div>
             )}
           </div>
-          <div className="flex flex-col sm:flex-row gap-3">
+        </div>
+      </div>
+
+      {/* Fixed Controls Container - Top Right */}
+      {!editMode && (
+        <div style={{
+          position: "fixed",
+          top: "60px",
+          right: "0",
+          width: "280px",
+          background: "white",
+          boxShadow: "-2px 0 8px rgba(0,0,0,0.1)",
+          zIndex: "100",
+          padding: "12px",
+          borderLeft: "1px solid #e5e7eb"
+        }}>
+          <div className="flex flex-col gap-3">
             <select
               value={selectedAgent}
               onChange={(e) => setSelectedAgent(e.target.value)}
@@ -278,80 +294,80 @@ const OrdersMatrixScreen = ({
                 type="date"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm w-full"
               />
             </div>
-            {editMode ? (
-              <div className="flex gap-2">
-                <button
-                  onClick={handleSaveMatrix}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2 text-sm transition"
-                >
-                  <Save className="w-4 h-4" />
-                  Salvează
-                </button>
-                <button
-                  onClick={() => {
-                    setEditMode(false);
-                    const dateOrders = orders.filter(
-                      (o) => o.date === selectedDate,
-                    );
-                    const matrix = {};
-                    agentClients.forEach((client) => {
-                      const order = dateOrders.find(
-                        (o) => o.clientId === client.id,
-                      );
-                      if (order) {
-                        matrix[client.id] = {
-                          paymentType: order.paymentType,
-                          dueDate: order.dueDate,
-                          quantities: {},
-                        };
-                        order.items.forEach((item) => {
-                          matrix[client.id].quantities[item.productId] =
-                            item.quantity;
-                        });
-                      } else {
-                        matrix[client.id] = {
-                          paymentType: "immediate",
-                          dueDate: null,
-                          quantities: {},
-                        };
-                      }
-                    });
-                    setMatrixData(matrix);
-                  }}
-                  className="bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 text-sm transition"
-                >
-                  Anulează
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => {
-                  if (!canEdit) {
-                    showMessage(
-                      "Ziua este închisă!  Doar administratorul poate deschide ziua. ",
-                      "error",
-                    );
-                    return;
-                  }
-                  setEditMode(true);
-                }}
-                disabled={!canEdit}
-                className={`px-4 py-2 rounded-lg flex items-center gap-2 text-sm transition ${
-                  canEdit
-                    ? "bg-amber-600 text-white hover:bg-amber-700"
-                    : "bg-gray-300 text-gray-500 cursor-not-allowed"
-                }`}
-              >
-                <Edit2 className="w-4 h-4" />
-                {canEdit ? "Editează" : "Blocat"}
-              </button>
-            )}
+            <button
+              onClick={() => {
+                if (!canEdit) {
+                  showMessage(
+                    "Ziua este închisă!  Doar administratorul poate deschide ziua. ",
+                    "error",
+                  );
+                  return;
+                }
+                setEditMode(true);
+              }}
+              disabled={!canEdit}
+              className={`px-4 py-2 rounded-lg flex items-center gap-2 text-sm transition justify-center ${
+                canEdit
+                  ? "bg-amber-600 text-white hover:bg-amber-700"
+                  : "bg-gray-300 text-gray-500 cursor-not-allowed"
+              }`}
+            >
+              <Edit2 className="w-4 h-4" />
+              {canEdit ? "Editează" : "Blocat"}
+            </button>
           </div>
         </div>
-      </div>
+      )}
+
+      {editMode && (
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={handleSaveMatrix}
+            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2 text-sm transition"
+          >
+            <Save className="w-4 h-4" />
+            Salvează
+          </button>
+          <button
+            onClick={() => {
+              setEditMode(false);
+              const dateOrders = orders.filter(
+                (o) => o.date === selectedDate,
+              );
+              const matrix = {};
+              agentClients.forEach((client) => {
+                const order = dateOrders.find(
+                  (o) => o.clientId === client.id,
+                );
+                if (order) {
+                  matrix[client.id] = {
+                    paymentType: order.paymentType,
+                    dueDate: order.dueDate,
+                    quantities: {},
+                  };
+                  order.items.forEach((item) => {
+                    matrix[client.id].quantities[item.productId] =
+                      item.quantity;
+                  });
+                } else {
+                  matrix[client.id] = {
+                    paymentType: "immediate",
+                    dueDate: null,
+                    quantities: {},
+                  };
+                }
+              });
+              setMatrixData(matrix);
+            }}
+            className="bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 text-sm transition"
+          >
+            Anulează
+          </button>
+        </div>
+      )}
 
       {isDayClosed && currentUser.role !== "admin" && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -377,43 +393,44 @@ const OrdersMatrixScreen = ({
         </div>
       )}
 
-      <div className="bg-white p-4 rounded-lg shadow overflow-x-auto">
+      <div className="bg-white p-4 rounded-lg shadow overflow-x-auto" style={{ marginBottom: "70px" }}>
         <table className="w-full text-sm">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-3 py-2 text-left font-semibold sticky left-0 bg-gray-50 z-10">
+              <th className="px-1 py-1 text-left font-semibold sticky left-0 bg-gray-50 z-10" style={{ minWidth: "180px", width: "180px", maxWidth: "180px" }}>
                 Client
               </th>
-              <th className="px-3 py-2 text-center font-semibold">Plată</th>
-              <th className="px-3 py-2 text-right font-semibold min-w-[100px]">
+              <th className="px-1 py-1 text-center font-semibold">Plată</th>
+              <th className="px-1 py-1 text-right font-semibold min-w-[100px]">
                 Total
               </th>
               {products.map((p) => (
                 <th
                   key={p.id}
-                  className="px-1 py-2 text-center font-semibold"
-                  style={{ minWidth: "65px" }}
+                  className="px-1 py-1 text-center font-semibold"
+                  style={{ minWidth: "60px" }}
                 >
                   <div
                     style={{
-                      height: "75px",
+                      height: "70px",
                       display: "flex",
-                      alignItems: "flex-end",
+                      alignItems: "center",
                       justifyContent: "center",
-                      paddingBottom: "4px",
                     }}
                   >
                     <div
                       style={{
-                        writingMode: "vertical-rl",
-                        textOrientation: "mixed",
-                        transform: "rotate(180deg)",
-                        fontSize: "11px",
-                        fontWeight: "600",
-                        whiteSpace: "nowrap",
+                        maxWidth: "55px",
+                        wordWrap: "break-word",
+                        fontSize: "10px",
+                        textAlign: "center",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
-                        maxWidth: "100%",
+                        whiteSpace: "normal",
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                        fontWeight: "600",
                       }}
                     >
                       {p.descriere}
@@ -447,9 +464,10 @@ const OrdersMatrixScreen = ({
                   }`}
                 >
                   <td
-                    className={`px-3 py-2 font-medium sticky left-0 z-10 ${
+                    className={`px-1 py-1 font-medium sticky left-0 z-10 ${
                       isExported ? "bg-green-50" : "bg-white"
                     }`}
+                    style={{ minWidth: "180px", width: "180px", maxWidth: "180px" }}
                   >
                     <div className="flex items-center gap-2">
                       <div>
@@ -470,7 +488,7 @@ const OrdersMatrixScreen = ({
                       )}
                     </div>
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-1 py-1">
                     {editMode && !isExported ? (
                       <div className="flex flex-col gap-1 items-center">
                         <select
@@ -510,13 +528,13 @@ const OrdersMatrixScreen = ({
                       </div>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right font-semibold text-sm">
+                  <td className="px-1 py-1 text-right font-semibold text-sm">
                     {total > 0 ? total.toFixed(2) : "-"}
                   </td>
                   {products.map((p) => {
                     const price = getClientProductPrice(client, p);
                     return (
-                      <td key={p.id} className="px-1 py-2 text-center">
+                      <td key={p.id} className="px-1 py-1 text-center">
                         {editMode && !isExported ? (
                           <div className="flex flex-col items-center gap-1">
                             <input
@@ -549,28 +567,48 @@ const OrdersMatrixScreen = ({
                 </tr>
               );
             })}
-            <tr className="border-t-2 border-gray-400 font-bold bg-amber-50">
-              <td className="px-3 py-2 sticky left-0 bg-amber-50 z-10 font-semibold">
-                TOTAL
-              </td>
-              <td className="px-3 py-2"></td>
-              <td className="px-3 py-2 text-right text-sm">
-                {totalValue.toFixed(2)}
-              </td>
-              {products.map((p) => (
-                <td
-                  key={p.id}
-                  className="px-1 py-2 text-center font-semibold text-sm"
-                >
-                  {calculateProductTotal(p.id) || "-"}
-                </td>
-              ))}
-            </tr>
           </tbody>
         </table>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Fixed TOTAL Row - Bottom */}
+      <div style={{
+        position: "fixed",
+        bottom: "0",
+        left: "0",
+        right: editMode ? "0" : "300px",
+        height: "50px",
+        background: "#fef3c7",
+        borderTop: "2px solid #9ca3af",
+        zIndex: "90",
+        display: "flex",
+        alignItems: "center",
+        paddingLeft: "16px",
+        paddingRight: "16px",
+        fontWeight: "bold",
+        overflow: "hidden"
+      }}>
+        <span style={{ minWidth: "180px", width: "180px", maxWidth: "180px" }}>TOTAL</span>
+        <span style={{ minWidth: "80px", textAlign: "center" }}></span>
+        <span style={{ minWidth: "100px", textAlign: "right", paddingRight: "8px" }}>
+          {totalValue.toFixed(2)}
+        </span>
+        {products.map((p) => (
+          <span
+            key={p.id}
+            style={{
+              minWidth: "60px",
+              maxWidth: "60px",
+              textAlign: "center",
+              fontSize: "14px"
+            }}
+          >
+            {calculateProductTotal(p.id) || "-"}
+          </span>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" style={{ marginBottom: "70px" }}>
         <div className="bg-white p-4 rounded-lg shadow">
           <p className="text-sm text-gray-600">Clienți Afișați</p>
           <p className="text-2xl font-bold text-gray-800">
