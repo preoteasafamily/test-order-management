@@ -1,0 +1,11 @@
+Funcționalitatea de urmărire GPS și hartă a agenților include:
+
+1. **Accesarea hărții**: Utilizatorii pot accesa harta din aplicație pentru a vizualiza locațiile agenților în timp real.
+2. **Vizualizarea locației agenților**: Locațiile agenților sunt marcate pe harta disponibilă, cu detalii vizibile pentru fiecare agent.
+3. **Actualizări în timp real**: Informațiile despre locațiile agenților sunt actualizate constant pentru a reflecta mișcările lor.
+4. **Istoricul mișcărilor**: Aplicația păstrează un istoric al mișcărilor agenților, permițând utilizatorilor să revizuiască rutele anterioare.
+5. **Timp petrecut la locație**: Aplicația măsoară și înregistrează timpul petrecut de agenți în diferite locații.
+6. **Controale de zoom și panoramare**: Utilizatorii pot face zoom și naviga prin hartă pentru a obține detalii precise ale zonei vizualizate.
+7. **Raporturi de vizitare**: Aplicația generează raporturi privind vizitele agenților la diverse locații, detaliind durata și activitățile derulate.
+8. **Analiza activității**: Funcționalitatea analizează datele de activitate ale agenților pentru a oferi statistici și procente de activitate.
+9. **Exportul datelor de urmărire**: Utilizatorii pot exporta datele de urmărire pentru utilizare ulterioară sau analiză externă.
