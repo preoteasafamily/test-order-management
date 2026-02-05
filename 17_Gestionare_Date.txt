@@ -1,0 +1,34 @@
+# Operațiuni de gestionare a datelor
+
+## Importul datelor din fișiere CSV și Excel
+1. Se definesc câmpurile în funcție de structura fișierului sursă.
+2. Se verifică dacă datele respectă formatul corespunzător (ex: corectitudinea tipului de date).
+
+## Validarea datelor în timpul importului
+- Implementarea unor reguli de validare care să asigure integritatea datelor.
+- Mesaje de eroare care să informeze utilizatorul despre discrepanțe.
+
+## Gestionarea erorilor
+- Rapoarte detaliate despre erori de import, incluzând:
+  - Tipul erorii
+  - Rândurile afectate
+
+## Tratarea duplicatelor
+- Compararea valorilor cheie pentru a identifica înregistrările duplicat.
+- Oferirea opțiunii de a le ignora sau de a le combina.
+
+## Exportul tuturor datelor
+- Posibilitatea de a exporta datele într-un fișier CSV sau Excel.
+
+## Export complet al bazei de date
+- Oferirea unui export al întregii baze de date pentru backup sau migrare.
+
+## Proceduri de curățare a datelor
+- Identificarea și ștergerea comenzilor mai vechi.
+- Curățarea datelor care nu mai sunt relevante.
+
+## Arhivarea datelor istorice
+- Oferirea opțiunii de a arhiva datele istorice pentru referințe ulterioare.
+
+## Verificarea stării de sincronizare
+- Monitorizarea statusului sincronizării bazelor de date între diferite surse de date
