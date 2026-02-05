@@ -1,0 +1,19 @@
+## Operațiuni pentru configurarea admin
+
+### Setarea datelor companiei
+- **CIF**: [introduceți CIF]
+- **Detalii bancare**: [introduceți detalii bancare]
+- **IBAN**: [introduceți IBAN]
+- **Adresă**: [introduceți adresă]
+
+### Gestionarea zonelor de preț
+- **ZONA_1**: [descriere]
+- **ZONA_2**: [descriere]
+- **ZONA_3**: [descriere]
+
+### Gestionarea depozitelor
+- [detalii despre gestionarea depozitelor]
+
+### Proceduri de backup și restaurare
+- **Crearea backup-ului manual**: [instrucțiuni pentru backup-ul manual]
+- **Programarea automată a backup-ului**: [instrucțiuni pentru programarea automată a backup-ului]
