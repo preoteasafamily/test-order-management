@@ -1,0 +1,37 @@
+# Operațiuni de Management al Utilizatorilor
+
+## Crearea de Utilizatori
+- **Utilizator nou**: Un utilizator poate fi creat cu cerințele de utilizator și parolă.
+- **Cerințe pentru numele de utilizator**: minim 5 caractere, maxim 20 de caractere, fără caractere speciale.
+- **Cerințe pentru parolă**: minim 8 caractere, cel puțin o literă mare, o literă mică, un număr și un caracter special.
+
+## Atribuirea Rolurilor
+- Roluri disponibile:
+  - **Birou**: Acces limitat la datele de bază.
+  - **Agent**: Poate crea și citi date, nu poate șterge.
+  - **Manager**: Poate crea, citi și actualiza date, poate șterge datele celorlalți utilizatori.
+  - **Admin**: Acces complet la toate funcții.
+
+## Editarea Detaliilor Utilizatorilor
+- Detalii precum numele, rolul și datele de contact ale utilizatorului pot fi modificate de către un Manager sau Admin.
+
+## Resetarea Parolelor
+- Utilizatorii pot solicita resetarea parolelor lor, care va necesita un cod de verificare.
+
+## Schimbarea Rolurilor
+- Numai Adminii pot schimba rolurile altor utilizatori.
+
+## Dezactivarea Conturilor
+- Utilizatorii pot fi dezactivați de Admini sau Manageri.
+
+## Matricea de Permisiuni
+| Rol    | Creare | Citire | Actualizare | Ștergere |
+|--------|--------|--------|-------------|----------|
+| Birou  | N   | Y   | N   | N      |
+| Agent  | Y   | Y   | N   | N      |
+| Manager| Y   | Y   | Y   | Y      |
+| Admin  | Y   | Y   | Y   | Y      |  
+
+---
+
+Acesta este un document de bază destinat studierii și implementării operațiunilor de management al utilizatorilor.
