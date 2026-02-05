@@ -1,0 +1,24 @@
+# Explicație completă a ecranului de vizualizare a comenzilor în matrice
+
+## 1. Vizualizarea grilei
+Ecranul de vizualizare a comenzilor în matrice afișează o grilă complexă, care permite utilizatorilor să vizualizeze comenzile într-o formă organizată și ușor de interpretat. Fiecare rând din matrice reprezintă o comandă, iar coloanele includ detalii relevante precum ID-ul comenzii, statusul, numele clientului și alte informații esențiale.
+
+## 2. Introducerea datelor în celulele matricei
+Utilizatorii pot introduce date direct în celulele matricei. Fiecare celulă este editabilă, iar după ce utilizatorul finalizase modificările, trebuie să apese pe tasta ENTER pentru a salva datele. Orice eroare de introducere va fi semnalizată printr-un mesaj de avertizare.
+
+## 3. Setarea tipului de plată pe rând
+Pentru a seta tipul de plată pentru fiecare rând, utilizatorii trebuie să selecteze opțiunea dorită dintr-un meniu derulant disponibil în celula corespunzătoare. Tipurile de plată disponibile pot include, de exemplu, card de credit, PayPal sau plată la livrare.
+
+## 4. Filtre pentru agenți și zone
+Utilizatorii pot utiliza filtrele pentru agenți și zone pentru a restrânge vizualizarea comenzilor. Aceste filtre pot fi activate dintr-un panou lateral, iar utilizatorii pot selecta agentul dorit sau zona geografică pentru a vizualiza doar comenzile care se încadrează în aceste criterii.
+
+## 5. Exportarea datelor din matrice
+Pentru a exporta datele din matrice, utilizatorii pot accesa butonul de export situat în partea de sus a ecranului. Datele pot fi exportate într-un format CSV sau Excel, facilitând astfel analiza ulterioară.
+
+## 6. Operațiuni în vrac
+Ecranul permite utilizatorilor să efectueze operațiuni în vrac asupra comenzilor. De exemplu, utilizatorii pot selecta mai multe rânduri și pot aplica același tip de modificare (precum schimbarea statusului) tuturor comenzilor selectate.
+
+## 7. Navigare cu tastatura
+Navigarea în matrice se poate realiza cu ușurință folosind tastatura. Utilizatorii pot folosi săgețile pentru a se deplasa între celule și pot activa editarea unei celule prin apăsarea tastei ENTER. De asemenea, combinațiile de taste rapide sunt disponibile pentru a accelera procesul de navigare și modificare a datelor.
+
+Această explicație detaliază principalele funcționalități ale ecranului de vizualizare a comenzilor în matrice, oferind utilizatorilor informațiile necesare pentru a utiliza eficient interfața.
