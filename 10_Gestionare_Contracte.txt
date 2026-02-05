@@ -1,0 +1,25 @@
+# Gestionare Contracte
+
+## 1. Crearea de noi contracte
+   - Accesați secțiunea de gestionare a contractelor din aplicație.
+   - Completați formularul cu informațiile necesare: numele clientului, tipul de contract, produsele incluse, prețurile și termenii.
+   - Apăsați butonul "Creare contract" pentru a salva informațiile.
+
+## 2. Selectarea clientului
+   - Din lista de clienți, selectați clientul dorit.
+   - Asigurați-vă că informațiile sunt actualizate și corecte înainte de a continua.
+
+## 3. Modificarea prețurilor produselor (exemple de discount)
+   - Preț normal: 1000 lei
+   - Discount de 10%: 900 lei (preț cu discount)
+   - Introduceți prețurile contractuale în formularul de creare a contractului.
+
+## 4. Editarea datelor și termenilor contractului
+   - Selectați contractul din lista de contracte.
+   - Faceți modificările necesare, cum ar fi data contractului, termenii și condițiile.
+   - Apăsați butonul "Salvare modificări" pentru a actualiza contractul.
+
+## 5. Vizualizarea istoricului contractului și a audit trail-ului
+   - Accesați secțiunea de istoric a contractelor.
+   - Puteți vizualiza toate modificările efectuate, inclusiv cine a făcut modificările și când.
+   - Aceasta oferă transparență și responsabilitate în gestionarea contractelor.
