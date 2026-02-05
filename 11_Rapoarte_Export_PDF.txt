@@ -1,0 +1,22 @@
+Funcționalitate raportare cu acces la diverse tipuri de rapoarte:
+
+1. **Tipuri de Rapoarte**:
+   - **Raport Vânzări Zilnice**: Acest raport oferă o imagine de ansamblu asupra vânzărilor realizate în fiecare zi.
+   - **Performanța Agenților**: Oferă detalii despre performanța agenților de vânzări, inclusiv numărul de vânzări efectuate și obiectivele atinse.
+   - **Analiza Produselor**: Prezintă performanța diferitelor produse, evidențiind cele mai vândute și cele care necesită atenție suplimentar��.
+   - **Analiza Clienților**: Oferă informații despre comportamentul clienților, inclusiv tendințe de cumpărare și feedback.
+
+2. **Cum să Citești Graficele și Graficele**:
+   - Graficele sunt o modalitate vizuală de a interpreta datele. Acestea pot include grafice de tip bară, linie sau pi pie. Este important să analizezi axele, legendă, și etichetele pentru a înțelege corect informațiile.
+
+3. **Interpretarea Metricilor**:
+   - Fiecare metric prezentat în rapoarte are o semnificație specifică. Este important să înțelegi ce înseamnă fiecare pentru a lua decizii informate. De exemplu, o creștere a vânzărilor poate indica o campanie de marketing de succes.
+
+4. **Exportarea în PDF**:
+   - Rapoartele pot fi exportate în format PDF pentru a fi partajate ușor. Aceasta asigură că formatul și aranjamentul datelor rămân intacte.
+
+5. **Numele Fișierului**:
+   - La exportul rapoartelor, este important să folosești un sistem de denumire clar, care să includă data și tipul raportului. De exemplu: `Raport_Vanzari_Zilnice_2026-02-05.pdf`.
+
+6. **Optimizarea pentru Printare**:
+   - Asigură-te că rapoartele sunt optimizate pentru printare, inclusiv utilizarea unui font lizibil, alegerea culorilor care imită stilul printat și o margine adecvată.
