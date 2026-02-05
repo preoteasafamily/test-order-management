@@ -1,0 +1,209 @@
+# CAPITOLUL 1 - INTRODUCERE ȘI PREZENTARE GENERALĂ
+
+## 1.1 CE ESTE ACEASTĂ APLICAȚIE?
+
+Aplicația de Gestionare a Comenzilor este o soluție web modernă și integrată care permite unei echipe de vânzări să gestioneze eficient întregul proces de vânzare, de la contactul inițial cu clientul până la finalizarea comenzii și emiterea facturii. Aceasta a fost dezvoltată pentru a automatiza și simplifica procesele repetitive, pentru a reduce erorile manuale și pentru a oferi o vizibilitate în timp real asupra activității de vânzare.
+
+Indiferent dacă sunteți manager care dorește să supravegheze performanța echipei, agent de vânzări care ia comenzi pe teren, sau personal de birou care procesează datele, această aplicație vă oferă instrumentele necesare pentru a lucra eficient și productiv.
+
+Scopul principal: VÂNZĂRI RAPIDE + DATE CORECTE + RAPOARTE INSTANTANEE
+
+## 1.2 PENTRU CINE ESTE DESTINATĂ?
+
+Această aplicație este concepută pentru mai multe categorii de utilizatori:
+
+### MANAGERI (Conducători de echipă)
+Persoanele care conduc echipa de vânzări și au nevoie de vizibilitate asupra comenzilor zilnice, raporturilor, și performanței agenților. Prin intermediul dashboard-ului și raporturilor, managerii pot lua decizii rapide și informate. Pentru manager, aplicația e o "sală de control" - vede totul în timp real.
+
+Exemplu: Manager se loghează luni dimineață. Vede imediat: "15 comenzi azi, 50.000 RON, agentul Ioan e pe locul 1 cu 20.000 RON!"
+
+### AGENȚI DE VÂNZĂRI (Oamenii pe teren)
+Persoanele care lucrează pe teren, vizitează clienți și iau comenzi. Pentru ei, aplicația oferă o interfață mobilă și rapidă care le permite să introducă comenzi chiar de la birou clientului, fără a pierde timp cu documentație manuală. Agentul nu trebuie să țină caiete cu comenzi - totul e digital.
+
+Exemplu: Agent Ioan merge la client "ABC Distribuit". Deschide telefonul, selectează clientul, adaugă 10 buc Produsul X, 5 buc Produsul Y, apasă SALVARE - gata! Comanda e în sistem instantaneu.
+
+### PERSONAL BIROU (Asistență administrativă)
+Echipa care lucrează în sediul companiei și are rolul de a valida comenzile, de a completa informații suplimentare, și de a genera rapoarte și facturile. Aceștia au acces la toate funcțiile și pot modifica date în caz de erori. Pentru ei, aplicația e o "masă de lucru" unde procesează comenzile din teren.
+
+Exemplu: Personal Birou primește o comandă de la agent. O verifică: "CIF corect? Cantitate OK? Preț corect?" Apoi o aprobă și o trimite spre factură.
+
+### ADMINISTRATORI (IT / Sistem)
+Persoanele responsabile cu configurarea sistemului, crearea utilizatorilor, gestionarea permisiunilor și backup-urilor. Aceștia au acces deplin la toate funcțiile administrative și pot crea/edita orice. Pentru admin, aplicația e o "cutie de unelte" unde poate configura totul.
+
+Exemplu: Admin crează un nou utilizator - Ion Popescu. I-o dă username "ionpopescu", parolă temporară "Temp123!", și rol "Agent". Ion se loghează, schimbă parola, și-și începe ziua.
+
+## 1.3 CARACTERISTICI PRINCIPALE ALE APLICAȚIEI
+
+Aplicația oferă următoarele caracteristici cheie:
+
+### ✓ GESTIONARE COMPLETĂ A CLIENȚILOR
+Stocați și gestionați baza de date cu toți clienții. Pentru fiecare client puteți salva:
+- Nume (denominația socială)
+- CIF (Cod de Identificare Fiscală)
+- Adresă (locație pentru vizite)
+- Contact (telefon și email)
+- Zonă de preț alocată (pentru prețuri diferențiate)
+- Agent responsabil (cine o supraveghează)
+- Status (activ, inactiv, suspendat)
+- Note speciale (preferințe, restricții)
+
+Sistemul permite căutare și filtrare rapidă a clienților. Puteți căuta după nume, CIF, sau agent. De exemplu: "Arată-mi toți clienții din ZONA_1 cu agent Ioan".
+
+### ✓ CATALOG PRODUSE CU PREȚURI DIFERENȚIATE
+Definiți un catalog complet de produse cu:
+- Cod furnizor (identificator unic)
+- Descriere (ce e produsul)
+- Unitate de măsură (BUC, KG, L, M, M2, M3)
+- Gestiune/magazin (unde e stocat)
+- TVA (9%, 11%, 19%)
+- PREȚURI DIFERITE PER ZONĂ
+
+Aceasta permite ca fiecare client să aibă prețuri customizate în funcție de zona lor. Exemplu:
+- Produsul X în ZONA_1 = 100 RON net
+- Produsul X în ZONA_2 = 120 RON net
+- Produsul X în ZONA_3 = 90 RON net (preț mai mic pentru zone rurale)
+
+### ✓ CREARE RAPIDĂ DE COMENZI
+Doi moduri diferite pentru a lua comenzi:
+- AGENT SCREEN: Interfață simplă și rapidă pentru agenți pe teren, accesibilă pe telefon
+- MATRIX SCREEN: Vizualizare în grilă pentru introducere în bulk și comparare între clienți
+
+Ambele moduri calculează automat prețurile și TVA-ul.
+
+### ✓ GESTIONARE CONTRACTE
+Pentru clienți speciali, creați contracte cu prețuri special negociate pe produse individuale. Aceasta permite flexibilitate în negocieri. Exemplu: Client ABC negociază o reducere de 20% la Produsul X. Se creează contract cu preț special: 100 RON → 80 RON.
+
+### ✓ RAPOARTE DETALIATE
+Generați rapoarte zilnice, săptămânale sau lunare care includ:
+- Vânzări pe agent (cine a vândut ce)
+- Vânzări pe produs (care produs se vinde mai bine)
+- Top agenți (ranking)
+- Analiză pe client (care client e cel mai profitabil)
+- Export în format PDF pentru prezentări
+
+### ✓ EXPORT AUTOMATIZAT
+Exportați direct comenzile în format XML pentru facturi și bonuri fiscale, integrate cu sistemele de contabilitate și cassa. Aceasta elimină re-intrarea manuală a datelor.
+
+### ✓ TRACKING GPS ÎN TIMP REAL
+Hartă interactivă care arată locațiile actuale ale agenților, cu históric de mișcare și rapoarte de timp petrecut pe teren. Manager poate vedea unde-i fiecare agent și cât timp petrece la fiecare client.
+
+### ✓ SINCRONIZARE ȘI BACKUP
+Date sincronizate automat în cloud, cu backup zilnic pentru a nu pierde niciodată informații importante. Dacă serverul cade, datele sunt sigure pe backup.
+
+### ✓ CONTROL ROL-BAZAT
+Fiecare utilizator are un rol (birou, agent, admin, manager) cu permisiuni specifice care determină ce poate vedea și modifica. Un agent nu poate vedea clienți altui agent. Un birou nu poate crea utilizatori.
+
+## 1.4 BENEFICII PRACTICE
+
+### Pentru Manager:
+✓ Vede în timp real câte comenzi și care valoare
+✓ Poate urmări performanța fiecărui agent
+✓ Generează rapoarte instant pentru prezentări
+✓ Ia decizii bazate pe date reale, nu pe "cred că"
+✓ Reduce erorile și pierderea datelor
+
+### Pentru Agent:
+✓ Nu mai ține caiete cu comenzi
+✓ Comenzi se salvează instant și sigur
+✓ Știe prețurile corecte pentru fiecare client
+✓ Nu trebuie să reintre date la birou
+✓ Lucrul e mai ușor și mai rapid
+
+### Pentru Personal Birou:
+✓ Comenzile vin automat din teren
+✓ Validate și corecte (nu mai trebuie să verifice)
+✓ Facturile se generează in 2 clicuri
+✓ Export automat la contabilitate
+✓ Reducere masivă de timp manual
+
+### Pentru Admin:
+✓ Control deplin asupra sistemului
+✓ Creează utilizatori și seturi permisiuni
+✓ Backup automat zilnic
+✓ Rapoarte de activitate și audit trail
+✓ Configurare flexibilă
+
+## 1.5 FLUXUL GENERAL AL UNEI COMENZI
+
+Iată cum merge o comandă prin sistem de la început la sfârșit:
+
+1. **AGENT PE TEREN** - Agent Ioan merge la client "ABC Distribuit"
+2. **INTRODUC COMANDA** - Deschide telefon, selectează clientul, adaugă produse
+3. **SALVARE** - Apasă SALVARE, comanda merge pe server
+4. **DASHBOARD UPDATE** - Managerul vede imediat: +1 comandă, +1200 RON
+5. **PERSONAL BIROU VEDE** - Comanda apare în lista pentru procesare
+6. **VALIDARE** - Birou verifică: date corecte, cantitate OK, preț OK
+7. **APROBĂ** - Apasă APROBĂ, comanda merge spre factură
+8. **EXPORT XML** - Sistemul exportă comanda în format XML pentru factură
+9. **CONTABILITATE** - Facturile se primesc în cont automat
+10. **RAPOARTE** - Manager vede la sfârșit de zi: "125 comenzi, 500.000 RON!"
+
+## 1.6 CINE VORBEȘTE ȘI PENTRU CINE?
+
+Acest manual a fost creat pentru utilizatori noi sau care nu sunt familiarizați cu aplicația. Îți va ghida pas cu pas prin fiecare funcție, cu explicații detaliate și exemple practice. 
+
+NU presupunem cunoștințe prealabile - vom explica totul clar și ușor de înțeles, de la bază.
+
+Indiferent dacă ești manager, agent, birou, sau admin, vei găsi în manual instrucțiuni detaliate pentru rolul tău specific.
+
+## 1.7 STRUCTURA MANUALULUI
+
+Manualul conține 18 capitole:
+
+1. Introducere și Prezentare Generală (ACEST CAPITOL)
+2. Cerințe de Sistem
+3. Autentificare și Login
+4. Roluri și Permisiuni
+5. Dashboard
+6. Gestionarea Clienților
+7. Gestionarea Produselor
+8. Comenzi - Ecran Agent
+9. Comenzi - Ecran Matrice
+10. Gestionarea Contractelor
+11. Rapoarte și Export PDF
+12. Export XML - Facturi și Bonuri
+13. Configurare (Admin)
+14. Manager de Agenți
+15. Manager de Utilizatori
+16. Hartă Agenți - GPS Tracking
+17. Gestionare Date - Import/Export
+18. Depanare și Întrebări Frecvente
+
+Fiecare capitol are:
+- Explicații detaliate
+- Pas cu pas pentru fiecare operație
+- Exemple concrete
+- Screenshot descriptions (locuri unde pun imagini)
+- Validări și reguli
+- Troubleshooting
+
+Citeștele în ordine pentru o înțelegere completă, sau sari direct la capitolul care te interesează.
+
+## 1.8 ICONURI ȘI SIMBOLURI FOLOSITE ÎN MANUAL
+
+Pe parcursul manualului veți vedea:
+
+💡 TIP - Sfat util pentru lucru mai eficient
+⚠️ AVERTISMENT - Ceva ce nu trebuie să faceți (risc de eroare)
+✓ BEST PRACTICE - Modul corect de a face ceva
+❌ NU FACEȚI - Greșeli comune
+🖼️ IMAGINE - Descriere locului unde merge screenshot
+📝 EXEMPLU - Caz concret cu numere reale
+🔢 FORMULA - Calcul matematic detaliat
+✅ GATA - Operație completă cu succes
+🔄 ITERATIV - Repetă pașii pentru mai multe cazuri
+
+## 1.9 ÎNAINTE SĂ ÎNCEPEȚI
+
+Asigurați-vă că:
+✓ Aveți acces la aplicație (datele de conectare)
+✓ Aveți un browser modern (Chrome, Firefox, Edge, Safari)
+✓ Aveți conexiune la internet
+✓ Aveți timp să citiți cu atenție (nu-i greu, dar e important)
+✓ Aveți o masă de lucru liniștit (nu pe standul muncii)
+
+Dacă nu sunteți sigur de ceva, citiți din nou - e mai bine să înțelegeți bine decât să faceți greșeli.
+
+---
+
+**CAPITOLUL URMĂTOR: Cerințe de Sistem**
