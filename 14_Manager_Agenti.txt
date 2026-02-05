@@ -1,0 +1,31 @@
+Operations de gestion a agenților:
+
+1. **Adăugarea Agenților:**
+   - Cod agent
+   - Nume agent
+   - Atribuirea contului utilizatorului
+
+2. **Atribuirea Zonelor și Teritoriilor:**
+   - Atribuirea de zone către agenți
+   - Definirea teritoriilor de activitate
+
+3. **Stabilirea Ratelor de Comision:**
+   - Definirea ratelor de comision pentru agenți
+   - Ajustări în funcție de performanță
+
+4. **Editarea Detaliilor Agenților:**
+   - Actualizarea informațiilor personale
+   - Modificarea contului utilizatorului
+
+5. **Ștergerea/Arhivarea Agenților:**
+   - Ștergerea agenților care nu mai activează
+   - Arhivarea informațiilor agenților vechi
+
+6. **Reatribuirrea Clienților:**
+   - Reatribuirea clienților către alți agenți
+
+7. **Permisiuni pentru Agenți:**
+   - Stabilirea permisiunilor specifice pentru agenți
+
+8. **Reguli de Atribuire a Clienților:**
+   - Definirea regulilor pentru alocarea clienților agenților.
