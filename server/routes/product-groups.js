@@ -29,8 +29,8 @@ router.post('/', (req, res) => {
         return res.status(400).json({ error: 'At least one product is required' });
     }
     
-    if (typeof newGroup.price !== 'number' || newGroup.price < 0) {
-        return res.status(400).json({ error: 'Valid price is required' });
+    if (typeof newGroup.price !== 'number' || newGroup.price <= 0) {
+        return res.status(400).json({ error: 'Valid price greater than 0 is required' });
     }
     
     if (typeof newGroup.cotaTVA !== 'number' || newGroup.cotaTVA < 0) {
@@ -67,8 +67,8 @@ router.put('/:id', (req, res) => {
         return res.status(400).json({ error: 'At least one product is required' });
     }
     
-    if (typeof updatedGroup.price !== 'number' || updatedGroup.price < 0) {
-        return res.status(400).json({ error: 'Valid price is required' });
+    if (typeof updatedGroup.price !== 'number' || updatedGroup.price <= 0) {
+        return res.status(400).json({ error: 'Valid price greater than 0 is required' });
     }
     
     if (typeof updatedGroup.cotaTVA !== 'number' || updatedGroup.cotaTVA < 0) {

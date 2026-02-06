@@ -11,6 +11,8 @@ const hasCerts = fs.existsSync(certKeyPath) && fs.existsSync(certPath);
 export default defineConfig({
   plugins: [react()],
   server: {
+    // HTTPS is optional - only used when certificates are available
+    // For local development, HTTP is used by default
     https: hasCerts ? {
       key: fs.readFileSync(certKeyPath),
       cert: fs.readFileSync(certPath)
