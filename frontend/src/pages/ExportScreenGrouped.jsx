@@ -27,6 +27,11 @@ const ExportScreenGrouped = ({
   const [editingGroup, setEditingGroup] = useState(null);
   const [masterProductId, setMasterProductId] = useState("");
 
+  // Memoize master product for efficient lookups
+  const masterProduct = masterProductId 
+    ? products.find((p) => p.id === masterProductId)
+    : null;
+
   // Load product groups from API
   useEffect(() => {
     loadProductGroups();
@@ -110,14 +115,8 @@ const ExportScreenGrouped = ({
 
   // Save product group
   const handleSaveGroup = async () => {
-    if (!masterProductId) {
+    if (!masterProductId || !masterProduct) {
       showMessage("Selectați un produs master pentru grupare!", "error");
-      return;
-    }
-
-    const masterProduct = products.find((p) => p.id === masterProductId);
-    if (!masterProduct) {
-      showMessage("Produsul master nu a fost găsit!", "error");
       return;
     }
 
@@ -671,7 +670,7 @@ const ExportScreenGrouped = ({
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Se va genera automat: "Group - {masterProductId ? products.find(p => p.id === masterProductId)?.codArticolFurnizor || "COD" : "COD"}"
+                  Se va genera automat: "Group - {masterProduct?.codArticolFurnizor || "COD"}"
                 </p>
               </div>
 
@@ -694,9 +693,9 @@ const ExportScreenGrouped = ({
                     </option>
                   ))}
                 </select>
-                {masterProductId && (
+                {masterProduct && (
                   <p className="text-sm text-green-600 mt-2">
-                    ✓ Nume grupare: Group - {products.find(p => p.id === masterProductId)?.codArticolFurnizor}
+                    ✓ Nume grupare: Group - {masterProduct.codArticolFurnizor}
                   </p>
                 )}
               </div>
