@@ -39,14 +39,16 @@ router.post('/', (req, res) => {
     
     try {
         const stmt = db.prepare(
-            `INSERT INTO product_groups (id, name, productIds, price, cotaTVA) VALUES (?, ?, ?, ?, ?)`
+            `INSERT INTO product_groups (id, name, productIds, price, cotaTVA, masterProductId, masterProductCode) VALUES (?, ?, ?, ?, ?, ?, ?)`
         );
         stmt.run(
             newGroup.id,
             newGroup.name,
             JSON.stringify(newGroup.productIds),
             newGroup.price,
-            newGroup.cotaTVA
+            newGroup.cotaTVA,
+            newGroup.masterProductId || null,
+            newGroup.masterProductCode || null
         );
         res.status(201).json(newGroup);
     } catch (err) {
@@ -77,13 +79,15 @@ router.put('/:id', (req, res) => {
     
     try {
         const stmt = db.prepare(
-            `UPDATE product_groups SET name = ?, productIds = ?, price = ?, cotaTVA = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`
+            `UPDATE product_groups SET name = ?, productIds = ?, price = ?, cotaTVA = ?, masterProductId = ?, masterProductCode = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`
         );
         const result = stmt.run(
             updatedGroup.name,
             JSON.stringify(updatedGroup.productIds),
             updatedGroup.price,
             updatedGroup.cotaTVA,
+            updatedGroup.masterProductId || null,
+            updatedGroup.masterProductCode || null,
             id
         );
         

@@ -60,6 +60,31 @@ const migrateClientsTable = () => {
   }
 };
 
+// Check if we need to add master product columns to product_groups table
+const migrateProductGroupsTable = () => {
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(product_groups)").all();
+    
+    if (tableInfo.length > 0) {
+      const hasMasterProduct = tableInfo.some(col => col.name === 'masterProductId');
+      
+      if (!hasMasterProduct) {
+        console.log('Adding master product columns to product_groups table...');
+        
+        // Add new columns for master product selection
+        db.exec(`
+          ALTER TABLE product_groups ADD COLUMN masterProductId TEXT;
+          ALTER TABLE product_groups ADD COLUMN masterProductCode TEXT;
+        `);
+        
+        console.log('✅ Product groups table migrated successfully. Master product columns added.');
+      }
+    }
+  } catch (err) {
+    console.error('Error checking product_groups table:', err);
+  }
+};
+
 // Migrate before creating tables
 migrateOrdersTable();
 
@@ -245,6 +270,7 @@ createTables();
 
 // Run migrations after tables are created
 migrateClientsTable();
+migrateProductGroupsTable();
 
 // Create default admin user if needed
 createDefaultAdminUser();
