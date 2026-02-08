@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Calendar, Save, MinusCircle, PlusCircle } from "lucide-react";
+import { Calendar, Save, MinusCircle, PlusCircle, Trash2 } from "lucide-react";
 
 const OrdersAgentScreen = ({
   orders,
@@ -18,6 +18,9 @@ const OrdersAgentScreen = ({
   getClientProductPrice,
   isClientActive,
   API_URL,
+  createOrder,
+  updateOrder,
+  deleteOrder,
 }) => {
   const isDayClosed = dayStatus[selectedDate]?.productionExported || false;
   const [searchTerm, setSearchTerm] = useState("");
@@ -146,8 +149,13 @@ const OrdersAgentScreen = ({
       totalTVA += tva;
     });
 
-    const newOrder = {
-      id: `order-${Date.now()}-${selectedClient.id}`,
+    // Check if order already exists for this client and date
+    const existingOrder = orders.find(
+      (o) => o.date === selectedDate && o.clientId === selectedClient.id,
+    );
+
+    const orderData = {
+      id: existingOrder?.id || `order-${Date.now()}-${selectedClient.id}`,
       date: selectedDate,
       clientId: selectedClient.id,
       agentId: currentUser.agentId,
@@ -157,15 +165,9 @@ const OrdersAgentScreen = ({
       total,
       totalTVA,
       totalWithVAT: total + totalTVA,
-      invoiceExported: false,
-      receiptExported: false,
+      invoiceExported: existingOrder?.invoiceExported || false,
+      receiptExported: existingOrder?.receiptExported || false,
     };
-
-    const otherOrders = orders.filter(
-      (o) => !(o.date === selectedDate && o.clientId === selectedClient.id),
-    );
-
-    const allOrders = [...otherOrders, newOrder];
 
     // ✅ LOGICA:  Check dacă e prima comandă a acestei zile
     const ordersBeforeToday = orders.filter((o) => o.date === selectedDate);
@@ -174,7 +176,7 @@ const OrdersAgentScreen = ({
     let updatedCompany = company;
 
     // ✅ Dacă e prima comandă a zilei ȘI e o zi nouă, incrementează LOT
-    if (isFirstOrderOfDay) {
+    if (isFirstOrderOfDay && !existingOrder) {
       const lastLotDate = company.lotDate;
       const today = selectedDate;
 
@@ -198,11 +200,16 @@ const OrdersAgentScreen = ({
       }
     }
 
-    const success = await saveData("orders", allOrders);
-
-    if (success) {
-      setOrders(allOrders);
-      showMessage("Comandă salvată cu succes!");
+    try {
+      if (existingOrder) {
+        await updateOrder(existingOrder.id, orderData);
+        showMessage("Comandă actualizată cu succes!");
+      } else {
+        await createOrder(orderData);
+        showMessage("Comandă salvată cu succes!");
+      }
+    } catch (error) {
+      showMessage(`Eroare: ${error.message}`, "error");
     }
   };
 
@@ -214,6 +221,37 @@ const OrdersAgentScreen = ({
       items: [],
     });
   };
+
+  const handleDeleteOrder = async () => {
+    if (!selectedClient) return;
+
+    const existingOrder = orders.find(
+      (o) => o.clientId === selectedClient.id && o.date === selectedDate,
+    );
+
+    if (!existingOrder) {
+      showMessage("Nu există comandă de șters!", "error");
+      return;
+    }
+
+    if (existingOrder.invoiceExported) {
+      showMessage("Nu se poate șterge o comandă exportată!", "error");
+      return;
+    }
+
+    if (!window.confirm("Sigur doriți să ștergeți această comandă?")) {
+      return;
+    }
+
+    try {
+      await deleteOrder(existingOrder.id);
+      showMessage("Comandă ștearsă cu succes!");
+      handleBack();
+    } catch (error) {
+      showMessage(`Eroare: ${error.message}`, "error");
+    }
+  };
+
   const getOrderStatus = () => {
     if (!selectedClient) return { isExported: false, isDisabled: false };
 
@@ -340,6 +378,21 @@ const OrdersAgentScreen = ({
               </span>
             )}
           </div>
+          {/* Delete button - only show if order exists and is not exported */}
+          {orders.find(
+            (o) => o.clientId === selectedClient.id && o.date === selectedDate,
+          ) && !isExported && (
+            <button
+              onClick={handleDeleteOrder}
+              disabled={isDisabled}
+              className={`p-2 hover:bg-red-100 rounded-lg min-w-[44px] min-h-[44px] flex items-center justify-center text-red-600 ${
+                isDisabled ? "opacity-50 cursor-not-allowed" : ""
+              }`}
+              title="Șterge comanda"
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+          )}
         </div>
         
         {/* Payment Type Selection - Mobile Optimized */}
