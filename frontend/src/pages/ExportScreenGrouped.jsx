@@ -15,6 +15,9 @@ const ExportScreenGrouped = ({
   saveData,
   API_URL,
 }) => {
+  // Constants
+  const PLACEHOLDER_SELECT_MASTER = "Selectați mai întâi un produs master";
+
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0],
   );
@@ -659,7 +662,7 @@ const ExportScreenGrouped = ({
                   Nume Grupare
                 </label>
                 <div className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-700">
-                  {masterProduct?.descriere || "Selectați mai întâi un produs master"}
+                  {masterProduct?.descriere || PLACEHOLDER_SELECT_MASTER}
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
                   Auto-generat din descrierea produsului master
@@ -671,7 +674,7 @@ const ExportScreenGrouped = ({
                   Cod Grupare
                 </label>
                 <div className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-700">
-                  {masterProduct?.codArticolFurnizor || "Selectați mai întâi un produs master"}
+                  {masterProduct?.codArticolFurnizor || PLACEHOLDER_SELECT_MASTER}
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
                   Auto-generat din codul produsului master
