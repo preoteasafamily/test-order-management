@@ -62,7 +62,7 @@ const App = () => {
   // ✅ API-aware Storage - uses API for clients/products, localStorage for others
   const loadData = async (key) => {
     try {
-      // Use API for clients, products, agents, users, and zones
+      // Use API for clients, products, agents, users, zones, orders, and productGroups
       if (key === "clients") {
         const response = await fetch(`${API_URL}/api/clients`);
         if (response.ok) {
@@ -114,6 +114,15 @@ const App = () => {
         );
         const result = localStorage.getItem(key);
         return result ? JSON.parse(result) : null;
+      } else if (key === "orders") {
+        const response = await fetch(`${API_URL}/api/orders`);
+        if (response.ok) {
+          return await response.json();
+        }
+        console.warn(
+          "API not available for orders, returning empty array",
+        );
+        return [];
       } else if (key === "productGroups") {
         const response = await fetch(`${API_URL}/api/product-groups`);
         if (response.ok) {
@@ -131,6 +140,10 @@ const App = () => {
       }
     } catch (error) {
       console.error(`Error loading ${key}:`, error);
+      if (key === "orders") {
+        // For orders, don't fall back to localStorage - return empty array
+        return [];
+      }
       const result = localStorage.getItem(key);
       return result ? JSON.parse(result) : null;
     }
@@ -138,6 +151,12 @@ const App = () => {
 
   const saveData = async (key, data) => {
     try {
+      // Don't save orders to localStorage - they are managed via API
+      if (key === "orders") {
+        console.warn("Orders should not be saved via saveData - use createOrder/updateOrder API instead");
+        return false;
+      }
+      
       // Use API for clients and products
       if (key === "clients") {
         // For clients, we need to handle both create and update operations
@@ -256,6 +275,80 @@ const App = () => {
       throw new Error("Failed to delete product");
     } catch (error) {
       console.error("Error deleting product:", error);
+      throw error;
+    }
+  };
+
+  // API helper functions for orders
+  const getOrders = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/orders`);
+      if (response.ok) {
+        return await response.json();
+      }
+      throw new Error("Failed to get orders");
+    } catch (error) {
+      console.error("Error getting orders:", error);
+      throw error;
+    }
+  };
+
+  const createOrder = async (order) => {
+    try {
+      const response = await fetch(`${API_URL}/api/orders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(order),
+      });
+      if (response.ok) {
+        const newOrder = await response.json();
+        // Update local state
+        setOrders((prev) => [...prev, newOrder]);
+        return newOrder;
+      }
+      const error = await response.json();
+      throw new Error(error.error || "Failed to create order");
+    } catch (error) {
+      console.error("Error creating order:", error);
+      throw error;
+    }
+  };
+
+  const updateOrder = async (id, order) => {
+    try {
+      const response = await fetch(`${API_URL}/api/orders/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(order),
+      });
+      if (response.ok) {
+        const updatedOrder = await response.json();
+        // Update local state
+        setOrders((prev) => prev.map((o) => (o.id === id ? updatedOrder : o)));
+        return updatedOrder;
+      }
+      const error = await response.json();
+      throw new Error(error.error || "Failed to update order");
+    } catch (error) {
+      console.error("Error updating order:", error);
+      throw error;
+    }
+  };
+
+  const deleteOrder = async (id) => {
+    try {
+      const response = await fetch(`${API_URL}/api/orders/${id}`, {
+        method: "DELETE",
+      });
+      if (response.ok) {
+        // Update local state
+        setOrders((prev) => prev.filter((o) => o.id !== id));
+        return { success: true };
+      }
+      const error = await response.json();
+      throw new Error(error.error || "Failed to delete order");
+    } catch (error) {
+      console.error("Error deleting order:", error);
       throw error;
     }
   };
@@ -1056,6 +1149,9 @@ const App = () => {
             getClientProductPrice={getClientProductPrice}
             isClientActive={isClientActive}
             API_URL={API_URL}
+            createOrder={createOrder}
+            updateOrder={updateOrder}
+            deleteOrder={deleteOrder}
           />
         );
       case "orders-matrix":
@@ -1079,6 +1175,9 @@ const App = () => {
             isClientActive={isClientActive}
             editMode={editMode}
             setEditMode={setEditMode}
+            createOrder={createOrder}
+            updateOrder={updateOrder}
+            deleteOrder={deleteOrder}
           />
         );
       case "reports":
