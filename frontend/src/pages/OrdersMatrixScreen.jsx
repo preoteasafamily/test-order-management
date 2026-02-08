@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Calendar, Save, Edit2 } from "lucide-react";
+import { Calendar, Save, Edit2, Trash2 } from "lucide-react";
 
 const OrdersMatrixScreen = ({
   orders,
@@ -20,6 +20,9 @@ const OrdersMatrixScreen = ({
   isClientActive,
   editMode,
   setEditMode: setEditModeFromApp,
+  createOrder,
+  updateOrder,
+  deleteOrder,
 }) => {
   const isDayClosed = dayStatus[selectedDate]?.productionExported || false;
 
@@ -167,8 +170,13 @@ const OrdersMatrixScreen = ({
           }
         });
 
+        // Check if order already exists for this client and date
+        const existingOrder = orders.find(
+          (o) => o.date === selectedDate && o.clientId === clientId,
+        );
+
         newOrders.push({
-          id: `order-${Date.now()}-${clientId}`,
+          id: existingOrder?.id || `order-${Date.now()}-${clientId}`,
           date: selectedDate,
           clientId,
           agentId: client.agentId,
@@ -178,26 +186,54 @@ const OrdersMatrixScreen = ({
           total,
           totalTVA,
           totalWithVAT: total + totalTVA,
-          invoiceExported: false,
-          receiptExported: false,
+          invoiceExported: existingOrder?.invoiceExported || false,
+          receiptExported: existingOrder?.receiptExported || false,
+          isExisting: !!existingOrder,
         });
       }
     });
 
-    const agentIds =
-      selectedAgent === "all" ? agents.map((a) => a.id) : [selectedAgent];
+    try {
+      // Process each order with API
+      for (const order of newOrders) {
+        if (order.isExisting) {
+          await updateOrder(order.id, order);
+        } else {
+          await createOrder(order);
+        }
+      }
 
-    const otherOrders = orders.filter(
-      (o) => !(o.date === selectedDate && agentIds.includes(o.agentId)),
-    );
-
-    const allOrders = [...otherOrders, ...newOrders];
-    const success = await saveData("orders", allOrders);
-
-    if (success) {
-      setOrders(allOrders);
       setEditModeFromApp(false);
       showMessage(`Salvate ${newOrders.length} comenzi cu succes!`);
+    } catch (error) {
+      showMessage(`Eroare: ${error.message}`, "error");
+    }
+  };
+
+  const handleDeleteOrder = async (clientId) => {
+    const existingOrder = orders.find(
+      (o) => o.clientId === clientId && o.date === selectedDate,
+    );
+
+    if (!existingOrder) {
+      showMessage("Nu există comandă de șters!", "error");
+      return;
+    }
+
+    if (existingOrder.invoiceExported) {
+      showMessage("Nu se poate șterge o comandă exportată!", "error");
+      return;
+    }
+
+    if (!window.confirm("Sigur doriți să ștergeți această comandă?")) {
+      return;
+    }
+
+    try {
+      await deleteOrder(existingOrder.id);
+      showMessage("Comandă ștearsă cu succes!");
+    } catch (error) {
+      showMessage(`Eroare: ${error.message}`, "error");
     }
   };
 
@@ -438,6 +474,9 @@ const OrdersMatrixScreen = ({
                     </div>
                   </th>
                 ))}
+                <th className="px-1 py-2 text-center font-semibold" style={{ minWidth: "50px" }}>
+                  Acțiuni
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -553,6 +592,24 @@ const OrdersMatrixScreen = ({
                         </td>
                       );
                     })}
+                    <td className="px-1 py-2 text-center">
+                      {orders.find(
+                        (o) => o.clientId === client.id && o.date === selectedDate,
+                      ) && !isExported ? (
+                        <button
+                          onClick={() => handleDeleteOrder(client.id)}
+                          disabled={!canEdit}
+                          className={`p-1.5 hover:bg-red-100 rounded text-red-600 ${
+                            !canEdit ? "opacity-50 cursor-not-allowed" : ""
+                          }`}
+                          title="Șterge comanda"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <span className="text-gray-300">-</span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -572,6 +629,7 @@ const OrdersMatrixScreen = ({
                     {calculateProductTotal(p.id) || "-"}
                   </td>
                 ))}
+                <td className="px-1 py-2"></td>
               </tr>
             </tbody>
           </table>
