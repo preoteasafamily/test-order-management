@@ -196,10 +196,14 @@ const OrdersMatrixScreen = ({
     try {
       // Process each order with API
       for (const order of newOrders) {
-        if (order.isExisting) {
-          await updateOrder(order.id, order);
+        const isExisting = order.isExisting;
+        // Remove temporary flag before sending to API
+        const { isExisting: _, ...orderData } = order;
+        
+        if (isExisting) {
+          await updateOrder(orderData.id, orderData);
         } else {
-          await createOrder(order);
+          await createOrder(orderData);
         }
       }
 
