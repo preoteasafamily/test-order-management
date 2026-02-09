@@ -119,6 +119,17 @@ const ExportScreenGrouped = ({
       return;
     }
 
+    // Validate master product has required fields
+    if (!masterProduct.descriere || !masterProduct.descriere.trim()) {
+      showMessage("Produsul master trebuie să aibă o descriere validă!", "error");
+      return;
+    }
+
+    if (!masterProduct.codArticolFurnizor || !masterProduct.codArticolFurnizor.trim()) {
+      showMessage("Produsul master trebuie să aibă un cod valid!", "error");
+      return;
+    }
+
     const validation = validateProductGroup(selectedProducts);
     if (!validation.valid) {
       showMessage(validation.message, "error");
@@ -128,12 +139,12 @@ const ExportScreenGrouped = ({
     // Always use master product's descriere as group name
     const groupData = {
       id: editingGroup?.id || `pg_${Date.now()}`,
-      name: masterProduct.descriere,
+      name: masterProduct.descriere.trim(),
       productIds: selectedProducts,
       price: validation.price,
       cotaTVA: validation.cotaTVA,
       masterProductId: masterProductId,
-      masterProductCode: masterProduct.codArticolFurnizor,
+      masterProductCode: masterProduct.codArticolFurnizor.trim(),
     };
 
     try {
@@ -675,11 +686,19 @@ const ExportScreenGrouped = ({
                   <div className="mt-3 space-y-2">
                     <div className="bg-green-50 border border-green-200 rounded p-3">
                       <p className="text-sm font-medium text-gray-700 mb-1">Nume Grupare:</p>
-                      <p className="text-sm text-green-700">{masterProduct.descriere}</p>
+                      <p className="text-sm text-green-700">
+                        {masterProduct.descriere && masterProduct.descriere.trim() 
+                          ? masterProduct.descriere 
+                          : "⚠️ Descriere lipsă"}
+                      </p>
                     </div>
                     <div className="bg-green-50 border border-green-200 rounded p-3">
                       <p className="text-sm font-medium text-gray-700 mb-1">Cod Grupare:</p>
-                      <p className="text-sm text-green-700">{masterProduct.codArticolFurnizor}</p>
+                      <p className="text-sm text-green-700">
+                        {masterProduct.codArticolFurnizor && masterProduct.codArticolFurnizor.trim() 
+                          ? masterProduct.codArticolFurnizor 
+                          : "⚠️ Cod lipsă"}
+                      </p>
                     </div>
                   </div>
                 )}
