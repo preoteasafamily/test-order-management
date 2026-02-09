@@ -133,6 +133,45 @@ const App = () => {
         );
         const result = localStorage.getItem(key);
         return result ? JSON.parse(result) : null;
+      } else if (key === "exportCount") {
+        // Load export count from API - returns object like { "2026-02-09": 1 }
+        const currentDate = new Date().toISOString().split("T")[0];
+        const response = await fetch(`${API_URL}/api/export-counters/${currentDate}`);
+        if (response.ok) {
+          const data = await response.json();
+          // Convert to the expected format: { date: count }
+          return {
+            [data.export_date]: Math.max(
+              data.invoice_count || 0,
+              data.receipt_count || 0,
+              data.production_count || 0
+            )
+          };
+        }
+        console.warn("API not available for exportCount, using localStorage fallback");
+        const result = localStorage.getItem(key);
+        return result ? JSON.parse(result) : {};
+      } else if (key === "dayStatus") {
+        // Load day status from API - returns object like { "2026-02-09": { productionExported: true } }
+        const currentDate = new Date().toISOString().split("T")[0];
+        const response = await fetch(`${API_URL}/api/day-status/${currentDate}`);
+        if (response.ok) {
+          const data = await response.json();
+          // Convert to the expected format: { date: { status_data } }
+          return {
+            [data.status_date]: {
+              productionExported: data.production_exported,
+              exportedAt: data.exported_at,
+              exportedBy: data.exported_by,
+              lotNumber: data.lot_number,
+              unlockedAt: data.unlocked_at,
+              unlockedBy: data.unlocked_by
+            }
+          };
+        }
+        console.warn("API not available for dayStatus, using localStorage fallback");
+        const result = localStorage.getItem(key);
+        return result ? JSON.parse(result) : {};
       } else {
         // For other data, use localStorage
         const result = localStorage.getItem(key);
@@ -143,6 +182,10 @@ const App = () => {
       if (key === "orders") {
         // For orders, don't fall back to localStorage - return empty array
         return [];
+      }
+      if (key === "exportCount" || key === "dayStatus") {
+        // For exportCount and dayStatus, return empty object
+        return {};
       }
       const result = localStorage.getItem(key);
       return result ? JSON.parse(result) : null;
@@ -167,6 +210,45 @@ const App = () => {
       } else if (key === "products") {
         // Same approach for products
         localStorage.setItem(key, JSON.stringify(data)); // Keep localStorage as fallback
+        return true;
+      } else if (key === "exportCount") {
+        // Save export count to API - data format: { "2026-02-09": 1, "2026-02-10": 2 }
+        // Need to save each date separately
+        for (const [date, count] of Object.entries(data)) {
+          const response = await fetch(`${API_URL}/api/export-counters/${date}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              invoice_count: count,
+              receipt_count: count,
+              production_count: count
+            })
+          });
+          if (!response.ok) {
+            console.warn(`Failed to save export count for ${date}`);
+          }
+        }
+        return true;
+      } else if (key === "dayStatus") {
+        // Save day status to API - data format: { "2026-02-09": { productionExported: true, ... } }
+        // Need to save each date separately
+        for (const [date, status] of Object.entries(data)) {
+          const response = await fetch(`${API_URL}/api/day-status/${date}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              production_exported: status.productionExported,
+              exported_at: status.exportedAt,
+              exported_by: status.exportedBy,
+              lot_number: status.lotNumber,
+              unlocked_at: status.unlockedAt,
+              unlocked_by: status.unlockedBy
+            })
+          });
+          if (!response.ok) {
+            console.warn(`Failed to save day status for ${date}`);
+          }
+        }
         return true;
       } else {
         // Use localStorage for other data

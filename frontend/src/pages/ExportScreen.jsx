@@ -20,9 +20,27 @@ const ExportScreen = ({
   const [exportMode, setExportMode] = useState("toExport"); // 'toExport' sau 'all'
   const [exportCount, setExportCount] = useState({});
 
+  // Load export count from API via App's loadData
   useEffect(() => {
-    const saved = localStorage.getItem("exportCount");
-    if (saved) setExportCount(JSON.parse(saved));
+    const loadExportCount = async () => {
+      try {
+        const currentDate = new Date().toISOString().split("T")[0];
+        const response = await fetch(`https://localhost:5000/api/export-counters/${currentDate}`);
+        if (response.ok) {
+          const data = await response.json();
+          setExportCount({
+            [data.export_date]: Math.max(
+              data.invoice_count || 0,
+              data.receipt_count || 0,
+              data.production_count || 0
+            )
+          });
+        }
+      } catch (error) {
+        console.error("Error loading export count:", error);
+      }
+    };
+    loadExportCount();
   }, []);
 
   const ordersForDate = orders.filter((o) => o.date === selectedDate);
@@ -242,7 +260,7 @@ const ExportScreen = ({
       setOrders(updatedOrders);
       const newCount = { ...exportCount, [selectedDate]: currentExport };
       setExportCount(newCount);
-      localStorage.setItem("exportCount", JSON.stringify(newCount));
+      await saveData("exportCount", newCount);
       showMessage(`✅ Facturi exportate:  ${filename}`);
     }
   };
@@ -270,7 +288,7 @@ const ExportScreen = ({
       setOrders(updatedOrders);
       const newCount = { ...exportCount, [selectedDate]: currentExport };
       setExportCount(newCount);
-      localStorage.setItem("exportCount", JSON.stringify(newCount));
+      await saveData("exportCount", newCount);
       showMessage(`✅ Chitanțe exportate: ${filename}`);
     }
   };

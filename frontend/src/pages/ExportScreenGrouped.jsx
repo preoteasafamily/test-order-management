@@ -37,10 +37,28 @@ const ExportScreenGrouped = ({
     loadProductGroups();
   }, []);
 
+  // Load export count from API
   useEffect(() => {
-    const saved = localStorage.getItem("exportCount");
-    if (saved) setExportCount(JSON.parse(saved));
-  }, []);
+    const loadExportCount = async () => {
+      try {
+        const currentDate = new Date().toISOString().split("T")[0];
+        const response = await fetch(`${API_URL}/api/export-counters/${currentDate}`);
+        if (response.ok) {
+          const data = await response.json();
+          setExportCount({
+            [data.export_date]: Math.max(
+              data.invoice_count || 0,
+              data.receipt_count || 0,
+              data.production_count || 0
+            )
+          });
+        }
+      } catch (error) {
+        console.error("Error loading export count:", error);
+      }
+    };
+    loadExportCount();
+  }, [API_URL]);
 
   const loadProductGroups = async () => {
     try {
@@ -50,17 +68,9 @@ const ExportScreenGrouped = ({
         setProductGroups(data);
       } else {
         console.warn("Failed to load product groups from API");
-        const localData = localStorage.getItem("productGroups");
-        if (localData) {
-          setProductGroups(JSON.parse(localData));
-        }
       }
     } catch (error) {
       console.error("Error loading product groups:", error);
-      const localData = localStorage.getItem("productGroups");
-      if (localData) {
-        setProductGroups(JSON.parse(localData));
-      }
     }
   };
 
@@ -499,7 +509,7 @@ const ExportScreenGrouped = ({
       setOrders(updatedOrders);
       const newCount = { ...exportCount, [selectedDate]: currentExport };
       setExportCount(newCount);
-      localStorage.setItem("exportCount", JSON.stringify(newCount));
+      await saveData("exportCount", newCount);
       showMessage(`✅ Facturi exportate: ${filename}`);
     }
   };
@@ -526,7 +536,7 @@ const ExportScreenGrouped = ({
       setOrders(updatedOrders);
       const newCount = { ...exportCount, [selectedDate]: currentExport };
       setExportCount(newCount);
-      localStorage.setItem("exportCount", JSON.stringify(newCount));
+      await saveData("exportCount", newCount);
       showMessage(`✅ Chitanțe exportate: ${filename}`);
     }
   };
