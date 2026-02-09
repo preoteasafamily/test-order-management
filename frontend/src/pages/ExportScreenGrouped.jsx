@@ -130,6 +130,12 @@ const ExportScreenGrouped = ({
     const finalGroupName = masterProduct.descriere;
     const finalGroupCode = masterProduct.codArticolFurnizor;
 
+    // Validate that master product has required fields
+    if (!finalGroupName || !finalGroupCode) {
+      showMessage("Produsul master selectat nu are denumire sau cod valid!", "error");
+      return;
+    }
+
     const groupData = {
       id: editingGroup?.id || `pg_${Date.now()}`,
       name: finalGroupName,
