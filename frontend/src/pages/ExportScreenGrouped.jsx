@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { Download, Settings, X, Trash2, Edit2 } from "lucide-react";
 
+// Default counter values
+const DEFAULT_COUNTERS = { invoice: 0, receipt: 0, production: 0 };
+
 const ExportScreenGrouped = ({
   orders,
   setOrders,
@@ -494,7 +497,7 @@ const ExportScreenGrouped = ({
     if (!xml) return;
 
     const [year, month, day] = selectedDate.split("-");
-    const dateCounters = exportCount[selectedDate] || { invoice: 0, receipt: 0, production: 0 };
+    const dateCounters = exportCount[selectedDate] || DEFAULT_COUNTERS;
     const currentExport = dateCounters.invoice + 1;
     const filename = `f_${company.furnizorCIF.replace("RO", "")}_${currentExport}_${day}-${month}-${year}.XML`;
 
@@ -537,7 +540,7 @@ const ExportScreenGrouped = ({
     if (!xml) return;
 
     const [year, month, day] = selectedDate.split("-");
-    const dateCounters = exportCount[selectedDate] || { invoice: 0, receipt: 0, production: 0 };
+    const dateCounters = exportCount[selectedDate] || DEFAULT_COUNTERS;
     const currentExport = dateCounters.receipt + 1;
     const filename = `I_${company.furnizorCIF.replace("RO", "")}_${currentExport}_${day}-${month}-${year}.XML`;
 

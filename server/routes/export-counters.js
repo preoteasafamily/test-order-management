@@ -34,7 +34,7 @@ router.post('/', (req, res) => {
       return res.status(400).json({ error: 'export_date is required' });
     }
     
-    const result = db.prepare(
+    db.prepare(
       'INSERT INTO export_counters (export_date, invoice_count, receipt_count, production_count) VALUES (?, ?, ?, ?)'
     ).run(export_date, invoice_count, receipt_count, production_count);
     
