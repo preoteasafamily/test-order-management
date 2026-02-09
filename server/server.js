@@ -13,6 +13,8 @@ const authRouter = require("./routes/auth");
 const clientProductsRouter = require("./routes/client-products");
 const csvRouter = require("./routes/csv");
 const productGroupsRouter = require("./routes/product-groups");
+const exportCountersRouter = require("./routes/export-counters");
+const dayStatusRouter = require("./routes/day-status");
 const { initializeClientProducts } = require("./routes/client-products");
 
 const app = express();
@@ -30,6 +32,8 @@ app.use("/api/auth", authRouter);
 app.use("/api/clients", clientProductsRouter);
 app.use("/api/csv", csvRouter);
 app.use("/api/product-groups", productGroupsRouter);
+app.use("/api/export-counters", exportCountersRouter);
+app.use("/api/day-status", dayStatusRouter);
 
 // Health check
 app.get("/api/health", (req, res) => {
