@@ -41,7 +41,7 @@ router.post('/', (req, res) => {
       return res.status(400).json({ error: 'status_date is required' });
     }
     
-    const result = db.prepare(
+    db.prepare(
       `INSERT INTO day_status 
        (status_date, production_exported, exported_at, exported_by, lot_number, unlocked_at, unlocked_by) 
        VALUES (?, ?, ?, ?, ?, ?, ?)`
@@ -81,7 +81,7 @@ router.put('/:date', (req, res) => {
     
     if (!existing) {
       // Create new status
-      const result = db.prepare(
+      db.prepare(
         `INSERT INTO day_status 
          (status_date, production_exported, exported_at, exported_by, lot_number, unlocked_at, unlocked_by) 
          VALUES (?, ?, ?, ?, ?, ?, ?)`
@@ -96,7 +96,7 @@ router.put('/:date', (req, res) => {
       );
     } else {
       // Update existing status
-      const result = db.prepare(
+      db.prepare(
         `UPDATE day_status SET 
           production_exported = ?, 
           exported_at = ?, 

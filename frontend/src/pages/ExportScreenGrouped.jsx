@@ -45,12 +45,13 @@ const ExportScreenGrouped = ({
         const response = await fetch(`${API_URL}/api/export-counters/${currentDate}`);
         if (response.ok) {
           const data = await response.json();
+          // Store counters by type: { "2026-02-09": { invoice: 0, receipt: 0, production: 0 } }
           setExportCount({
-            [data.export_date]: Math.max(
-              data.invoice_count || 0,
-              data.receipt_count || 0,
-              data.production_count || 0
-            )
+            [data.export_date]: {
+              invoice: data.invoice_count || 0,
+              receipt: data.receipt_count || 0,
+              production: data.production_count || 0
+            }
           });
         }
       } catch (error) {
@@ -493,7 +494,8 @@ const ExportScreenGrouped = ({
     if (!xml) return;
 
     const [year, month, day] = selectedDate.split("-");
-    const currentExport = (exportCount[selectedDate] || 0) + 1;
+    const dateCounters = exportCount[selectedDate] || { invoice: 0, receipt: 0, production: 0 };
+    const currentExport = dateCounters.invoice + 1;
     const filename = `f_${company.furnizorCIF.replace("RO", "")}_${currentExport}_${day}-${month}-${year}.XML`;
 
     downloadFile(xml, filename, "application/xml");
@@ -507,9 +509,24 @@ const ExportScreenGrouped = ({
     const success = await saveData("orders", updatedOrders);
     if (success) {
       setOrders(updatedOrders);
-      const newCount = { ...exportCount, [selectedDate]: currentExport };
+      const newCount = { 
+        ...exportCount, 
+        [selectedDate]: {
+          ...dateCounters,
+          invoice: currentExport
+        }
+      };
       setExportCount(newCount);
-      await saveData("exportCount", newCount);
+      // Update only invoice count in API
+      await fetch(`${API_URL}/api/export-counters/${selectedDate}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          invoice_count: currentExport,
+          receipt_count: dateCounters.receipt,
+          production_count: dateCounters.production
+        })
+      });
       showMessage(`✅ Facturi exportate: ${filename}`);
     }
   };
@@ -520,7 +537,8 @@ const ExportScreenGrouped = ({
     if (!xml) return;
 
     const [year, month, day] = selectedDate.split("-");
-    const currentExport = (exportCount[selectedDate] || 0) + 1;
+    const dateCounters = exportCount[selectedDate] || { invoice: 0, receipt: 0, production: 0 };
+    const currentExport = dateCounters.receipt + 1;
     const filename = `I_${company.furnizorCIF.replace("RO", "")}_${currentExport}_${day}-${month}-${year}.XML`;
 
     downloadFile(xml, filename, "application/xml");
@@ -534,9 +552,24 @@ const ExportScreenGrouped = ({
     const success = await saveData("orders", updatedOrders);
     if (success) {
       setOrders(updatedOrders);
-      const newCount = { ...exportCount, [selectedDate]: currentExport };
+      const newCount = { 
+        ...exportCount, 
+        [selectedDate]: {
+          ...dateCounters,
+          receipt: currentExport
+        }
+      };
       setExportCount(newCount);
-      await saveData("exportCount", newCount);
+      // Update only receipt count in API
+      await fetch(`${API_URL}/api/export-counters/${selectedDate}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          invoice_count: dateCounters.invoice,
+          receipt_count: currentExport,
+          production_count: dateCounters.production
+        })
+      });
       showMessage(`✅ Chitanțe exportate: ${filename}`);
     }
   };

@@ -13,6 +13,7 @@ const ExportScreen = ({
   currentUser,
   showMessage,
   saveData,
+  API_URL,
 }) => {
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0],
@@ -20,20 +21,21 @@ const ExportScreen = ({
   const [exportMode, setExportMode] = useState("toExport"); // 'toExport' sau 'all'
   const [exportCount, setExportCount] = useState({});
 
-  // Load export count from API via App's loadData
+  // Load export count from API
   useEffect(() => {
     const loadExportCount = async () => {
       try {
         const currentDate = new Date().toISOString().split("T")[0];
-        const response = await fetch(`https://localhost:5000/api/export-counters/${currentDate}`);
+        const response = await fetch(`${API_URL}/api/export-counters/${currentDate}`);
         if (response.ok) {
           const data = await response.json();
+          // Store counters by type: { "2026-02-09": { invoice: 0, receipt: 0, production: 0 } }
           setExportCount({
-            [data.export_date]: Math.max(
-              data.invoice_count || 0,
-              data.receipt_count || 0,
-              data.production_count || 0
-            )
+            [data.export_date]: {
+              invoice: data.invoice_count || 0,
+              receipt: data.receipt_count || 0,
+              production: data.production_count || 0
+            }
           });
         }
       } catch (error) {
@@ -41,7 +43,7 @@ const ExportScreen = ({
       }
     };
     loadExportCount();
-  }, []);
+  }, [API_URL]);
 
   const ordersForDate = orders.filter((o) => o.date === selectedDate);
   const invoiceOrders = ordersForDate.filter((o) => !o.invoiceExported);
@@ -243,7 +245,8 @@ const ExportScreen = ({
     if (!xml) return;
 
     const [year, month, day] = selectedDate.split("-");
-    const currentExport = (exportCount[selectedDate] || 0) + 1;
+    const dateCounters = exportCount[selectedDate] || { invoice: 0, receipt: 0, production: 0 };
+    const currentExport = dateCounters.invoice + 1;
     const filename = `f_${company.furnizorCIF.replace("RO", "")}_${currentExport}_${day}-${month}-${year}.XML`;
 
     downloadFile(xml, filename, "application/xml");
@@ -258,9 +261,24 @@ const ExportScreen = ({
     const success = await saveData("orders", updatedOrders);
     if (success) {
       setOrders(updatedOrders);
-      const newCount = { ...exportCount, [selectedDate]: currentExport };
+      const newCount = { 
+        ...exportCount, 
+        [selectedDate]: {
+          ...dateCounters,
+          invoice: currentExport
+        }
+      };
       setExportCount(newCount);
-      await saveData("exportCount", newCount);
+      // Update only invoice count in API
+      await fetch(`${API_URL}/api/export-counters/${selectedDate}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          invoice_count: currentExport,
+          receipt_count: dateCounters.receipt,
+          production_count: dateCounters.production
+        })
+      });
       showMessage(`✅ Facturi exportate:  ${filename}`);
     }
   };
@@ -271,10 +289,11 @@ const ExportScreen = ({
     if (!xml) return;
 
     const [year, month, day] = selectedDate.split("-");
-    const currentExport = (exportCount[selectedDate] || 0) + 1;
+    const dateCounters = exportCount[selectedDate] || { invoice: 0, receipt: 0, production: 0 };
+    const currentExport = dateCounters.receipt + 1;
     const filename = `I_${company.furnizorCIF.replace("RO", "")}_${currentExport}_${day}-${month}-${year}.XML`;
 
-    downloadFile(xml, filename, "application/xml"); // ← SCHIMBĂ
+    downloadFile(xml, filename, "application/xml");
 
     // ✅ Mark receipts as exported
     const updatedOrders = orders.map((o) =>
@@ -286,9 +305,24 @@ const ExportScreen = ({
     const success = await saveData("orders", updatedOrders);
     if (success) {
       setOrders(updatedOrders);
-      const newCount = { ...exportCount, [selectedDate]: currentExport };
+      const newCount = { 
+        ...exportCount, 
+        [selectedDate]: {
+          ...dateCounters,
+          receipt: currentExport
+        }
+      };
       setExportCount(newCount);
-      await saveData("exportCount", newCount);
+      // Update only receipt count in API
+      await fetch(`${API_URL}/api/export-counters/${selectedDate}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          invoice_count: dateCounters.invoice,
+          receipt_count: currentExport,
+          production_count: dateCounters.production
+        })
+      });
       showMessage(`✅ Chitanțe exportate: ${filename}`);
     }
   };

@@ -134,18 +134,18 @@ const App = () => {
         const result = localStorage.getItem(key);
         return result ? JSON.parse(result) : null;
       } else if (key === "exportCount") {
-        // Load export count from API - returns object like { "2026-02-09": 1 }
+        // Load export count from API - returns object like { "2026-02-09": { invoice: 0, receipt: 0, production: 0 } }
         const currentDate = new Date().toISOString().split("T")[0];
         const response = await fetch(`${API_URL}/api/export-counters/${currentDate}`);
         if (response.ok) {
           const data = await response.json();
-          // Convert to the expected format: { date: count }
+          // Convert to the expected format: { date: { invoice, receipt, production } }
           return {
-            [data.export_date]: Math.max(
-              data.invoice_count || 0,
-              data.receipt_count || 0,
-              data.production_count || 0
-            )
+            [data.export_date]: {
+              invoice: data.invoice_count || 0,
+              receipt: data.receipt_count || 0,
+              production: data.production_count || 0
+            }
           };
         }
         console.warn("API not available for exportCount, using localStorage fallback");
@@ -212,22 +212,9 @@ const App = () => {
         localStorage.setItem(key, JSON.stringify(data)); // Keep localStorage as fallback
         return true;
       } else if (key === "exportCount") {
-        // Save export count to API - data format: { "2026-02-09": 1, "2026-02-10": 2 }
-        // Need to save each date separately
-        for (const [date, count] of Object.entries(data)) {
-          const response = await fetch(`${API_URL}/api/export-counters/${date}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              invoice_count: count,
-              receipt_count: count,
-              production_count: count
-            })
-          });
-          if (!response.ok) {
-            console.warn(`Failed to save export count for ${date}`);
-          }
-        }
+        // exportCount is now handled directly in ExportScreen components via direct API calls
+        // This fallback is kept for compatibility but should not be used
+        console.warn("exportCount should be saved directly via API in ExportScreen components");
         return true;
       } else if (key === "dayStatus") {
         // Save day status to API - data format: { "2026-02-09": { productionExported: true, ... } }
@@ -1326,6 +1313,7 @@ const App = () => {
             currentUser={currentUser}
             showMessage={showMessage}
             saveData={saveData}
+            API_URL={API_URL}
           />
         );
       case "export-grouped":

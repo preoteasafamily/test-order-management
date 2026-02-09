@@ -61,7 +61,7 @@ router.put('/:date', (req, res) => {
     
     if (!existing) {
       // Create new counter with the provided values
-      const result = db.prepare(
+      db.prepare(
         'INSERT INTO export_counters (export_date, invoice_count, receipt_count, production_count) VALUES (?, ?, ?, ?)'
       ).run(
         date,
@@ -71,7 +71,7 @@ router.put('/:date', (req, res) => {
       );
     } else {
       // Update existing counter
-      const result = db.prepare(
+      db.prepare(
         `UPDATE export_counters SET 
           invoice_count = ?, 
           receipt_count = ?, 
