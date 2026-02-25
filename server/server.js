@@ -15,6 +15,7 @@ const csvRouter = require("./routes/csv");
 const productGroupsRouter = require("./routes/product-groups");
 const exportCountersRouter = require("./routes/export-counters");
 const dayStatusRouter = require("./routes/day-status");
+const billingRouter = require("./routes/billing");
 const { initializeClientProducts } = require("./routes/client-products");
 
 const app = express();
@@ -34,6 +35,7 @@ app.use("/api/csv", csvRouter);
 app.use("/api/product-groups", productGroupsRouter);
 app.use("/api/export-counters", exportCountersRouter);
 app.use("/api/day-status", dayStatusRouter);
+app.use("/api/billing", billingRouter);
 
 // Health check
 app.get("/api/health", (req, res) => {
@@ -59,6 +61,7 @@ app.get("/api/orders", (req, res) => {
         ...row,
         invoiceExported: row.invoiceExported === 1,
         receiptExported: row.receiptExported === 1,
+        validata: row.validata === 1,
         items,
       };
     });
@@ -83,8 +86,8 @@ app.post("/api/orders", (req, res) => {
       .prepare(
         `INSERT INTO orders (
                 id, date, clientId, agentId, paymentType, dueDate, items,
-                total, totalTVA, totalWithVAT, invoiceExported, receiptExported
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                total, totalTVA, totalWithVAT, invoiceExported, receiptExported, validata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         order.id,
@@ -99,6 +102,7 @@ app.post("/api/orders", (req, res) => {
         order.totalWithVAT || 0,
         order.invoiceExported ? 1 : 0,
         order.receiptExported ? 1 : 0,
+        order.validata ? 1 : 0,
       );
     res.json({ ...order, createdAt: new Date().toISOString() });
   } catch (err) {
@@ -127,7 +131,7 @@ app.put("/api/orders/:id", (req, res) => {
         `UPDATE orders SET 
                 date = ?, clientId = ?, agentId = ?, paymentType = ?, dueDate = ?,
                 items = ?, total = ?, totalTVA = ?, totalWithVAT = ?,
-                invoiceExported = ?, receiptExported = ?, updatedAt = CURRENT_TIMESTAMP
+                invoiceExported = ?, receiptExported = ?, validata = ?, updatedAt = CURRENT_TIMESTAMP
             WHERE id = ?`,
       )
       .run(
@@ -142,6 +146,7 @@ app.put("/api/orders/:id", (req, res) => {
         order.totalWithVAT || 0,
         order.invoiceExported ? 1 : 0,
         order.receiptExported ? 1 : 0,
+        order.validata ? 1 : 0,
         req.params.id,
       );
     if (result.changes === 0) {
@@ -155,6 +160,7 @@ app.put("/api/orders/:id", (req, res) => {
         ...row,
         invoiceExported: row.invoiceExported === 1,
         receiptExported: row.receiptExported === 1,
+        validata: row.validata === 1,
         items: row.items ? JSON.parse(row.items) : [],
       };
       res.json(updatedOrder);

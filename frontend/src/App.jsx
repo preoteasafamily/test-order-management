@@ -17,6 +17,7 @@ import AgentManager from "./pages/AgentManager";
 import UserManager from "./pages/UserManager";
 import DataManagementScreen from "./pages/DataManagementScreen";
 import AgentMapScreen from "./pages/AgentMapScreen";
+import InvoicesScreen from "./pages/InvoicesScreen";
 
 const App = () => {
   // API Configuration
@@ -1247,6 +1248,7 @@ const App = () => {
             createOrder={createOrder}
             updateOrder={updateOrder}
             deleteOrder={deleteOrder}
+            API_URL={API_URL}
           />
         );
       case "reports":
@@ -1331,6 +1333,15 @@ const App = () => {
             showMessage={showMessage}
             saveData={saveData}
             API_URL={API_URL}
+          />
+        );
+      case "invoices":
+        return (
+          <InvoicesScreen
+            API_URL={API_URL}
+            orders={orders}
+            clients={clients}
+            showMessage={showMessage}
           />
         );
       default:

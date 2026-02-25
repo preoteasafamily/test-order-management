@@ -11,7 +11,8 @@ import {
   Menu,
   UserCog,
   Database,
-  MapPin
+  MapPin,
+  Receipt
 } from 'lucide-react';
 
 const Navigation = ({ currentUser, activeSection, setActiveSection, mobileMenuOpen, setMobileMenuOpen }) => {
@@ -93,6 +94,12 @@ const Navigation = ({ currentUser, activeSection, setActiveSection, mobileMenuOp
       id: "export-grouped",
       label: "Export cu Grupări",
       icon: Download,
+      roles: ["admin", "birou"],
+    },
+    {
+      id: "invoices",
+      label: "Facturi",
+      icon: Receipt,
       roles: ["admin", "birou"],
     },
   ];

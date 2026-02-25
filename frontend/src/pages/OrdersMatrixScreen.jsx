@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Calendar, Save, Edit2, Trash2 } from "lucide-react";
+import { Calendar, Save, Edit2, Trash2, CheckCircle, FileText, Download } from "lucide-react";
 
 const OrdersMatrixScreen = ({
   orders,
@@ -23,6 +23,7 @@ const OrdersMatrixScreen = ({
   createOrder,
   updateOrder,
   deleteOrder,
+  API_URL,
 }) => {
   const isDayClosed = dayStatus[selectedDate]?.productionExported || false;
 
@@ -34,6 +35,19 @@ const OrdersMatrixScreen = ({
   });
   const [matrixData, setMatrixData] = useState({});
   const canEdit = !isDayClosed || currentUser.role === "admin";
+
+  // Billing state
+  const [billingInvoices, setBillingInvoices] = useState([]);
+  const [billingLoading, setBillingLoading] = useState({});
+
+  useEffect(() => {
+    if (API_URL) {
+      fetch(`${API_URL}/api/billing/local-invoices`)
+        .then((r) => (r.ok ? r.json() : []))
+        .then((data) => setBillingInvoices(Array.isArray(data) ? data : []))
+        .catch(() => setBillingInvoices([]));
+    }
+  }, [API_URL]);
 
   const isClientExported = (clientId) => {
     const clientOrder = orders.find(
@@ -188,6 +202,7 @@ const OrdersMatrixScreen = ({
           totalWithVAT: total + totalTVA,
           invoiceExported: existingOrder?.invoiceExported || false,
           receiptExported: existingOrder?.receiptExported || false,
+          validata: existingOrder?.validata || false,
           isExisting: !!existingOrder,
         });
       }
@@ -264,6 +279,88 @@ const OrdersMatrixScreen = ({
     if (success) {
       setDayStatus(updatedDayStatus);
       showMessage("Ziua a fost deschisă pentru editare!");
+    }
+  };
+
+  const handleValidateOrder = async (clientId) => {
+    const order = orders.find(
+      (o) => o.clientId === clientId && o.date === selectedDate,
+    );
+    if (!order) {
+      showMessage("Nu există comandă de validat!", "error");
+      return;
+    }
+    setBillingLoading((prev) => ({ ...prev, [clientId]: true }));
+    try {
+      const response = await fetch(
+        `${API_URL}/api/billing/orders/${order.id}/validate`,
+        { method: "POST" },
+      );
+      const data = await response.json();
+      if (response.ok) {
+        // Update local orders state
+        setOrders((prev) =>
+          prev.map((o) => (o.id === order.id ? { ...o, validata: true } : o)),
+        );
+        showMessage("Comanda a fost validată!");
+      } else {
+        showMessage(data.error || "Eroare la validare", "error");
+      }
+    } catch (err) {
+      showMessage(`Eroare: ${err.message}`, "error");
+    } finally {
+      setBillingLoading((prev) => ({ ...prev, [clientId]: false }));
+    }
+  };
+
+  const handleGenerateInvoice = async (clientId) => {
+    const order = orders.find(
+      (o) => o.clientId === clientId && o.date === selectedDate,
+    );
+    if (!order) {
+      showMessage("Nu există comandă!", "error");
+      return;
+    }
+    setBillingLoading((prev) => ({ ...prev, [clientId]: true }));
+    try {
+      const response = await fetch(`${API_URL}/api/billing/invoices/from-order`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: order.id }),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setBillingInvoices((prev) => [...prev, data.invoice]);
+        showMessage("Factura a fost generată cu succes!");
+      } else {
+        showMessage(data.error || "Eroare la generarea facturii", "error");
+      }
+    } catch (err) {
+      showMessage(`Eroare: ${err.message}`, "error");
+    } finally {
+      setBillingLoading((prev) => ({ ...prev, [clientId]: false }));
+    }
+  };
+
+  const handleDownloadInvoicePdf = async (externalInvoiceId) => {
+    try {
+      const response = await fetch(
+        `${API_URL}/api/billing/invoices/${externalInvoiceId}/pdf`,
+      );
+      if (!response.ok) {
+        const err = await response.json();
+        showMessage(err.error || "Eroare la descărcarea PDF-ului", "error");
+        return;
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `factura-${externalInvoiceId}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      showMessage(`Eroare: ${err.message}`, "error");
     }
   };
 
@@ -481,6 +578,9 @@ const OrdersMatrixScreen = ({
                 <th className="px-1 py-2 text-center font-semibold" style={{ minWidth: "50px" }}>
                   Acțiuni
                 </th>
+                <th className="px-1 py-2 text-center font-semibold" style={{ minWidth: "90px" }}>
+                  Facturare
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -614,6 +714,58 @@ const OrdersMatrixScreen = ({
                         <span className="text-gray-300">-</span>
                       )}
                     </td>
+                    <td className="px-1 py-2 text-center">
+                      {(() => {
+                        const order = orders.find(
+                          (o) => o.clientId === client.id && o.date === selectedDate,
+                        );
+                        if (!order) return <span className="text-gray-300">-</span>;
+                        const invoice = billingInvoices.find(
+                          (i) => i.order_id === order.id,
+                        );
+                        const isLoading = billingLoading[client.id];
+                        if (invoice) {
+                          return (
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="text-xs text-green-700 font-semibold">✓ Facturat</span>
+                              {invoice.external_invoice_id && (
+                                <button
+                                  onClick={() => handleDownloadInvoicePdf(invoice.external_invoice_id)}
+                                  className="p-1 hover:bg-blue-100 rounded text-blue-600"
+                                  title="Descarcă PDF"
+                                >
+                                  <Download className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        }
+                        if (!order.validata) {
+                          return (
+                            <button
+                              onClick={() => handleValidateOrder(client.id)}
+                              disabled={isLoading}
+                              className="flex items-center gap-1 px-2 py-1 bg-amber-100 text-amber-800 rounded text-xs hover:bg-amber-200 disabled:opacity-50 transition"
+                              title="Validează comanda"
+                            >
+                              <CheckCircle className="w-3 h-3" />
+                              Validează
+                            </button>
+                          );
+                        }
+                        return (
+                          <button
+                            onClick={() => handleGenerateInvoice(client.id)}
+                            disabled={isLoading}
+                            className="flex items-center gap-1 px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50 transition"
+                            title="Generează factură"
+                          >
+                            <FileText className="w-3 h-3" />
+                            {isLoading ? "..." : "Factură"}
+                          </button>
+                        );
+                      })()}
+                    </td>
                   </tr>
                 );
               })}
@@ -633,6 +785,7 @@ const OrdersMatrixScreen = ({
                     {calculateProductTotal(p.id) || "-"}
                   </td>
                 ))}
+                <td className="px-1 py-2"></td>
                 <td className="px-1 py-2"></td>
               </tr>
             </tbody>
