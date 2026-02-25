@@ -60,6 +60,25 @@ const migrateClientsTable = () => {
   }
 };
 
+// Check if we need to add validata column to orders table
+const migrateOrdersTableForValidata = () => {
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(orders)").all();
+
+    if (tableInfo.length > 0) {
+      const hasValidata = tableInfo.some(col => col.name === 'validata');
+
+      if (!hasValidata) {
+        console.log('Adding validata column to orders table...');
+        db.exec(`ALTER TABLE orders ADD COLUMN validata INTEGER DEFAULT 0`);
+        console.log('✅ Orders table migrated: validata column added.');
+      }
+    }
+  } catch (err) {
+    console.error('Error migrating orders table for validata:', err);
+  }
+};
+
 // Check if we need to add master product columns to product_groups table
 const migrateProductGroupsTable = () => {
   try {
@@ -254,6 +273,26 @@ const createTables = () => {
     )
   `);
 
+  // Billing Invoices table (local records linked to orders)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS billing_invoices (
+      id TEXT PRIMARY KEY,
+      order_id TEXT NOT NULL UNIQUE,
+      external_invoice_id TEXT,
+      series TEXT,
+      document_date TEXT,
+      external_client_id TEXT,
+      total REAL,
+      total_vat REAL,
+      total_with_vat REAL,
+      status TEXT DEFAULT 'created',
+      raw_snapshot TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+    )
+  `);
+
   console.log('Database tables initialized');
 };
 
@@ -336,6 +375,7 @@ createTables();
 // Run migrations after tables are created
 migrateClientsTable();
 migrateProductGroupsTable();
+migrateOrdersTableForValidata();
 
 // Create default admin user if needed
 createDefaultAdminUser();
