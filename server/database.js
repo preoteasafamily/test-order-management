@@ -225,6 +225,35 @@ const createTables = () => {
     )
   `);
 
+  // Export Counters table (for tracking daily export counts)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS export_counters (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      export_date TEXT NOT NULL UNIQUE,
+      invoice_count INTEGER DEFAULT 0,
+      receipt_count INTEGER DEFAULT 0,
+      production_count INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Day Status table (for tracking day closing and reopening)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS day_status (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      status_date TEXT NOT NULL UNIQUE,
+      production_exported INTEGER DEFAULT 0,
+      exported_at TEXT,
+      exported_by TEXT,
+      lot_number TEXT,
+      unlocked_at TEXT,
+      unlocked_by TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   console.log('Database tables initialized');
 };
 
@@ -265,6 +294,42 @@ const createDefaultAdminUser = () => {
   }
 };
 
+// Create default export counter for current date if needed
+const createDefaultExportCounters = () => {
+  try {
+    const currentDate = new Date().toISOString().split('T')[0];
+    const existing = db.prepare('SELECT * FROM export_counters WHERE export_date = ?').get(currentDate);
+    
+    if (!existing) {
+      console.log('Creating default export counter for current date...');
+      db.prepare(
+        'INSERT INTO export_counters (export_date, invoice_count, receipt_count, production_count) VALUES (?, 0, 0, 0)'
+      ).run(currentDate);
+      console.log('✅ Default export counter created for:', currentDate);
+    }
+  } catch (err) {
+    console.error('Error creating default export counters:', err);
+  }
+};
+
+// Create default day status for current date if needed
+const createDefaultDayStatus = () => {
+  try {
+    const currentDate = new Date().toISOString().split('T')[0];
+    const existing = db.prepare('SELECT * FROM day_status WHERE status_date = ?').get(currentDate);
+    
+    if (!existing) {
+      console.log('Creating default day status for current date...');
+      db.prepare(
+        'INSERT INTO day_status (status_date, production_exported) VALUES (?, 0)'
+      ).run(currentDate);
+      console.log('✅ Default day status created for:', currentDate);
+    }
+  } catch (err) {
+    console.error('Error creating default day status:', err);
+  }
+};
+
 // Initialize tables
 createTables();
 
@@ -274,5 +339,9 @@ migrateProductGroupsTable();
 
 // Create default admin user if needed
 createDefaultAdminUser();
+
+// Create default export counters and day status
+createDefaultExportCounters();
+createDefaultDayStatus();
 
 module.exports = db;
