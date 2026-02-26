@@ -173,6 +173,17 @@ const App = () => {
         console.warn("API not available for dayStatus, using localStorage fallback");
         const result = localStorage.getItem(key);
         return result ? JSON.parse(result) : {};
+      } else if (key === "company") {
+        // Load company settings from backend API
+        try {
+          const response = await fetch(`${API_URL}/api/config/company`);
+          if (response.ok) {
+            const data = await response.json();
+            if (data) return data;
+          }
+        } catch (e) { /* fall through to localStorage */ }
+        const result = localStorage.getItem(key);
+        return result ? JSON.parse(result) : null;
       } else {
         // For other data, use localStorage
         const result = localStorage.getItem(key);
@@ -219,7 +230,6 @@ const App = () => {
         return true;
       } else if (key === "dayStatus") {
         // Save day status to API - data format: { "2026-02-09": { productionExported: true, ... } }
-        // Need to save each date separately
         for (const [date, status] of Object.entries(data)) {
           const response = await fetch(`${API_URL}/api/day-status/${date}`, {
             method: "PUT",
@@ -237,6 +247,20 @@ const App = () => {
             console.warn(`Failed to save day status for ${date}`);
           }
         }
+        return true;
+      } else if (key === "company") {
+        // Save company settings to backend API
+        try {
+          const response = await fetch(`${API_URL}/api/config/company`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data),
+          });
+          if (!response.ok) {
+            console.warn("Failed to save company settings to API, using localStorage fallback");
+          }
+        } catch (e) { /* ignore network errors, fall through to localStorage */ }
+        localStorage.setItem(key, JSON.stringify(data));
         return true;
       } else {
         // Use localStorage for other data
@@ -1341,6 +1365,7 @@ const App = () => {
             API_URL={API_URL}
             orders={orders}
             clients={clients}
+            company={company}
             showMessage={showMessage}
           />
         );
