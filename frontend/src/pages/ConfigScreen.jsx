@@ -328,6 +328,85 @@ const ConfigScreen = ({
           </div>
         </div>
 
+        {/* DATE CONTACT */}
+        <div className="border-t pt-6">
+          <h3 className="text-lg font-semibold mb-4">Date Contact (opționale — apar pe factură)</h3>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Telefon
+              </label>
+              <input
+                type="text"
+                value={localCompany.furnizorTelefon || ""}
+                onChange={(e) =>
+                  setLocalCompany({
+                    ...localCompany,
+                    furnizorTelefon: e.target.value,
+                  })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="+40 xxx xxx xxx"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email
+              </label>
+              <input
+                type="email"
+                value={localCompany.furnizorEmail || ""}
+                onChange={(e) =>
+                  setLocalCompany({
+                    ...localCompany,
+                    furnizorEmail: e.target.value,
+                  })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="office@firma.ro"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Bancă
+              </label>
+              <input
+                type="text"
+                value={localCompany.furnizorBanca || ""}
+                onChange={(e) =>
+                  setLocalCompany({
+                    ...localCompany,
+                    furnizorBanca: e.target.value,
+                  })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="BCR"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                IBAN
+              </label>
+              <input
+                type="text"
+                value={localCompany.furnizorIBAN || ""}
+                onChange={(e) =>
+                  setLocalCompany({
+                    ...localCompany,
+                    furnizorIBAN: e.target.value,
+                  })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="RO49RNCB0000000123456789"
+              />
+            </div>
+          </div>
+        </div>
+
         {/* SERIE DOCUMENTE */}
         <div className="border-t pt-6">
           <h3 className="text-lg font-semibold mb-4">Serie Documente</h3>
@@ -351,6 +430,65 @@ const ConfigScreen = ({
               />
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Număr următor factură
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={localCompany.invoiceNextNumber ?? 1}
+                onChange={(e) =>
+                  setLocalCompany({
+                    ...localCompany,
+                    invoiceNextNumber: parseInt(e.target.value) || 1,
+                  })
+                }
+                disabled={currentUser.role !== "admin"}
+                className={`w-full px-3 py-2 border border-gray-300 rounded-lg ${
+                  currentUser.role === "admin"
+                    ? "focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-text"
+                    : "bg-gray-100 text-gray-600 cursor-not-allowed"
+                }`}
+                placeholder="1"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                {currentUser.role === "admin"
+                  ? "✏️ Doar admin poate edita"
+                  : "🔒 Editabil doar de admin"}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Padding număr factură
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="10"
+                value={localCompany.invoiceNumberPadding ?? 6}
+                onChange={(e) =>
+                  setLocalCompany({
+                    ...localCompany,
+                    invoiceNumberPadding: parseInt(e.target.value) || 6,
+                  })
+                }
+                disabled={currentUser.role !== "admin"}
+                className={`w-full px-3 py-2 border border-gray-300 rounded-lg ${
+                  currentUser.role === "admin"
+                    ? "focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-text"
+                    : "bg-gray-100 text-gray-600 cursor-not-allowed"
+                }`}
+                placeholder="6"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Ex: padding 6 → FAC-000001
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Serie Chitanțe

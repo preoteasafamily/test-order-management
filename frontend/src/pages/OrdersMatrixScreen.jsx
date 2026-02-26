@@ -323,7 +323,7 @@ const OrdersMatrixScreen = ({
     }
     setBillingLoading((prev) => ({ ...prev, [clientId]: true }));
     try {
-      const response = await fetch(`${API_URL}/api/billing/invoices/from-order`, {
+      const response = await fetch(`${API_URL}/api/billing/local-invoices/from-order`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderId: order.id }),
@@ -727,7 +727,9 @@ const OrdersMatrixScreen = ({
                         if (invoice) {
                           return (
                             <div className="flex flex-col items-center gap-1">
-                              <span className="text-xs text-green-700 font-semibold">✓ Facturat</span>
+                              <span className="text-xs text-green-700 font-semibold font-mono">
+                                ✓ {invoice.invoice_code || "Facturat"}
+                              </span>
                               {invoice.external_invoice_id && (
                                 <button
                                   onClick={() => handleDownloadInvoicePdf(invoice.external_invoice_id)}

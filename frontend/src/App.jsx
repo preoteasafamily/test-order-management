@@ -64,7 +64,17 @@ const App = () => {
   const loadData = async (key) => {
     try {
       // Use API for clients, products, agents, users, zones, orders, and productGroups
-      if (key === "clients") {
+      if (key === "company") {
+        const response = await fetch(`${API_URL}/api/config/company`);
+        if (response.ok) {
+          return await response.json();
+        }
+        console.warn(
+          "API not available for company config, using localStorage fallback",
+        );
+        const result = localStorage.getItem(key);
+        return result ? JSON.parse(result) : null;
+      } else if (key === "clients") {
         const response = await fetch(`${API_URL}/api/clients`);
         if (response.ok) {
           return await response.json();
@@ -199,6 +209,27 @@ const App = () => {
       if (key === "orders") {
         console.warn("Orders should not be saved via saveData - use createOrder/updateOrder API instead");
         return false;
+      }
+      
+      // Save company config to API
+      if (key === "company") {
+        const token = localStorage.getItem("token") || "";
+        const response = await fetch(`${API_URL}/api/config/company`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(data),
+        });
+        if (response.ok) {
+          localStorage.setItem(key, JSON.stringify(data)); // keep as fallback
+          return true;
+        }
+        // Fall through to localStorage if API fails
+        console.warn("API save failed for company config, using localStorage");
+        localStorage.setItem(key, JSON.stringify(data));
+        return true;
       }
       
       // Use API for clients and products
@@ -752,13 +783,16 @@ const App = () => {
     furnizorJudet: "Covasna",
     furnizorLocalitate: "Sfântu Gheorghe",
     furnizorStrada: "Str. Fabricii nr. 10",
-    furnizorBanca: "BCR",
-    furnizorIBAN: "RO49RNCB0000000123456789",
+    furnizorTelefon: "",
+    furnizorEmail: "",
+    furnizorBanca: "",
+    furnizorIBAN: "",
     contIncasariCasa: "5311",
     contIncasariBanca: "5121",
     contImplicit: "5311",
     invoiceSeries: "FAC",
-    invoiceNumber: 1,
+    invoiceNextNumber: 1,
+    invoiceNumberPadding: 6,
     receiptSeries: "CN",
     receiptNumber: 1,
     deliverySeries: "AVZ",
@@ -1341,6 +1375,7 @@ const App = () => {
             API_URL={API_URL}
             orders={orders}
             clients={clients}
+            company={company}
             showMessage={showMessage}
           />
         );
