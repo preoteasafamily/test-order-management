@@ -342,6 +342,58 @@ const ClientsScreen = ({
     }
   };
 
+  const handleBulkStatusChange = async () => {
+    if (selectedClients.length === 0) {
+      showMessage("Selectați cel puțin un client!", "error");
+      return;
+    }
+
+    if (bulkStatus === "periodic") {
+      if (!bulkActiveFrom || !bulkActiveTo) {
+        showMessage("Completați datele de început și sfârșit!", "error");
+        return;
+      }
+      if (bulkActiveFrom > bulkActiveTo) {
+        showMessage(
+          "Data de început trebuie să fie înainte de data de sfârșit!",
+          "error",
+        );
+        return;
+      }
+    }
+
+    try {
+      const updatedClients = clients.map((c) => {
+        if (!selectedClients.includes(c.id)) return c;
+        const updated = { ...c, status: bulkStatus };
+        if (bulkStatus === "periodic") {
+          updated.activeFrom = bulkActiveFrom;
+          updated.activeTo = bulkActiveTo;
+        }
+        return updated;
+      });
+
+      await Promise.all(
+        updatedClients
+          .filter((c) => selectedClients.includes(c.id))
+          .map((c) => updateClient(c.id, c)),
+      );
+
+      setClients(updatedClients);
+      showMessage(
+        `Statusul a fost schimbat pentru ${selectedClients.length} clienți!`,
+      );
+      setSelectedClients([]);
+      setShowBulkModal(false);
+      setBulkStatus("active");
+      setBulkActiveFrom("");
+      setBulkActiveTo("");
+    } catch (error) {
+      console.error("Error updating bulk status:", error);
+      showMessage("Eroare la schimbarea statusului!", "error");
+    }
+  };
+
   const handleBulkZoneChange = async () => {
     if (selectedClients.length === 0) {
       showMessage("Selectați cel puțin un client!", "error");
@@ -357,9 +409,14 @@ const ClientsScreen = ({
       const updatedClients = clients.map((c) =>
         selectedClients.includes(c.id) ? { ...c, priceZone: bulkZone } : c,
       );
-      setClients(updatedClients);
-      await saveData("clients", updatedClients);
 
+      await Promise.all(
+        updatedClients
+          .filter((c) => selectedClients.includes(c.id))
+          .map((c) => updateClient(c.id, c)),
+      );
+
+      setClients(updatedClients);
       showMessage(
         `Zona a fost schimbată pentru ${selectedClients.length} clienți!`,
       );

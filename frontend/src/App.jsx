@@ -1128,7 +1128,7 @@ const App = () => {
             clients={clients}
             setClients={setClients}
             agents={agents}
-            priceZones={priceZones}
+            priceZones={zones}
             products={products}
             editingClient={editingClient}
             setEditingClient={setEditingClient}
