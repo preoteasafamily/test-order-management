@@ -16,6 +16,7 @@ const productGroupsRouter = require("./routes/product-groups");
 const exportCountersRouter = require("./routes/export-counters");
 const dayStatusRouter = require("./routes/day-status");
 const billingRouter = require("./routes/billing");
+const configRouter = require("./routes/config");
 const { initializeClientProducts } = require("./routes/client-products");
 
 const app = express();
@@ -36,6 +37,7 @@ app.use("/api/product-groups", productGroupsRouter);
 app.use("/api/export-counters", exportCountersRouter);
 app.use("/api/day-status", dayStatusRouter);
 app.use("/api/billing", billingRouter);
+app.use("/api/config", configRouter);
 
 // Health check
 app.get("/api/health", (req, res) => {
@@ -105,6 +107,10 @@ app.post("/api/orders", (req, res) => {
         order.validata ? 1 : 0,
       );
     res.json({ ...order, createdAt: new Date().toISOString() });
+    // Auto-upsert local billing invoice (non-blocking, best-effort)
+    try { billingRouter.upsertLocalInvoice(order.id); } catch (err) {
+      console.error('Failed to auto-upsert invoice for order', order.id, err.message);
+    }
   } catch (err) {
     if (
       err.message.includes("UNIQUE constraint failed") ||
@@ -164,6 +170,10 @@ app.put("/api/orders/:id", (req, res) => {
         items: row.items ? JSON.parse(row.items) : [],
       };
       res.json(updatedOrder);
+      // Auto-upsert local billing invoice (non-blocking, best-effort)
+      try { billingRouter.upsertLocalInvoice(req.params.id); } catch (err) {
+        console.error('Failed to auto-upsert invoice for order', req.params.id, err.message);
+      }
     }
   } catch (err) {
     res.status(500).json({ error: err.message });

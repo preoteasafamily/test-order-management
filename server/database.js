@@ -104,6 +104,36 @@ const migrateProductGroupsTable = () => {
   }
 };
 
+// Migrate billing_invoices to add invoice_number, invoice_code, client_name columns
+const migrateBillingInvoicesTable = () => {
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(billing_invoices)").all();
+    if (tableInfo.length === 0) return;
+
+    const hasInvoiceNumber = tableInfo.some(col => col.name === 'invoice_number');
+    const hasInvoiceCode = tableInfo.some(col => col.name === 'invoice_code');
+    const hasClientName = tableInfo.some(col => col.name === 'client_name');
+
+    if (!hasInvoiceNumber) {
+      console.log('Adding invoice_number column to billing_invoices...');
+      db.exec('ALTER TABLE billing_invoices ADD COLUMN invoice_number INTEGER');
+    }
+    if (!hasInvoiceCode) {
+      console.log('Adding invoice_code column to billing_invoices...');
+      db.exec('ALTER TABLE billing_invoices ADD COLUMN invoice_code TEXT');
+    }
+    if (!hasClientName) {
+      console.log('Adding client_name column to billing_invoices...');
+      db.exec('ALTER TABLE billing_invoices ADD COLUMN client_name TEXT');
+    }
+    if (!hasInvoiceNumber || !hasInvoiceCode || !hasClientName) {
+      console.log('✅ billing_invoices table migrated successfully.');
+    }
+  } catch (err) {
+    console.error('Error migrating billing_invoices table:', err);
+  }
+};
+
 // Migrate before creating tables
 migrateOrdersTable();
 
@@ -287,9 +317,22 @@ const createTables = () => {
       total_with_vat REAL,
       status TEXT DEFAULT 'created',
       raw_snapshot TEXT,
+      invoice_number INTEGER,
+      invoice_code TEXT,
+      client_name TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+    )
+  `);
+
+  // App config table (key-value store for application settings)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS app_config (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
@@ -376,6 +419,7 @@ createTables();
 migrateClientsTable();
 migrateProductGroupsTable();
 migrateOrdersTableForValidata();
+migrateBillingInvoicesTable();
 
 // Create default admin user if needed
 createDefaultAdminUser();

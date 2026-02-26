@@ -1,6 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../database');
+const rateLimit = require('express-rate-limit');
+
+// Rate limiter for billing endpoints
+const billingLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const FACTUREAZA_ENDPOINT =
   process.env.FACTUREAZA_ENDPOINT || 'https://sandbox.factureaza.ro/graphql';
@@ -60,6 +69,172 @@ const mapOrderItems = (items, products) => {
   });
 };
 
+/**
+ * Atomically allocate the next invoice number from company settings.
+ * Returns { invoiceNumber, invoiceCode }.
+ * Runs inside a transaction and increments the stored nextNumber.
+ */
+const allocateInvoiceNumber = db.transaction((series, padding) => {
+  const configRow = db
+    .prepare("SELECT value FROM app_config WHERE key = 'company'")
+    .get();
+  const config = configRow ? JSON.parse(configRow.value) : {};
+
+  const currentSeries = series || config.invoiceSeries || 'FAC';
+  const pad = parseInt(padding || config.invoiceNumberPadding, 10) || 6;
+
+  // Guard: use MAX(invoice_number) for this series to prevent gaps/duplicates
+  const maxRow = db
+    .prepare(
+      "SELECT MAX(invoice_number) as maxNum FROM billing_invoices WHERE series = ?"
+    )
+    .get(currentSeries);
+  const maxDb = maxRow?.maxNum || 0;
+  const nextFromConfig = parseInt(config.invoiceNextNumber, 10) || 1;
+  const invoiceNumber = Math.max(nextFromConfig, maxDb + 1);
+
+  // Increment nextNumber in config
+  config.invoiceNextNumber = invoiceNumber + 1;
+  config.invoiceSeries = currentSeries;
+  db.prepare(
+    "INSERT INTO app_config (key, value) VALUES ('company', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP"
+  ).run(JSON.stringify(config));
+
+  const invoiceCode = `${currentSeries}-${String(invoiceNumber).padStart(pad, '0')}`;
+  return { invoiceNumber, invoiceCode, series: currentSeries };
+});
+
+/**
+ * Upsert a local billing invoice for an order.
+ * If invoice already exists, preserves invoice_number/invoice_code.
+ * If new, allocates next number atomically.
+ * Returns the local invoice record.
+ */
+const upsertLocalInvoice = (orderId) => {
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+  if (!order) throw new Error('Order not found');
+
+  // Check if invoice already exists for this order
+  const existing = db
+    .prepare('SELECT * FROM billing_invoices WHERE order_id = ?')
+    .get(orderId);
+
+  if (existing) {
+    // Preserve existing invoice_number/invoice_code; just update snapshot
+    const client = db
+      .prepare('SELECT * FROM clients WHERE id = ?')
+      .get(order.clientId);
+    const products = db
+      .prepare('SELECT * FROM products')
+      .all()
+      .map((p) => ({ ...p, prices: p.prices ? JSON.parse(p.prices) : {} }));
+    const items = order.items ? JSON.parse(order.items) : [];
+    const enrichedItems = items.map((item) => {
+      const product = products.find((p) => p.id === item.productId);
+      return { ...item, product: product || null };
+    });
+
+    const snapshot = {
+      orderId,
+      orderDate: order.date,
+      client: client || { id: order.clientId },
+      items: enrichedItems,
+      total: order.total,
+      totalTVA: order.totalTVA,
+      totalWithVAT: order.totalWithVAT,
+      invoice_number: existing.invoice_number,
+      invoice_code: existing.invoice_code,
+      series: existing.series,
+    };
+
+    db.prepare(
+      `UPDATE billing_invoices SET
+         total = ?, total_vat = ?, total_with_vat = ?,
+         raw_snapshot = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE order_id = ?`
+    ).run(
+      order.total,
+      order.totalTVA,
+      order.totalWithVAT,
+      JSON.stringify(snapshot),
+      orderId
+    );
+
+    return db
+      .prepare('SELECT * FROM billing_invoices WHERE order_id = ?')
+      .get(orderId);
+  }
+
+  // New invoice: allocate number atomically
+  const configRow = db
+    .prepare("SELECT value FROM app_config WHERE key = 'company'")
+    .get();
+  const config = configRow ? JSON.parse(configRow.value) : {};
+  const series = config.invoiceSeries || 'FAC';
+  const padding = parseInt(config.invoiceNumberPadding, 10) || 6;
+
+  const { invoiceNumber, invoiceCode } = allocateInvoiceNumber(
+    series,
+    padding
+  );
+
+  const client = db
+    .prepare('SELECT * FROM clients WHERE id = ?')
+    .get(order.clientId);
+  const clientName = client?.nume || order.clientId;
+  const documentDate = order.date || new Date().toISOString().split('T')[0];
+
+  const products = db
+    .prepare('SELECT * FROM products')
+    .all()
+    .map((p) => ({ ...p, prices: p.prices ? JSON.parse(p.prices) : {} }));
+  const items = order.items ? JSON.parse(order.items) : [];
+  const enrichedItems = items.map((item) => {
+    const product = products.find((p) => p.id === item.productId);
+    return { ...item, product: product || null };
+  });
+
+  const snapshot = {
+    orderId,
+    orderDate: order.date,
+    client: client || { id: order.clientId },
+    items: enrichedItems,
+    total: order.total,
+    totalTVA: order.totalTVA,
+    totalWithVAT: order.totalWithVAT,
+    invoice_number: invoiceNumber,
+    invoice_code: invoiceCode,
+    series,
+  };
+
+  const localId = `billing-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  db.prepare(
+    `INSERT INTO billing_invoices
+      (id, order_id, series, document_date, total, total_vat, total_with_vat,
+       status, raw_snapshot, invoice_number, invoice_code, client_name)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'local', ?, ?, ?, ?)`
+  ).run(
+    localId,
+    orderId,
+    series,
+    documentDate,
+    order.total,
+    order.totalTVA,
+    order.totalWithVAT,
+    JSON.stringify(snapshot),
+    invoiceNumber,
+    invoiceCode,
+    clientName
+  );
+
+  return db
+    .prepare('SELECT * FROM billing_invoices WHERE id = ?')
+    .get(localId);
+};
+
+// Export helper for use in server.js (attach to router so both are available)
+router.upsertLocalInvoice = upsertLocalInvoice;
+
 // POST /api/billing/orders/:orderId/validate - mark order as validated
 router.post('/orders/:orderId/validate', (req, res) => {
   try {
@@ -95,7 +270,38 @@ router.get('/local-invoices', (req, res) => {
   }
 });
 
-// POST /api/billing/invoices/from-order - create invoice from validated order
+// POST /api/billing/local-invoices/from-order - create/return local invoice (no Factureaza)
+router.post('/local-invoices/from-order', billingLimiter, (req, res) => {
+  try {
+    const { orderId } = req.body;
+    if (!orderId) return res.status(400).json({ error: 'orderId required' });
+
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    if (!order.validata) {
+      return res.status(400).json({
+        error: 'Order must be validated before generating invoice',
+      });
+    }
+
+    const record = upsertLocalInvoice(orderId);
+    res.json({
+      success: true,
+      invoice: {
+        ...record,
+        raw_snapshot: record.raw_snapshot
+          ? JSON.parse(record.raw_snapshot)
+          : null,
+      },
+    });
+  } catch (err) {
+    console.error('Error creating local invoice:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/billing/invoices/from-order - create invoice from validated order via Factureaza
 router.post('/invoices/from-order', async (req, res) => {
   try {
     const { orderId, seriesId, clientId: externalClientId } = req.body;
