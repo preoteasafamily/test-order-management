@@ -4,6 +4,7 @@ const cors = require("cors");
 const https = require("https");
 const fs = require("fs");
 const db = require("./database");
+const { rateLimit } = require("express-rate-limit");
 
 // Import route modules
 const agentsRouter = require("./routes/agents");
@@ -36,6 +37,145 @@ app.use("/api/product-groups", productGroupsRouter);
 app.use("/api/export-counters", exportCountersRouter);
 app.use("/api/day-status", dayStatusRouter);
 app.use("/api/billing", billingRouter);
+
+// ============ COMPANY SETTINGS ENDPOINTS ============
+
+const companySettingsLimiter = rateLimit({ windowMs: 60 * 1000, max: 60 });
+
+// GET /api/config/company - get company settings
+app.get("/api/config/company", companySettingsLimiter, (req, res) => {
+  try {
+    const row = db.prepare("SELECT value FROM app_settings WHERE key = 'company'").get();
+    if (!row) return res.json(null);
+    res.json(JSON.parse(row.value));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/config/company - save company settings
+app.put("/api/config/company", companySettingsLimiter, (req, res) => {
+  try {
+    const value = JSON.stringify(req.body);
+    db.prepare(
+      `INSERT INTO app_settings (key, value, updated_at) VALUES ('company', ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+    ).run(value);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Helper: upsert a local billing_invoices record for an order (no PDF generation)
+const upsertBillingInvoice = (order) => {
+  try {
+    const client = db.prepare("SELECT * FROM clients WHERE id = ?").get(order.clientId);
+    const clientName = client ? client.nume : order.clientId;
+
+    const documentDate = order.date || new Date().toISOString().split("T")[0];
+
+    // Get company settings for series/numbering
+    const settingsRow = db.prepare("SELECT value FROM app_settings WHERE key = 'company'").get();
+    const company = settingsRow ? JSON.parse(settingsRow.value) : {};
+    const series = company.invoiceSeries || "FAC";
+
+    // Check if there's an existing invoice for this order
+    const existing = db.prepare("SELECT * FROM billing_invoices WHERE order_id = ?").get(order.id);
+
+    const items = order.items ? (typeof order.items === 'string' ? JSON.parse(order.items) : order.items) : [];
+    const products = db.prepare("SELECT * FROM products").all().map((p) => ({
+      ...p,
+      prices: p.prices ? JSON.parse(p.prices) : {},
+    }));
+
+    const snapshot = {
+      orderId: order.id,
+      clientId: order.clientId,
+      clientName,
+      client: client || null,
+      documentDate,
+      series,
+      items: items.map((item) => {
+        const product = products.find((p) => p.id === item.productId) || null;
+        return {
+          ...item,
+          descriere: product?.descriere || item.productId || "Produs",
+          um: product?.um || "buc",
+          cotaTVA: product?.cotaTVA ?? 0,
+          codArticolFurnizor: product?.codArticolFurnizor || "",
+        };
+      }),
+      total: order.total || 0,
+      totalTVA: order.totalTVA || 0,
+      totalWithVAT: order.totalWithVAT || 0,
+    };
+
+    if (existing) {
+      // Update without changing invoice_code/invoice_number
+      db.prepare(
+        `UPDATE billing_invoices SET
+          document_date = ?, client_name = ?, total = ?, total_vat = ?,
+          total_with_vat = ?, raw_snapshot = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE order_id = ?`
+      ).run(
+        documentDate,
+        clientName,
+        order.total || 0,
+        order.totalTVA || 0,
+        order.totalWithVAT || 0,
+        JSON.stringify(snapshot),
+        order.id
+      );
+    } else {
+      // Assign next invoice number atomically using a transaction
+      db.transaction(() => {
+        let nextNumber = company.invoiceNumber || 1;
+        // Find the current max invoice_number for this series to avoid duplicates
+        const maxRow = db.prepare(
+          "SELECT MAX(invoice_number) as maxNum FROM billing_invoices WHERE series = ?"
+        ).get(series);
+        if (maxRow && maxRow.maxNum !== null && maxRow.maxNum >= nextNumber) {
+          nextNumber = maxRow.maxNum + 1;
+        }
+
+        const paddedNum = String(nextNumber).padStart(6, "0");
+        const invoiceCode = `${series}-${paddedNum}`;
+        const localId = `billing-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+        db.prepare(
+          `INSERT INTO billing_invoices
+            (id, order_id, invoice_code, invoice_number, series, document_date,
+             external_client_id, client_name, total, total_vat, total_with_vat, status, raw_snapshot)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)`
+        ).run(
+          localId,
+          order.id,
+          invoiceCode,
+          nextNumber,
+          series,
+          documentDate,
+          order.clientId || null,
+          clientName,
+          order.total || 0,
+          order.totalTVA || 0,
+          order.totalWithVAT || 0,
+          JSON.stringify(snapshot)
+        );
+
+        // Increment company invoice number in settings
+        if (settingsRow) {
+          const updatedCompany = { ...company, invoiceNumber: nextNumber + 1 };
+          db.prepare(
+            `UPDATE app_settings SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = 'company'`
+          ).run(JSON.stringify(updatedCompany));
+        }
+      })();
+    }
+  } catch (err) {
+    console.error("Error upserting billing invoice:", err);
+  }
+};
 
 // Health check
 app.get("/api/health", (req, res) => {
@@ -105,6 +245,8 @@ app.post("/api/orders", (req, res) => {
         order.validata ? 1 : 0,
       );
     res.json({ ...order, createdAt: new Date().toISOString() });
+    // Upsert billing invoice record (no PDF)
+    upsertBillingInvoice(order);
   } catch (err) {
     if (
       err.message.includes("UNIQUE constraint failed") ||
@@ -164,6 +306,8 @@ app.put("/api/orders/:id", (req, res) => {
         items: row.items ? JSON.parse(row.items) : [],
       };
       res.json(updatedOrder);
+      // Upsert billing invoice record (no PDF)
+      upsertBillingInvoice(updatedOrder);
     }
   } catch (err) {
     res.status(500).json({ error: err.message });

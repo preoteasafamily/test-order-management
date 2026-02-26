@@ -279,17 +279,29 @@ const createTables = () => {
       id TEXT PRIMARY KEY,
       order_id TEXT NOT NULL UNIQUE,
       external_invoice_id TEXT,
+      invoice_code TEXT,
+      invoice_number INTEGER,
       series TEXT,
       document_date TEXT,
       external_client_id TEXT,
+      client_name TEXT,
       total REAL,
       total_vat REAL,
       total_with_vat REAL,
-      status TEXT DEFAULT 'created',
+      status TEXT DEFAULT 'draft',
       raw_snapshot TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+    )
+  `);
+
+  // App Settings table (key-value store for persistent settings like company config)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
@@ -369,6 +381,26 @@ const createDefaultDayStatus = () => {
   }
 };
 
+// Check if we need to add invoice_code/invoice_number columns to billing_invoices
+const migrateBillingInvoicesTable = () => {
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(billing_invoices)").all();
+    if (tableInfo.length > 0) {
+      const hasInvoiceCode = tableInfo.some(col => col.name === 'invoice_code');
+      if (!hasInvoiceCode) {
+        db.exec(`
+          ALTER TABLE billing_invoices ADD COLUMN invoice_code TEXT;
+          ALTER TABLE billing_invoices ADD COLUMN invoice_number INTEGER;
+          ALTER TABLE billing_invoices ADD COLUMN client_name TEXT;
+        `);
+        console.log('✅ billing_invoices table migrated: invoice_code, invoice_number, client_name added.');
+      }
+    }
+  } catch (err) {
+    console.error('Error migrating billing_invoices table:', err);
+  }
+};
+
 // Initialize tables
 createTables();
 
@@ -376,6 +408,7 @@ createTables();
 migrateClientsTable();
 migrateProductGroupsTable();
 migrateOrdersTableForValidata();
+migrateBillingInvoicesTable();
 
 // Create default admin user if needed
 createDefaultAdminUser();
