@@ -10,4 +10,3 @@ certs/
 *.backup
 server_temp.js
 server/.gitignore
-server/storage/invoices/*.pdf

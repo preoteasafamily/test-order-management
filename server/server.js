@@ -16,7 +16,6 @@ const productGroupsRouter = require("./routes/product-groups");
 const exportCountersRouter = require("./routes/export-counters");
 const dayStatusRouter = require("./routes/day-status");
 const billingRouter = require("./routes/billing");
-const { generateLocalInvoice } = require("./routes/billing");
 const { initializeClientProducts } = require("./routes/client-products");
 
 const app = express();
@@ -106,8 +105,6 @@ app.post("/api/orders", (req, res) => {
         order.validata ? 1 : 0,
       );
     res.json({ ...order, createdAt: new Date().toISOString() });
-    // Generate local invoice in background (non-blocking)
-    setImmediate(() => generateLocalInvoice(order.id));
   } catch (err) {
     if (
       err.message.includes("UNIQUE constraint failed") ||
@@ -167,8 +164,6 @@ app.put("/api/orders/:id", (req, res) => {
         items: row.items ? JSON.parse(row.items) : [],
       };
       res.json(updatedOrder);
-      // Regenerate local invoice in background (non-blocking)
-      setImmediate(() => generateLocalInvoice(req.params.id));
     }
   } catch (err) {
     res.status(500).json({ error: err.message });

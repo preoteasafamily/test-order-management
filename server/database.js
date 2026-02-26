@@ -104,33 +104,6 @@ const migrateProductGroupsTable = () => {
   }
 };
 
-// Migrate billing_invoices table to add new columns
-const migrateBillingInvoicesTable = () => {
-  try {
-    const tableInfo = db.prepare("PRAGMA table_info(billing_invoices)").all();
-    if (tableInfo.length === 0) return; // table doesn't exist yet, will be created fresh
-
-    const cols = tableInfo.map(c => c.name);
-    const toAdd = [
-      { name: 'invoice_number', def: 'INTEGER' },
-      { name: 'invoice_code', def: 'TEXT' },
-      { name: 'pdf_path', def: 'TEXT' },
-      { name: 'export_provider', def: 'TEXT' },
-      { name: 'export_status', def: "TEXT DEFAULT 'disabled'" },
-      { name: 'export_attempts', def: 'INTEGER DEFAULT 0' },
-      { name: 'last_export_error', def: 'TEXT' },
-      { name: 'exported_at', def: 'TEXT' },
-    ];
-    for (const col of toAdd) {
-      if (!cols.includes(col.name)) {
-        db.exec(`ALTER TABLE billing_invoices ADD COLUMN ${col.name} ${col.def}`);
-      }
-    }
-  } catch (err) {
-    console.error('Error migrating billing_invoices table:', err);
-  }
-};
-
 // Migrate before creating tables
 migrateOrdersTable();
 
@@ -314,33 +287,11 @@ const createTables = () => {
       total_with_vat REAL,
       status TEXT DEFAULT 'created',
       raw_snapshot TEXT,
-      invoice_number INTEGER,
-      invoice_code TEXT,
-      pdf_path TEXT,
-      export_provider TEXT,
-      export_status TEXT DEFAULT 'disabled',
-      export_attempts INTEGER DEFAULT 0,
-      last_export_error TEXT,
-      exported_at TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
     )
   `);
-
-  // Billing Settings table
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS billing_settings (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      invoice_series TEXT DEFAULT 'FCT',
-      invoice_next_number INTEGER DEFAULT 1,
-      invoice_number_padding INTEGER DEFAULT 6,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-
-  // Insert default billing settings if not present
-  db.exec(`INSERT OR IGNORE INTO billing_settings (id) VALUES (1)`);
 
   console.log('Database tables initialized');
 };
@@ -425,7 +376,6 @@ createTables();
 migrateClientsTable();
 migrateProductGroupsTable();
 migrateOrdersTableForValidata();
-migrateBillingInvoicesTable();
 
 // Create default admin user if needed
 createDefaultAdminUser();
