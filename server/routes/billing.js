@@ -430,7 +430,31 @@ router.get('/local-invoices/:id/pdf', (req, res) => {
   }
 });
 
-// POST /api/billing/invoices/from-order - create invoice from validated order (Factureaza)
+// POST /api/billing/local-invoices/from-order - create/upsert local invoice without Factureaza
+router.post('/local-invoices/from-order', (req, res) => {
+  try {
+    const { orderId } = req.body;
+    if (!orderId) return res.status(400).json({ error: 'orderId required' });
+
+    const record = generateLocalInvoice(orderId);
+    if (!record) return res.status(404).json({ error: 'Order not found or invoice generation failed' });
+
+    res.json({
+      success: true,
+      invoice: {
+        ...record,
+        raw_snapshot: record.raw_snapshot
+          ? JSON.parse(record.raw_snapshot)
+          : null,
+      },
+    });
+  } catch (err) {
+    console.error('Error creating local invoice:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/billing/invoices/from-order - create invoice from validated order via Factureaza
 router.post('/invoices/from-order', async (req, res) => {
   try {
     const { orderId, seriesId, clientId: externalClientId } = req.body;
@@ -759,3 +783,5 @@ router.get('/invoices/:id/pdf', async (req, res) => {
 
 module.exports = router;
 module.exports.generateLocalInvoice = generateLocalInvoice;
+// upsertLocalInvoice is an alias for generateLocalInvoice (creates or updates invoice for an order)
+module.exports.upsertLocalInvoice = generateLocalInvoice;

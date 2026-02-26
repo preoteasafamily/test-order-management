@@ -16,6 +16,7 @@ const productGroupsRouter = require("./routes/product-groups");
 const exportCountersRouter = require("./routes/export-counters");
 const dayStatusRouter = require("./routes/day-status");
 const billingRouter = require("./routes/billing");
+const configRouter = require("./routes/config");
 const { generateLocalInvoice } = require("./routes/billing");
 const { initializeClientProducts } = require("./routes/client-products");
 
@@ -37,6 +38,7 @@ app.use("/api/product-groups", productGroupsRouter);
 app.use("/api/export-counters", exportCountersRouter);
 app.use("/api/day-status", dayStatusRouter);
 app.use("/api/billing", billingRouter);
+app.use("/api/config", configRouter);
 
 // Health check
 app.get("/api/health", (req, res) => {

@@ -114,6 +114,7 @@ const migrateBillingInvoicesTable = () => {
     const toAdd = [
       { name: 'invoice_number', def: 'INTEGER' },
       { name: 'invoice_code', def: 'TEXT' },
+      { name: 'client_name', def: 'TEXT' },
       { name: 'pdf_path', def: 'TEXT' },
       { name: 'export_provider', def: 'TEXT' },
       { name: 'export_status', def: "TEXT DEFAULT 'disabled'" },
@@ -309,6 +310,7 @@ const createTables = () => {
       series TEXT,
       document_date TEXT,
       external_client_id TEXT,
+      client_name TEXT,
       total REAL,
       total_vat REAL,
       total_with_vat REAL,
@@ -341,6 +343,16 @@ const createTables = () => {
 
   // Insert default billing settings if not present
   db.exec(`INSERT OR IGNORE INTO billing_settings (id) VALUES (1)`);
+
+  // App config table (key-value store for company settings and other config)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS app_config (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
 
   console.log('Database tables initialized');
 };
