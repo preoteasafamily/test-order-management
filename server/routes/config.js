@@ -30,6 +30,24 @@ const DEFAULT_COMPANY = {
   receiptSeries: 'CN',
   lotNumberCurrent: 1,
   lotDate: null,
+  // e-Factura seller identity (BT fields)
+  bt_27_seller_name: '',
+  bt_30_seller_legal_registration: '',
+  bt_31_32_seller_vat_identifier: '',
+  bt_29_seller_identifier: '',
+  // e-Factura seller address
+  bt_35_seller_address: '',
+  bt_37_seller_city: '',
+  bt_39_seller_region: '',
+  bt_40_seller_country: 'RO',
+  // e-Factura seller contact
+  bt_41_seller_contact: '',
+  bt_42_seller_phone: '',
+  bt_43_seller_email: '',
+  // e-Factura payment method details
+  bt_84_payee_iban: '',
+  bt_85_payee_bank_name: '',
+  bt_81_payment_means_code: '42',
 };
 
 // GET /api/config/company - returns company settings (public)
@@ -61,6 +79,16 @@ router.put('/company', configLimiter, requireAdmin, (req, res) => {
       'furnizorNume', 'furnizorCIF', 'furnizorNrRegCom', 'furnizorJudet',
       'furnizorLocalitate', 'furnizorStrada', 'furnizorTelefon', 'furnizorEmail',
       'furnizorBanca', 'furnizorIBAN', 'invoiceSeries', 'receiptSeries', 'lotDate',
+      // e-Factura seller identity
+      'bt_27_seller_name', 'bt_30_seller_legal_registration',
+      'bt_31_32_seller_vat_identifier', 'bt_29_seller_identifier',
+      // e-Factura seller address
+      'bt_35_seller_address', 'bt_37_seller_city',
+      'bt_39_seller_region', 'bt_40_seller_country',
+      // e-Factura seller contact
+      'bt_41_seller_contact', 'bt_42_seller_phone', 'bt_43_seller_email',
+      // e-Factura payment method details
+      'bt_84_payee_iban', 'bt_85_payee_bank_name', 'bt_81_payment_means_code',
     ];
     for (const field of STRING_FIELDS) {
       if (settings[field] !== undefined && settings[field] !== null) {
