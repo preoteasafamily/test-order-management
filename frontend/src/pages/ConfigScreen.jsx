@@ -353,6 +353,32 @@ const ConfigScreen = ({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
+                Număr următor factură
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={localCompany.invoiceNextNumber ?? 1}
+                onChange={(e) =>
+                  setLocalCompany({
+                    ...localCompany,
+                    invoiceNextNumber: parseInt(e.target.value) || 1,
+                  })
+                }
+                disabled={currentUser.role !== "admin"}
+                className={`w-full px-3 py-2 border border-gray-300 rounded-lg ${
+                  currentUser.role === "admin"
+                    ? "focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-text"
+                    : "bg-gray-100 text-gray-600 cursor-not-allowed"
+                }`}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                ✏️ Numărul cu care va fi emisă următoarea factură
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 Serie Chitanțe
               </label>
               <input
@@ -368,7 +394,9 @@ const ConfigScreen = ({
                 placeholder="CN"
               />
             </div>
+          </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Număr LOT curent
@@ -405,6 +433,243 @@ const ConfigScreen = ({
               </p>
             </div>
           )}
+        </div>
+
+        {/* DATE E-FACTURA VANZATOR */}
+        <div className="border-t pt-6">
+          <h3 className="text-lg font-semibold mb-1">Date e-Factura Vânzător</h3>
+          <p className="text-sm text-gray-500 mb-4">
+            Câmpuri BT utilizate la generarea facturilor electronice (e-Factura). Dacă sunt completate, vor fi preluate automat pe fiecare factură.
+          </p>
+
+          {/* Identitate vânzător */}
+          <h4 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">
+            Identitate Vânzător
+          </h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                BT-27 Denumire vânzător
+              </label>
+              <input
+                type="text"
+                value={localCompany.bt_27_seller_name ?? ''}
+                onChange={(e) =>
+                  setLocalCompany({ ...localCompany, bt_27_seller_name: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="SC PANIFICATIE SRL"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                BT-30 Nr. înregistrare comercială
+              </label>
+              <input
+                type="text"
+                value={localCompany.bt_30_seller_legal_registration ?? ''}
+                onChange={(e) =>
+                  setLocalCompany({ ...localCompany, bt_30_seller_legal_registration: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="J14/603/1993"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                BT-31/32 CIF/CUI vânzător (TVA)
+              </label>
+              <input
+                type="text"
+                value={localCompany.bt_31_32_seller_vat_identifier ?? ''}
+                onChange={(e) =>
+                  setLocalCompany({ ...localCompany, bt_31_32_seller_vat_identifier: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="RO12345678"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                BT-29 Identificator vânzător{" "}
+                <span className="text-gray-400 font-normal">(opțional)</span>
+              </label>
+              <input
+                type="text"
+                value={localCompany.bt_29_seller_identifier ?? ''}
+                onChange={(e) =>
+                  setLocalCompany({ ...localCompany, bt_29_seller_identifier: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Cod intern opțional"
+              />
+            </div>
+          </div>
+
+          {/* Adresă vânzător */}
+          <h4 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">
+            Adresă Vânzător
+          </h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                BT-35 Adresă stradă
+              </label>
+              <input
+                type="text"
+                value={localCompany.bt_35_seller_address ?? ''}
+                onChange={(e) =>
+                  setLocalCompany({ ...localCompany, bt_35_seller_address: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Str. Fabricii nr. 10"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                BT-37 Localitate
+              </label>
+              <input
+                type="text"
+                value={localCompany.bt_37_seller_city ?? ''}
+                onChange={(e) =>
+                  setLocalCompany({ ...localCompany, bt_37_seller_city: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Sfântu Gheorghe"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                BT-39 Județ / Regiune
+              </label>
+              <input
+                type="text"
+                value={localCompany.bt_39_seller_region ?? ''}
+                onChange={(e) =>
+                  setLocalCompany({ ...localCompany, bt_39_seller_region: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Covasna"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                BT-40 Țară{" "}
+                <span className="text-gray-400 font-normal">(implicit RO)</span>
+              </label>
+              <input
+                type="text"
+                value={localCompany.bt_40_seller_country ?? 'RO'}
+                onChange={(e) =>
+                  setLocalCompany({ ...localCompany, bt_40_seller_country: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="RO"
+                maxLength={2}
+              />
+            </div>
+          </div>
+
+          {/* Contact vânzător */}
+          <h4 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">
+            Contact Vânzător
+          </h4>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                BT-41 Persoană contact
+              </label>
+              <input
+                type="text"
+                value={localCompany.bt_41_seller_contact ?? ''}
+                onChange={(e) =>
+                  setLocalCompany({ ...localCompany, bt_41_seller_contact: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Ion Popescu"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                BT-42 Telefon
+              </label>
+              <input
+                type="text"
+                value={localCompany.bt_42_seller_phone ?? ''}
+                onChange={(e) =>
+                  setLocalCompany({ ...localCompany, bt_42_seller_phone: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="+40 267 123 456"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                BT-43 Email
+              </label>
+              <input
+                type="email"
+                value={localCompany.bt_43_seller_email ?? ''}
+                onChange={(e) =>
+                  setLocalCompany({ ...localCompany, bt_43_seller_email: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="contact@firma.ro"
+              />
+            </div>
+          </div>
+
+          {/* Detalii plată */}
+          <h4 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">
+            Detalii Plată
+          </h4>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                BT-84 IBAN beneficiar
+              </label>
+              <input
+                type="text"
+                value={localCompany.bt_84_payee_iban ?? ''}
+                onChange={(e) =>
+                  setLocalCompany({ ...localCompany, bt_84_payee_iban: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="RO49RNCB0000000123456789"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                BT-85 Denumire bancă
+              </label>
+              <input
+                type="text"
+                value={localCompany.bt_85_payee_bank_name ?? ''}
+                onChange={(e) =>
+                  setLocalCompany({ ...localCompany, bt_85_payee_bank_name: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="BCR"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                BT-81 Cod mijloc plată{" "}
+                <span className="text-gray-400 font-normal">(implicit 42)</span>
+              </label>
+              <input
+                type="text"
+                value={localCompany.bt_81_payment_means_code ?? '42'}
+                onChange={(e) =>
+                  setLocalCompany({ ...localCompany, bt_81_payment_means_code: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="42"
+              />
+              <p className="text-xs text-gray-500 mt-1">42 = transfer bancar</p>
+            </div>
+          </div>
         </div>
 
         {/* BUTOANE */}
