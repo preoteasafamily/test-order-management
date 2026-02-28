@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Calendar, Save, Edit2, Trash2, CheckCircle, FileText, Download } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import { Calendar, Save, Edit2, Trash2, Download } from "lucide-react";
 
 const OrdersMatrixScreen = ({
   orders,
@@ -38,9 +38,8 @@ const OrdersMatrixScreen = ({
 
   // Billing state
   const [billingInvoices, setBillingInvoices] = useState([]);
-  const [billingLoading, setBillingLoading] = useState({});
 
-  useEffect(() => {
+  const refreshBillingInvoices = useCallback(() => {
     if (API_URL) {
       fetch(`${API_URL}/api/billing/local-invoices`)
         .then((r) => (r.ok ? r.json() : []))
@@ -48,6 +47,10 @@ const OrdersMatrixScreen = ({
         .catch(() => setBillingInvoices([]));
     }
   }, [API_URL]);
+
+  useEffect(() => {
+    refreshBillingInvoices();
+  }, [refreshBillingInvoices]);
 
   const isClientExported = (clientId) => {
     const clientOrder = orders.find(
@@ -224,6 +227,7 @@ const OrdersMatrixScreen = ({
 
       setEditModeFromApp(false);
       showMessage(`Salvate ${newOrders.length} comenzi cu succes!`);
+      refreshBillingInvoices();
     } catch (error) {
       showMessage(`Eroare: ${error.message}`, "error");
     }
@@ -279,66 +283,6 @@ const OrdersMatrixScreen = ({
     if (success) {
       setDayStatus(updatedDayStatus);
       showMessage("Ziua a fost deschisă pentru editare!");
-    }
-  };
-
-  const handleValidateOrder = async (clientId) => {
-    const order = orders.find(
-      (o) => o.clientId === clientId && o.date === selectedDate,
-    );
-    if (!order) {
-      showMessage("Nu există comandă de validat!", "error");
-      return;
-    }
-    setBillingLoading((prev) => ({ ...prev, [clientId]: true }));
-    try {
-      const response = await fetch(
-        `${API_URL}/api/billing/orders/${order.id}/validate`,
-        { method: "POST" },
-      );
-      const data = await response.json();
-      if (response.ok) {
-        // Update local orders state
-        setOrders((prev) =>
-          prev.map((o) => (o.id === order.id ? { ...o, validata: true } : o)),
-        );
-        showMessage("Comanda a fost validată!");
-      } else {
-        showMessage(data.error || "Eroare la validare", "error");
-      }
-    } catch (err) {
-      showMessage(`Eroare: ${err.message}`, "error");
-    } finally {
-      setBillingLoading((prev) => ({ ...prev, [clientId]: false }));
-    }
-  };
-
-  const handleGenerateInvoice = async (clientId) => {
-    const order = orders.find(
-      (o) => o.clientId === clientId && o.date === selectedDate,
-    );
-    if (!order) {
-      showMessage("Nu există comandă!", "error");
-      return;
-    }
-    setBillingLoading((prev) => ({ ...prev, [clientId]: true }));
-    try {
-      const response = await fetch(`${API_URL}/api/billing/invoices/from-order`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId: order.id }),
-      });
-      const data = await response.json();
-      if (response.ok) {
-        setBillingInvoices((prev) => [...prev, data.invoice]);
-        showMessage("Factura a fost generată cu succes!");
-      } else {
-        showMessage(data.error || "Eroare la generarea facturii", "error");
-      }
-    } catch (err) {
-      showMessage(`Eroare: ${err.message}`, "error");
-    } finally {
-      setBillingLoading((prev) => ({ ...prev, [clientId]: false }));
     }
   };
 
@@ -579,7 +523,7 @@ const OrdersMatrixScreen = ({
                   Acțiuni
                 </th>
                 <th className="px-1 py-2 text-center font-semibold" style={{ minWidth: "90px" }}>
-                  Facturare
+                  Status factură
                 </th>
               </tr>
             </thead>
@@ -723,7 +667,6 @@ const OrdersMatrixScreen = ({
                         const invoice = billingInvoices.find(
                           (i) => i.order_id === order.id,
                         );
-                        const isLoading = billingLoading[client.id];
                         if (invoice) {
                           return (
                             <div className="flex flex-col items-center gap-1">
@@ -740,29 +683,8 @@ const OrdersMatrixScreen = ({
                             </div>
                           );
                         }
-                        if (!order.validata) {
-                          return (
-                            <button
-                              onClick={() => handleValidateOrder(client.id)}
-                              disabled={isLoading}
-                              className="flex items-center gap-1 px-2 py-1 bg-amber-100 text-amber-800 rounded text-xs hover:bg-amber-200 disabled:opacity-50 transition"
-                              title="Validează comanda"
-                            >
-                              <CheckCircle className="w-3 h-3" />
-                              Validează
-                            </button>
-                          );
-                        }
                         return (
-                          <button
-                            onClick={() => handleGenerateInvoice(client.id)}
-                            disabled={isLoading}
-                            className="flex items-center gap-1 px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50 transition"
-                            title="Generează factură"
-                          >
-                            <FileText className="w-3 h-3" />
-                            {isLoading ? "..." : "Factură"}
-                          </button>
+                          <span className="text-xs text-amber-600">Nefacturat</span>
                         );
                       })()}
                     </td>
