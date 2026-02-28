@@ -132,6 +132,86 @@ const migrateBillingInvoicesTable = () => {
   }
 };
 
+// Migrate billing_invoices table to add e-Factura BT columns for existing databases
+const migrateBillingInvoicesForEFactura = () => {
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(billing_invoices)").all();
+    if (tableInfo.length === 0) return; // table doesn't exist yet, will be created fresh
+
+    const cols = tableInfo.map(c => c.name);
+    const toAdd = [
+      { name: 'bt_1_invoice_number', def: 'TEXT' },
+      { name: 'bt_2_issue_date', def: 'TEXT' },
+      { name: 'bt_3_invoice_type_code', def: 'TEXT' },
+      { name: 'bt_5_document_currency_code', def: 'TEXT' },
+      { name: 'bt_6_vat_accounting_currency_code', def: 'TEXT' },
+      { name: 'bt_9_due_date', def: 'TEXT' },
+      { name: 'bt_10_buyer_reference', def: 'TEXT' },
+      { name: 'bt_11_project_reference', def: 'TEXT' },
+      { name: 'bt_12_contract_reference', def: 'TEXT' },
+      { name: 'bt_13_order_reference', def: 'TEXT' },
+      { name: 'bt_15_receipt_document_reference', def: 'TEXT' },
+      { name: 'bt_16_delivery_document_reference', def: 'TEXT' },
+      { name: 'bt_19_buyer_accounting_reference', def: 'TEXT' },
+      { name: 'bt_20_payment_terms', def: 'TEXT' },
+      { name: 'bt_22_note', def: 'TEXT' },
+      { name: 'bt_25_preceding_invoice_reference', def: 'TEXT' },
+      { name: 'bt_26_preceding_invoice_issue_date', def: 'TEXT' },
+      { name: 'bt_27_seller_name', def: 'TEXT' },
+      { name: 'bt_29_seller_identifier', def: 'TEXT' },
+      { name: 'bt_30_seller_legal_registration', def: 'TEXT' },
+      { name: 'bt_31_32_seller_vat_identifier', def: 'TEXT' },
+      { name: 'bt_35_seller_address', def: 'TEXT' },
+      { name: 'bt_37_seller_city', def: 'TEXT' },
+      { name: 'bt_39_seller_region', def: 'TEXT' },
+      { name: 'bt_40_seller_country', def: "TEXT DEFAULT 'RO'" },
+      { name: 'bt_41_seller_contact', def: 'TEXT' },
+      { name: 'bt_42_seller_phone', def: 'TEXT' },
+      { name: 'bt_43_seller_email', def: 'TEXT' },
+      { name: 'bt_44_buyer_name', def: 'TEXT' },
+      { name: 'bt_46_buyer_identifier', def: 'TEXT' },
+      { name: 'bt_47_buyer_legal_registration', def: 'TEXT' },
+      { name: 'bt_48_buyer_vat_identifier', def: 'TEXT' },
+      { name: 'bt_50_buyer_address', def: 'TEXT' },
+      { name: 'bt_52_buyer_city', def: 'TEXT' },
+      { name: 'bt_54_buyer_region', def: 'TEXT' },
+      { name: 'bt_55_buyer_country', def: "TEXT DEFAULT 'RO'" },
+      { name: 'bt_56_buyer_contact', def: 'TEXT' },
+      { name: 'bt_57_buyer_phone', def: 'TEXT' },
+      { name: 'bt_58_buyer_email', def: 'TEXT' },
+      { name: 'bt_59_payee_name', def: 'TEXT' },
+      { name: 'bt_60_payee_identifier', def: 'TEXT' },
+      { name: 'bt_61_payee_legal_registration', def: 'TEXT' },
+      { name: 'bt_70_delivery_location_name', def: 'TEXT' },
+      { name: 'bt_71_delivery_location_id', def: 'TEXT' },
+      { name: 'bt_72_actual_delivery_date', def: 'TEXT' },
+      { name: 'bt_75_delivery_address', def: 'TEXT' },
+      { name: 'bt_77_delivery_city', def: 'TEXT' },
+      { name: 'bt_79_delivery_region', def: 'TEXT' },
+      { name: 'bt_80_delivery_country', def: "TEXT DEFAULT 'RO'" },
+      { name: 'bt_81_payment_means_code', def: 'TEXT' },
+      { name: 'bt_84_payee_iban', def: 'TEXT' },
+      { name: 'bt_85_payee_bank_name', def: 'TEXT' },
+      { name: 'bt_106_sum_invoice_line_net_amount', def: 'REAL' },
+      { name: 'bt_107_sum_allowances_on_document_level', def: 'REAL' },
+      { name: 'bt_109_invoice_total_amount_without_vat', def: 'REAL' },
+      { name: 'bt_110_invoice_total_vat_amount', def: 'REAL' },
+      { name: 'bt_111_invoice_total_vat_amount_in_accounting_currency', def: 'REAL' },
+      { name: 'bt_112_invoice_total_amount_with_vat', def: 'REAL' },
+      { name: 'bt_113_paid_amount', def: 'REAL' },
+      { name: 'bt_115_amount_due_for_payment', def: 'REAL' },
+    ];
+    for (const col of toAdd) {
+      if (!cols.includes(col.name)) {
+        db.exec(`ALTER TABLE billing_invoices ADD COLUMN ${col.name} ${col.def}`);
+      }
+    }
+    console.log('✅ billing_invoices e-Factura BT columns migration complete.');
+  } catch (err) {
+    console.error('Error migrating billing_invoices for e-Factura:', err);
+  }
+};
+
 // Migrate before creating tables
 migrateOrdersTable();
 
@@ -326,7 +406,138 @@ const createTables = () => {
       exported_at TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      bt_1_invoice_number TEXT,
+      bt_2_issue_date TEXT,
+      bt_3_invoice_type_code TEXT,
+      bt_5_document_currency_code TEXT,
+      bt_6_vat_accounting_currency_code TEXT,
+      bt_9_due_date TEXT,
+      bt_10_buyer_reference TEXT,
+      bt_11_project_reference TEXT,
+      bt_12_contract_reference TEXT,
+      bt_13_order_reference TEXT,
+      bt_15_receipt_document_reference TEXT,
+      bt_16_delivery_document_reference TEXT,
+      bt_19_buyer_accounting_reference TEXT,
+      bt_20_payment_terms TEXT,
+      bt_22_note TEXT,
+      bt_25_preceding_invoice_reference TEXT,
+      bt_26_preceding_invoice_issue_date TEXT,
+      bt_27_seller_name TEXT,
+      bt_29_seller_identifier TEXT,
+      bt_30_seller_legal_registration TEXT,
+      bt_31_32_seller_vat_identifier TEXT,
+      bt_35_seller_address TEXT,
+      bt_37_seller_city TEXT,
+      bt_39_seller_region TEXT,
+      bt_40_seller_country TEXT DEFAULT 'RO',
+      bt_41_seller_contact TEXT,
+      bt_42_seller_phone TEXT,
+      bt_43_seller_email TEXT,
+      bt_44_buyer_name TEXT,
+      bt_46_buyer_identifier TEXT,
+      bt_47_buyer_legal_registration TEXT,
+      bt_48_buyer_vat_identifier TEXT,
+      bt_50_buyer_address TEXT,
+      bt_52_buyer_city TEXT,
+      bt_54_buyer_region TEXT,
+      bt_55_buyer_country TEXT DEFAULT 'RO',
+      bt_56_buyer_contact TEXT,
+      bt_57_buyer_phone TEXT,
+      bt_58_buyer_email TEXT,
+      bt_59_payee_name TEXT,
+      bt_60_payee_identifier TEXT,
+      bt_61_payee_legal_registration TEXT,
+      bt_70_delivery_location_name TEXT,
+      bt_71_delivery_location_id TEXT,
+      bt_72_actual_delivery_date TEXT,
+      bt_75_delivery_address TEXT,
+      bt_77_delivery_city TEXT,
+      bt_79_delivery_region TEXT,
+      bt_80_delivery_country TEXT DEFAULT 'RO',
+      bt_81_payment_means_code TEXT,
+      bt_84_payee_iban TEXT,
+      bt_85_payee_bank_name TEXT,
+      bt_106_sum_invoice_line_net_amount REAL,
+      bt_107_sum_allowances_on_document_level REAL,
+      bt_109_invoice_total_amount_without_vat REAL,
+      bt_110_invoice_total_vat_amount REAL,
+      bt_111_invoice_total_vat_amount_in_accounting_currency REAL,
+      bt_112_invoice_total_amount_with_vat REAL,
+      bt_113_paid_amount REAL,
+      bt_115_amount_due_for_payment REAL,
       FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+    )
+  `);
+
+  // Invoice lines table (e-Factura BG-25 line BT fields)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS billing_invoice_lines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_id TEXT NOT NULL,
+      bt_126_line_id INTEGER,
+      bt_127_line_note TEXT,
+      bt_129_invoiced_quantity REAL,
+      bt_129_unit_code TEXT,
+      bt_131_line_net_amount REAL,
+      bt_146_item_net_price REAL,
+      bt_147_item_price_discount REAL,
+      bt_148_item_gross_price REAL,
+      bt_151_line_vat_category_code TEXT,
+      bt_152_line_vat_rate REAL,
+      bt_153_item_name TEXT,
+      bt_154_item_description TEXT,
+      bt_155_seller_item_id TEXT,
+      bt_156_buyer_item_id TEXT,
+      bt_157_item_barcode TEXT,
+      bt_158_item_classification_id TEXT,
+      bt_160_item_attribute_name TEXT,
+      bt_161_item_attribute_value TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (invoice_id) REFERENCES billing_invoices(id) ON DELETE CASCADE
+    )
+  `);
+
+  // VAT breakdown table (e-Factura BG-23)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS invoice_vat_breakdown (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_id TEXT NOT NULL,
+      bt_118_vat_category_code TEXT,
+      bt_119_vat_rate REAL,
+      bt_116_vat_taxable_amount REAL,
+      bt_117_vat_tax_amount REAL,
+      bt_120_vat_exemption_reason_text TEXT,
+      bt_121_vat_exemption_reason_code TEXT,
+      FOREIGN KEY (invoice_id) REFERENCES billing_invoices(id) ON DELETE CASCADE
+    )
+  `);
+
+  // Document-level allowances/charges table (e-Factura BG-20)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS invoice_document_allowances (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_id TEXT NOT NULL,
+      bt_92_allowance_amount REAL,
+      bt_95_vat_category_code TEXT,
+      bt_96_vat_rate REAL,
+      bt_97_allowance_reason TEXT,
+      bt_98_allowance_reason_code TEXT,
+      FOREIGN KEY (invoice_id) REFERENCES billing_invoices(id) ON DELETE CASCADE
+    )
+  `);
+
+  // Line-level allowances table (e-Factura BG-27)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS invoice_line_allowances (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_line_id INTEGER NOT NULL,
+      bt_136_allowance_amount REAL,
+      bt_137_allowance_base_amount REAL,
+      bt_138_allowance_percentage REAL,
+      bt_139_allowance_reason TEXT,
+      bt_140_allowance_reason_code TEXT,
+      FOREIGN KEY (invoice_line_id) REFERENCES billing_invoice_lines(id) ON DELETE CASCADE
     )
   `);
 
@@ -438,6 +649,7 @@ migrateClientsTable();
 migrateProductGroupsTable();
 migrateOrdersTableForValidata();
 migrateBillingInvoicesTable();
+migrateBillingInvoicesForEFactura();
 
 // Create default admin user if needed
 createDefaultAdminUser();
