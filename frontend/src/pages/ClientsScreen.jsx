@@ -26,6 +26,7 @@ const ClientsScreen = ({
   const [bulkActiveTo, setBulkActiveTo] = useState("");
   const [showBulkZoneModal, setShowBulkZoneModal] = useState(false);
   const [bulkZone, setBulkZone] = useState("");
+  const [showEFacturaSection, setShowEFacturaSection] = useState(false);
 
   // ✅ SYNC cu editingClient când se schimbă
   useEffect(() => {
@@ -91,6 +92,15 @@ const ClientsScreen = ({
       status: "active",
       activeFrom: null,
       activeTo: null,
+      buyer_contact: "",
+      buyer_country: "RO",
+      buyer_vat_identifier: "",
+      delivery_name: "",
+      delivery_gln: "",
+      delivery_address: "",
+      delivery_city: "",
+      delivery_region: "",
+      delivery_country: "RO",
     };
     setEditingClient(newClient);
     setLocalEditingClient(newClient);
@@ -730,6 +740,197 @@ const ClientsScreen = ({
                     }
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* DETALII E-FACTURA */}
+          <div className="border-t pt-6">
+            <button
+              type="button"
+              onClick={() => setShowEFacturaSection(!showEFacturaSection)}
+              className="flex items-center gap-2 text-lg font-semibold text-gray-800 hover:text-blue-700 transition w-full text-left"
+            >
+              <span>{showEFacturaSection ? "▾" : "▸"}</span>
+              Detalii e-Factura
+            </button>
+
+            {showEFacturaSection && (
+              <div className="mt-4 space-y-4">
+                <p className="text-sm text-gray-500">
+                  Câmpuri utilizate la generarea automată a facturilor electronice (e-Factura RO).
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Persoană Contact Cumpărător (BT-56)
+                    </label>
+                    <input
+                      type="text"
+                      value={localEditingClient.buyer_contact || ""}
+                      onChange={(e) =>
+                        setLocalEditingClient({
+                          ...localEditingClient,
+                          buyer_contact: e.target.value,
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Ion Popescu"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Țară Cumpărător (BT-55)
+                    </label>
+                    <input
+                      type="text"
+                      value={localEditingClient.buyer_country || "RO"}
+                      onChange={(e) =>
+                        setLocalEditingClient({
+                          ...localEditingClient,
+                          buyer_country: e.target.value || "RO",
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="RO"
+                      maxLength={2}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Cod TVA Cumpărător (BT-48)
+                  </label>
+                  <input
+                    type="text"
+                    value={localEditingClient.buyer_vat_identifier || ""}
+                    onChange={(e) =>
+                      setLocalEditingClient({
+                        ...localEditingClient,
+                        buyer_vat_identifier: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="RO12345678"
+                  />
+                </div>
+
+                <div className="border-t pt-4">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3">
+                    Adresă Livrare
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Denumire Loc Livrare (BT-70)
+                      </label>
+                      <input
+                        type="text"
+                        value={localEditingClient.delivery_name || ""}
+                        onChange={(e) =>
+                          setLocalEditingClient({
+                            ...localEditingClient,
+                            delivery_name: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Depozit Central"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        GLN Loc Livrare (BT-71)
+                      </label>
+                      <input
+                        type="text"
+                        value={localEditingClient.delivery_gln || ""}
+                        onChange={(e) =>
+                          setLocalEditingClient({
+                            ...localEditingClient,
+                            delivery_gln: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="5600123000000"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Adresă Livrare (BT-75)
+                    </label>
+                    <input
+                      type="text"
+                      value={localEditingClient.delivery_address || ""}
+                      onChange={(e) =>
+                        setLocalEditingClient({
+                          ...localEditingClient,
+                          delivery_address: e.target.value,
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Str. Industriilor nr. 5"
+                    />
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Localitate Livrare (BT-77)
+                      </label>
+                      <input
+                        type="text"
+                        value={localEditingClient.delivery_city || ""}
+                        onChange={(e) =>
+                          setLocalEditingClient({
+                            ...localEditingClient,
+                            delivery_city: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="București"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Județ/Regiune Livrare (BT-79)
+                      </label>
+                      <input
+                        type="text"
+                        value={localEditingClient.delivery_region || ""}
+                        onChange={(e) =>
+                          setLocalEditingClient({
+                            ...localEditingClient,
+                            delivery_region: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Ilfov"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Țară Livrare (BT-80)
+                      </label>
+                      <input
+                        type="text"
+                        value={localEditingClient.delivery_country || "RO"}
+                        onChange={(e) =>
+                          setLocalEditingClient({
+                            ...localEditingClient,
+                            delivery_country: e.target.value || "RO",
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="RO"
+                        maxLength={2}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

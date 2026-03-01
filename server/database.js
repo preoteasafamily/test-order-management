@@ -132,6 +132,35 @@ const migrateBillingInvoicesTable = () => {
   }
 };
 
+// Migrate clients table to add e-Factura BT buyer/delivery columns
+const migrateClientsTableForEFactura = () => {
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(clients)").all();
+    if (tableInfo.length === 0) return; // table doesn't exist yet, will be created fresh
+
+    const cols = tableInfo.map(c => c.name);
+    const toAdd = [
+      { name: 'buyer_contact', def: 'TEXT' },
+      { name: 'buyer_country', def: "TEXT DEFAULT 'RO'" },
+      { name: 'buyer_vat_identifier', def: 'TEXT' },
+      { name: 'delivery_name', def: 'TEXT' },
+      { name: 'delivery_gln', def: 'TEXT' },
+      { name: 'delivery_address', def: 'TEXT' },
+      { name: 'delivery_city', def: 'TEXT' },
+      { name: 'delivery_region', def: 'TEXT' },
+      { name: 'delivery_country', def: "TEXT DEFAULT 'RO'" },
+    ];
+    for (const col of toAdd) {
+      if (!cols.includes(col.name)) {
+        db.exec(`ALTER TABLE clients ADD COLUMN ${col.name} ${col.def}`);
+      }
+    }
+    console.log('✅ clients e-Factura BT columns migration complete.');
+  } catch (err) {
+    console.error('Error migrating clients table for e-Factura:', err);
+  }
+};
+
 // Migrate billing_invoices table to add e-Factura BT columns for existing databases
 const migrateBillingInvoicesForEFactura = () => {
   try {
@@ -301,6 +330,15 @@ const createTables = () => {
       status TEXT DEFAULT 'active',
       activeFrom TEXT,
       activeTo TEXT,
+      buyer_contact TEXT,
+      buyer_country TEXT DEFAULT 'RO',
+      buyer_vat_identifier TEXT,
+      delivery_name TEXT,
+      delivery_gln TEXT,
+      delivery_address TEXT,
+      delivery_city TEXT,
+      delivery_region TEXT,
+      delivery_country TEXT DEFAULT 'RO',
       createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
       updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
     )
@@ -646,6 +684,7 @@ createTables();
 
 // Run migrations after tables are created
 migrateClientsTable();
+migrateClientsTableForEFactura();
 migrateProductGroupsTable();
 migrateOrdersTableForValidata();
 migrateBillingInvoicesTable();
