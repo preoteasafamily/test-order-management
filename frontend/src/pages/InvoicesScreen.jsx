@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { FileText, Download, RefreshCw, Settings, Save, CheckSquare, Square } from "lucide-react";
+import { FileText, Download, RefreshCw, Settings, Save, CheckSquare, Square, List, X, Plus, Trash2, Edit2 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import JSZip from "jszip";
@@ -113,7 +113,7 @@ const generateInvoicePDF = (inv, company) => {
   return doc;
 };
 
-const InvoicesScreen = ({ API_URL, orders, clients, showMessage, currentUser }) => {
+const InvoicesScreen = ({ API_URL, orders, clients, products = [], showMessage, currentUser }) => {
   const [localInvoices, setLocalInvoices] = useState([]);
   const [loading, setLoading] = useState(false);
   const [company, setCompany] = useState(null);
@@ -124,6 +124,13 @@ const InvoicesScreen = ({ API_URL, orders, clients, showMessage, currentUser }) 
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [editSettings, setEditSettings] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
+
+  // Invoice lines state
+  const [linesInvoice, setLinesInvoice] = useState(null); // invoice whose lines are shown
+  const [lines, setLines] = useState([]);
+  const [linesLoading, setLinesLoading] = useState(false);
+  const [editingLine, setEditingLine] = useState(null); // null = not editing, {} = new, line obj = edit
+  const [lineForm, setLineForm] = useState({});
 
   const isAdmin = currentUser?.role === "admin";
 
@@ -300,8 +307,427 @@ const InvoicesScreen = ({ API_URL, orders, clients, showMessage, currentUser }) 
     return { order, client };
   };
 
+  // ---- Invoice Lines Management ----
+
+  const openLines = async (inv) => {
+    setLinesInvoice(inv);
+    setEditingLine(null);
+    setLineForm({});
+    setLinesLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/api/billing/local-invoices/${inv.id}/lines`);
+      if (response.ok) {
+        setLines(await response.json());
+      } else {
+        showMessage("Eroare la încărcarea liniilor", "error");
+        setLines([]);
+      }
+    } catch (err) {
+      showMessage(`Eroare: ${err.message}`, "error");
+      setLines([]);
+    } finally {
+      setLinesLoading(false);
+    }
+  };
+
+  const closeLines = () => {
+    setLinesInvoice(null);
+    setLines([]);
+    setEditingLine(null);
+    setLineForm({});
+  };
+
+  // When a product is selected in the line form, auto-populate BT fields
+  const handleLineProductSelect = (productId) => {
+    const product = products.find((p) => p.id === productId);
+    if (!product) {
+      setLineForm((f) => ({ ...f, productId: "" }));
+      return;
+    }
+    const vatRate = product.cotaTVA != null ? product.cotaTVA : "";
+    const vatCategoryCode = vatRate === 19 ? "S" : (vatRate !== "" ? "" : "");
+    const prices = product.prices && typeof product.prices === "object" ? product.prices : {};
+    const firstPrice = Object.values(prices)[0] || 0;
+    setLineForm((f) => ({
+      ...f,
+      productId,
+      bt_153_item_name: product.descriere || "",
+      bt_129_unit_code: product.um || "",
+      bt_152_line_vat_rate: vatRate !== "" ? String(vatRate) : "",
+      bt_151_line_vat_category_code: vatCategoryCode,
+      bt_155_seller_item_id: product.codArticolFurnizor || "",
+      bt_157_item_barcode: product.codBare || "",
+      bt_146_item_net_price: f.bt_146_item_net_price || (firstPrice ? String(firstPrice) : ""),
+    }));
+  };
+
+  // Recalculate net amount when qty or price changes
+  const handleLineFormChange = (field, value) => {
+    setLineForm((f) => {
+      const updated = { ...f, [field]: value };
+      if (field === "bt_129_invoiced_quantity" || field === "bt_146_item_net_price") {
+        const qty = parseFloat(updated.bt_129_invoiced_quantity) || 0;
+        const price = parseFloat(updated.bt_146_item_net_price) || 0;
+        updated.bt_131_line_net_amount = String((qty * price).toFixed(2));
+      }
+      return updated;
+    });
+  };
+
+  const startAddLine = () => {
+    setEditingLine("new");
+    setLineForm({
+      productId: "",
+      bt_153_item_name: "",
+      bt_129_invoiced_quantity: "1",
+      bt_129_unit_code: "",
+      bt_146_item_net_price: "",
+      bt_131_line_net_amount: "",
+      bt_152_line_vat_rate: "",
+      bt_151_line_vat_category_code: "",
+      bt_155_seller_item_id: "",
+      bt_157_item_barcode: "",
+    });
+  };
+
+  const startEditLine = (line) => {
+    setEditingLine(line);
+    setLineForm({
+      productId: "",
+      bt_153_item_name: line.bt_153_item_name || "",
+      bt_129_invoiced_quantity: line.bt_129_invoiced_quantity != null ? String(line.bt_129_invoiced_quantity) : "1",
+      bt_129_unit_code: line.bt_129_unit_code || "",
+      bt_146_item_net_price: line.bt_146_item_net_price != null ? String(line.bt_146_item_net_price) : "",
+      bt_131_line_net_amount: line.bt_131_line_net_amount != null ? String(line.bt_131_line_net_amount) : "",
+      bt_152_line_vat_rate: line.bt_152_line_vat_rate != null ? String(line.bt_152_line_vat_rate) : "",
+      bt_151_line_vat_category_code: line.bt_151_line_vat_category_code || "",
+      bt_155_seller_item_id: line.bt_155_seller_item_id || "",
+      bt_157_item_barcode: line.bt_157_item_barcode || "",
+    });
+  };
+
+  const cancelEditLine = () => {
+    setEditingLine(null);
+    setLineForm({});
+  };
+
+  const saveLine = async () => {
+    if (!linesInvoice) return;
+    const payload = {
+      productId: lineForm.productId || undefined,
+      bt_153_item_name: lineForm.bt_153_item_name || null,
+      bt_129_invoiced_quantity: parseFloat(lineForm.bt_129_invoiced_quantity) || 0,
+      bt_129_unit_code: lineForm.bt_129_unit_code || null,
+      bt_146_item_net_price: parseFloat(lineForm.bt_146_item_net_price) || 0,
+      bt_131_line_net_amount: parseFloat(lineForm.bt_131_line_net_amount) || 0,
+      bt_152_line_vat_rate: lineForm.bt_152_line_vat_rate !== "" ? parseFloat(lineForm.bt_152_line_vat_rate) : null,
+      bt_151_line_vat_category_code: lineForm.bt_151_line_vat_category_code || null,
+      bt_155_seller_item_id: lineForm.bt_155_seller_item_id || null,
+      bt_157_item_barcode: lineForm.bt_157_item_barcode || null,
+    };
+
+    try {
+      let response;
+      if (editingLine === "new") {
+        response = await fetch(`${API_URL}/api/billing/local-invoices/${linesInvoice.id}/lines`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      } else {
+        response = await fetch(`${API_URL}/api/billing/local-invoices/${linesInvoice.id}/lines/${editingLine.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      }
+      if (response.ok) {
+        showMessage("Linie salvată cu succes!");
+        setEditingLine(null);
+        setLineForm({});
+        await openLines(linesInvoice);
+      } else {
+        const err = await response.json();
+        showMessage(err.error || "Eroare la salvarea liniei", "error");
+      }
+    } catch (err) {
+      showMessage(`Eroare: ${err.message}`, "error");
+    }
+  };
+
+  const deleteLine = async (line) => {
+    if (!linesInvoice) return;
+    if (!window.confirm("Ștergeți linia?")) return;
+    try {
+      const response = await fetch(
+        `${API_URL}/api/billing/local-invoices/${linesInvoice.id}/lines/${line.id}`,
+        { method: "DELETE" }
+      );
+      if (response.ok) {
+        showMessage("Linie ștearsă!");
+        await openLines(linesInvoice);
+      } else {
+        const err = await response.json();
+        showMessage(err.error || "Eroare la ștergere", "error");
+      }
+    } catch (err) {
+      showMessage(`Eroare: ${err.message}`, "error");
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {/* Invoice Lines Modal */}
+      {linesInvoice && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-start justify-center pt-10 px-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-bold text-gray-800">
+                Linii Factură – {linesInvoice.invoice_code || linesInvoice.id}
+              </h3>
+              <button onClick={closeLines} className="text-gray-500 hover:text-gray-800">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Line edit / add form */}
+              {editingLine !== null && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
+                  <h4 className="font-semibold text-gray-700">
+                    {editingLine === "new" ? "Adăugare linie nouă" : "Editare linie"}
+                  </h4>
+
+                  {/* Product selector */}
+                  {products.length > 0 && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Selectează produs (auto-populare câmpuri)
+                      </label>
+                      <select
+                        value={lineForm.productId || ""}
+                        onChange={(e) => handleLineProductSelect(e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      >
+                        <option value="">-- Selectați produs --</option>
+                        {products.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.codArticolFurnizor} – {p.descriere}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        BT-153 Denumire produs
+                      </label>
+                      <input
+                        type="text"
+                        value={lineForm.bt_153_item_name || ""}
+                        onChange={(e) => handleLineFormChange("bt_153_item_name", e.target.value)}
+                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        BT-129 Cantitate
+                      </label>
+                      <input
+                        type="number"
+                        step="0.001"
+                        value={lineForm.bt_129_invoiced_quantity || ""}
+                        onChange={(e) => handleLineFormChange("bt_129_invoiced_quantity", e.target.value)}
+                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        BT-129 UM
+                      </label>
+                      <input
+                        type="text"
+                        value={lineForm.bt_129_unit_code || ""}
+                        onChange={(e) => handleLineFormChange("bt_129_unit_code", e.target.value)}
+                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        BT-146 Preț net unitar
+                      </label>
+                      <input
+                        type="number"
+                        step="0.0001"
+                        value={lineForm.bt_146_item_net_price || ""}
+                        onChange={(e) => handleLineFormChange("bt_146_item_net_price", e.target.value)}
+                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        BT-131 Valoare netă linie
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={lineForm.bt_131_line_net_amount || ""}
+                        onChange={(e) => handleLineFormChange("bt_131_line_net_amount", e.target.value)}
+                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        BT-152 Cotă TVA (%)
+                      </label>
+                      <input
+                        type="number"
+                        step="1"
+                        value={lineForm.bt_152_line_vat_rate || ""}
+                        onChange={(e) => handleLineFormChange("bt_152_line_vat_rate", e.target.value)}
+                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        BT-151 Categorie TVA
+                      </label>
+                      <input
+                        type="text"
+                        value={lineForm.bt_151_line_vat_category_code || ""}
+                        onChange={(e) => handleLineFormChange("bt_151_line_vat_category_code", e.target.value)}
+                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        placeholder="S"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        BT-155 Cod furnizor
+                      </label>
+                      <input
+                        type="text"
+                        value={lineForm.bt_155_seller_item_id || ""}
+                        onChange={(e) => handleLineFormChange("bt_155_seller_item_id", e.target.value)}
+                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        BT-157 Cod bare
+                      </label>
+                      <input
+                        type="text"
+                        value={lineForm.bt_157_item_barcode || ""}
+                        onChange={(e) => handleLineFormChange("bt_157_item_barcode", e.target.value)}
+                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={saveLine}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 text-sm transition"
+                    >
+                      <Save className="w-4 h-4" />
+                      Salvează
+                    </button>
+                    <button
+                      onClick={cancelEditLine}
+                      className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm transition"
+                    >
+                      Anulează
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Lines table */}
+              {linesLoading ? (
+                <p className="text-sm text-gray-500 text-center py-4">Se încarcă...</p>
+              ) : lines.length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-4">
+                  Nu există linii. Liniile se generează automat la salvarea comenzii.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs border-collapse">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-2 py-1.5 text-left font-semibold text-gray-600 border border-gray-200">#</th>
+                        <th className="px-2 py-1.5 text-left font-semibold text-gray-600 border border-gray-200">BT-153 Denumire</th>
+                        <th className="px-2 py-1.5 text-left font-semibold text-gray-600 border border-gray-200">BT-129 Cant.</th>
+                        <th className="px-2 py-1.5 text-left font-semibold text-gray-600 border border-gray-200">UM</th>
+                        <th className="px-2 py-1.5 text-right font-semibold text-gray-600 border border-gray-200">BT-146 Preț net</th>
+                        <th className="px-2 py-1.5 text-right font-semibold text-gray-600 border border-gray-200">BT-131 Val. netă</th>
+                        <th className="px-2 py-1.5 text-center font-semibold text-gray-600 border border-gray-200">BT-152 TVA%</th>
+                        <th className="px-2 py-1.5 text-center font-semibold text-gray-600 border border-gray-200">BT-151</th>
+                        <th className="px-2 py-1.5 text-left font-semibold text-gray-600 border border-gray-200">BT-155 Cod furn.</th>
+                        <th className="px-2 py-1.5 text-left font-semibold text-gray-600 border border-gray-200">BT-157 Bare</th>
+                        <th className="px-2 py-1.5 text-center font-semibold text-gray-600 border border-gray-200">Acțiuni</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lines.map((line) => (
+                        <tr key={line.id} className="hover:bg-gray-50">
+                          <td className="px-2 py-1.5 border border-gray-200">{line.bt_126_line_id}</td>
+                          <td className="px-2 py-1.5 border border-gray-200">{line.bt_153_item_name || "-"}</td>
+                          <td className="px-2 py-1.5 border border-gray-200">{line.bt_129_invoiced_quantity ?? "-"}</td>
+                          <td className="px-2 py-1.5 border border-gray-200">{line.bt_129_unit_code || "-"}</td>
+                          <td className="px-2 py-1.5 border border-gray-200 text-right">{line.bt_146_item_net_price != null ? Number(line.bt_146_item_net_price).toFixed(4) : "-"}</td>
+                          <td className="px-2 py-1.5 border border-gray-200 text-right font-medium">{line.bt_131_line_net_amount != null ? Number(line.bt_131_line_net_amount).toFixed(2) : "-"}</td>
+                          <td className="px-2 py-1.5 border border-gray-200 text-center">{line.bt_152_line_vat_rate != null ? `${line.bt_152_line_vat_rate}%` : "-"}</td>
+                          <td className="px-2 py-1.5 border border-gray-200 text-center">{line.bt_151_line_vat_category_code || "-"}</td>
+                          <td className="px-2 py-1.5 border border-gray-200">{line.bt_155_seller_item_id || "-"}</td>
+                          <td className="px-2 py-1.5 border border-gray-200">{line.bt_157_item_barcode || "-"}</td>
+                          <td className="px-2 py-1.5 border border-gray-200 text-center">
+                            <div className="flex gap-1 justify-center">
+                              <button
+                                onClick={() => startEditLine(line)}
+                                className="p-1 hover:bg-blue-100 rounded text-blue-600"
+                                title="Editează"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => deleteLine(line)}
+                                className="p-1 hover:bg-red-100 rounded text-red-600"
+                                title="Șterge"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="flex justify-between pt-2">
+                <button
+                  onClick={startAddLine}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm transition"
+                >
+                  <Plus className="w-4 h-4" />
+                  Adaugă linie
+                </button>
+                <button
+                  onClick={closeLines}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm transition"
+                >
+                  Închide
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-800">Facturi</h2>
         <div className="flex gap-2">
@@ -454,6 +880,9 @@ const InvoicesScreen = ({ API_URL, orders, clients, showMessage, currentUser }) 
                     Status
                   </th>
                   <th className="px-4 py-3 text-center font-semibold text-gray-700">
+                    Linii BT
+                  </th>
+                  <th className="px-4 py-3 text-center font-semibold text-gray-700">
                     PDF
                   </th>
                 </tr>
@@ -507,6 +936,15 @@ const InvoicesScreen = ({ API_URL, orders, clients, showMessage, currentUser }) 
                         <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
                           {inv.status || "created"}
                         </span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => openLines(inv)}
+                          className="p-1.5 hover:bg-amber-100 rounded text-amber-600 transition"
+                          title="Linii factură (câmpuri BT)"
+                        >
+                          <List className="w-4 h-4" />
+                        </button>
                       </td>
                       <td className="px-4 py-3 text-center">
                         <button
