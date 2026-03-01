@@ -322,8 +322,10 @@ app.post("/api/clients", (req, res) => {
         `INSERT INTO clients (
                 id, nume, cif, nrRegCom, codContabil, judet, localitate, strada, 
                 codPostal, telefon, email, banca, iban, agentId, priceZone, 
-                afiseazaKG, productCodes, status, activeFrom, activeTo
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                afiseazaKG, productCodes, status, activeFrom, activeTo,
+                buyer_contact, buyer_country, buyer_vat_identifier,
+                delivery_name, delivery_gln, delivery_address, delivery_city, delivery_region, delivery_country
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         client.id,
@@ -346,6 +348,15 @@ app.post("/api/clients", (req, res) => {
         status,
         client.activeFrom || null,
         client.activeTo || null,
+        client.buyer_contact || null,
+        client.buyer_country || 'RO',
+        client.buyer_vat_identifier || null,
+        client.delivery_name || null,
+        client.delivery_gln || null,
+        client.delivery_address || null,
+        client.delivery_city || null,
+        client.delivery_region || null,
+        client.delivery_country || 'RO',
       );
 
     // Initialize all products as active for this new client
@@ -443,7 +454,11 @@ app.put("/api/clients/:id", (req, res) => {
                 nume = ?, cif = ?, nrRegCom = ?, codContabil = ?, judet = ?, 
                 localitate = ?, strada = ?, codPostal = ?, telefon = ?, email = ?, 
                 banca = ?, iban = ?, agentId = ?, priceZone = ?, afiseazaKG = ?, 
-                productCodes = ?, status = ?, activeFrom = ?, activeTo = ?, updatedAt = CURRENT_TIMESTAMP
+                productCodes = ?, status = ?, activeFrom = ?, activeTo = ?,
+                buyer_contact = ?, buyer_country = ?, buyer_vat_identifier = ?,
+                delivery_name = ?, delivery_gln = ?, delivery_address = ?,
+                delivery_city = ?, delivery_region = ?, delivery_country = ?,
+                updatedAt = CURRENT_TIMESTAMP
             WHERE id = ?`,
       )
       .run(
@@ -466,6 +481,15 @@ app.put("/api/clients/:id", (req, res) => {
         status,
         client.activeFrom || null,
         client.activeTo || null,
+        client.buyer_contact || null,
+        client.buyer_country || 'RO',
+        client.buyer_vat_identifier || null,
+        client.delivery_name || null,
+        client.delivery_gln || null,
+        client.delivery_address || null,
+        client.delivery_city || null,
+        client.delivery_region || null,
+        client.delivery_country || 'RO',
         req.params.id,
       );
 
