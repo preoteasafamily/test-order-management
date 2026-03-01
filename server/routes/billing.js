@@ -203,10 +203,10 @@ const upsertInvoiceLines = (invoiceId, items, products) => {
   const insertLine = db.prepare(`
     INSERT INTO billing_invoice_lines (
       invoice_id, bt_126_line_id, bt_129_invoiced_quantity, bt_129_unit_code,
-      bt_131_line_net_amount, bt_146_item_net_price,
+      bt_131_line_net_amount, bt_146_item_net_price, bt_147_item_price_discount,
       bt_151_line_vat_category_code, bt_152_line_vat_rate,
       bt_153_item_name, bt_155_seller_item_id, bt_157_item_barcode
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   items.forEach((item, index) => {
@@ -224,6 +224,7 @@ const upsertInvoiceLines = (invoiceId, items, products) => {
       product?.um || null,
       netAmount,
       price,
+      0,
       vatCategoryCode,
       vatRate,
       product?.descriere || null,
