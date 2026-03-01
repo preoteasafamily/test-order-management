@@ -3,7 +3,16 @@ const router = express.Router();
 const path = require('path');
 const fs = require('fs');
 const PDFDocument = require('pdfkit');
+const rateLimit = require('express-rate-limit');
 const db = require('../database');
+
+// Rate limiter for billing invoice lines endpoints
+const invoiceLinesLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const FACTUREAZA_ENDPOINT =
   process.env.FACTUREAZA_ENDPOINT || 'https://sandbox.factureaza.ro/graphql';
@@ -170,6 +179,23 @@ const generateInvoicePdf = (invoice, order, client) => {
   });
 };
 
+// Map VAT rate to e-Factura category code: "S" for standard 19%, "" for other non-null rates
+const vatCategoryFromRate = (vatRate) => {
+  if (vatRate === 19) return 'S';
+  if (vatRate != null) return '';
+  return null;
+};
+
+// Get the first available net price from a product's prices map (fallback to 0)
+const getDefaultProductPrice = (product) => {
+  const prices = product?.prices;
+  if (prices && typeof prices === 'object') {
+    const first = Object.values(prices)[0];
+    if (first != null) return Number(first);
+  }
+  return 0;
+};
+
 // Upsert billing_invoice_lines rows with BT fields mapped from products
 const upsertInvoiceLines = (invoiceId, items, products) => {
   db.prepare('DELETE FROM billing_invoice_lines WHERE invoice_id = ?').run(invoiceId);
@@ -189,7 +215,7 @@ const upsertInvoiceLines = (invoiceId, items, products) => {
     const price = item.price || 0;
     const netAmount = qty * price;
     const vatRate = product?.cotaTVA != null ? product.cotaTVA : null;
-    const vatCategoryCode = vatRate === 19 ? 'S' : (vatRate != null ? '' : null);
+    const vatCategoryCode = vatCategoryFromRate(vatRate);
 
     insertLine.run(
       invoiceId,
@@ -822,7 +848,7 @@ router.get('/invoices/:id/pdf', async (req, res) => {
 });
 
 // GET /api/billing/local-invoices/:id/lines - list BT line rows for an invoice
-router.get('/local-invoices/:id/lines', (req, res) => {
+router.get('/local-invoices/:id/lines', invoiceLinesLimiter, (req, res) => {
   try {
     const inv = db.prepare('SELECT id FROM billing_invoices WHERE id = ?').get(req.params.id);
     if (!inv) return res.status(404).json({ error: 'Invoice not found' });
@@ -837,7 +863,7 @@ router.get('/local-invoices/:id/lines', (req, res) => {
 });
 
 // POST /api/billing/local-invoices/:id/lines - add a line (auto-populate BT fields from product)
-router.post('/local-invoices/:id/lines', (req, res) => {
+router.post('/local-invoices/:id/lines', invoiceLinesLimiter, (req, res) => {
   try {
     const inv = db.prepare('SELECT id FROM billing_invoices WHERE id = ?').get(req.params.id);
     if (!inv) return res.status(404).json({ error: 'Invoice not found' });
@@ -853,7 +879,7 @@ router.post('/local-invoices/:id/lines', (req, res) => {
     const qty = body.bt_129_invoiced_quantity != null ? Number(body.bt_129_invoiced_quantity) : 0;
     const price = body.bt_146_item_net_price != null
       ? Number(body.bt_146_item_net_price)
-      : (product ? (Object.values(product.prices || {})[0] || 0) : 0);
+      : (product ? getDefaultProductPrice(product) : 0);
     const netAmount = body.bt_131_line_net_amount != null
       ? Number(body.bt_131_line_net_amount)
       : qty * price;
@@ -863,7 +889,7 @@ router.post('/local-invoices/:id/lines', (req, res) => {
       : (product?.cotaTVA != null ? product.cotaTVA : null);
     const vatCategoryCode = body.bt_151_line_vat_category_code !== undefined
       ? body.bt_151_line_vat_category_code
-      : (vatRate === 19 ? 'S' : (vatRate != null ? '' : null));
+      : vatCategoryFromRate(vatRate);
 
     // Determine next line id
     const maxLine = db
@@ -910,7 +936,7 @@ router.post('/local-invoices/:id/lines', (req, res) => {
 });
 
 // PUT /api/billing/local-invoices/:id/lines/:lineId - update a line
-router.put('/local-invoices/:id/lines/:lineId', (req, res) => {
+router.put('/local-invoices/:id/lines/:lineId', invoiceLinesLimiter, (req, res) => {
   try {
     const inv = db.prepare('SELECT id FROM billing_invoices WHERE id = ?').get(req.params.id);
     if (!inv) return res.status(404).json({ error: 'Invoice not found' });
@@ -933,7 +959,7 @@ router.put('/local-invoices/:id/lines/:lineId', (req, res) => {
       : line.bt_129_invoiced_quantity;
     const price = body.bt_146_item_net_price != null
       ? Number(body.bt_146_item_net_price)
-      : (product ? (Object.values(product.prices || {})[0] || line.bt_146_item_net_price) : line.bt_146_item_net_price);
+      : (product ? (getDefaultProductPrice(product) || line.bt_146_item_net_price) : line.bt_146_item_net_price);
     const netAmount = body.bt_131_line_net_amount != null
       ? Number(body.bt_131_line_net_amount)
       : qty * price;
@@ -943,7 +969,7 @@ router.put('/local-invoices/:id/lines/:lineId', (req, res) => {
       : (product?.cotaTVA != null ? product.cotaTVA : line.bt_152_line_vat_rate);
     const vatCategoryCode = body.bt_151_line_vat_category_code !== undefined
       ? body.bt_151_line_vat_category_code
-      : (vatRate === 19 ? 'S' : (vatRate != null ? '' : line.bt_151_line_vat_category_code));
+      : (product ? vatCategoryFromRate(vatRate) : (line.bt_151_line_vat_category_code ?? vatCategoryFromRate(vatRate)));
 
     db.prepare(`
       UPDATE billing_invoice_lines SET
@@ -991,7 +1017,7 @@ router.put('/local-invoices/:id/lines/:lineId', (req, res) => {
 });
 
 // DELETE /api/billing/local-invoices/:id/lines/:lineId - delete a line
-router.delete('/local-invoices/:id/lines/:lineId', (req, res) => {
+router.delete('/local-invoices/:id/lines/:lineId', invoiceLinesLimiter, (req, res) => {
   try {
     const inv = db.prepare('SELECT id FROM billing_invoices WHERE id = ?').get(req.params.id);
     if (!inv) return res.status(404).json({ error: 'Invoice not found' });
