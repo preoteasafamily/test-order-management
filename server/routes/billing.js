@@ -170,6 +170,43 @@ const generateInvoicePdf = (invoice, order, client) => {
   });
 };
 
+// Upsert billing_invoice_lines rows with BT fields mapped from products
+const upsertInvoiceLines = (invoiceId, items, products) => {
+  db.prepare('DELETE FROM billing_invoice_lines WHERE invoice_id = ?').run(invoiceId);
+
+  const insertLine = db.prepare(`
+    INSERT INTO billing_invoice_lines (
+      invoice_id, bt_126_line_id, bt_129_invoiced_quantity, bt_129_unit_code,
+      bt_131_line_net_amount, bt_146_item_net_price,
+      bt_151_line_vat_category_code, bt_152_line_vat_rate,
+      bt_153_item_name, bt_155_seller_item_id, bt_157_item_barcode
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  items.forEach((item, index) => {
+    const product = products ? products.find((p) => p.id === item.productId) : null;
+    const qty = item.quantity || 0;
+    const price = item.price || 0;
+    const netAmount = qty * price;
+    const vatRate = product?.cotaTVA != null ? product.cotaTVA : null;
+    const vatCategoryCode = vatRate === 19 ? 'S' : (vatRate != null ? '' : null);
+
+    insertLine.run(
+      invoiceId,
+      index + 1,
+      qty,
+      product?.um || null,
+      netAmount,
+      price,
+      vatCategoryCode,
+      vatRate,
+      product?.descriere || null,
+      product?.codArticolFurnizor || null,
+      product?.codBare || null
+    );
+  });
+};
+
 // Generate (or regenerate) a local invoice for an order (synchronous, uses transaction)
 const generateLocalInvoice = (orderId) => {
   try {
@@ -275,6 +312,9 @@ const generateLocalInvoice = (orderId) => {
     });
 
     const invoiceRow = allocateAndStore();
+
+    // Populate billing_invoice_lines with BT fields from products
+    upsertInvoiceLines(invoiceRow.id, items, products);
 
     // Generate PDF asynchronously (don't block the response)
     generateInvoicePdf(invoiceRow, order, client)
@@ -777,6 +817,192 @@ router.get('/invoices/:id/pdf', async (req, res) => {
     res.send(buffer);
   } catch (err) {
     console.error('Error fetching invoice PDF:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/billing/local-invoices/:id/lines - list BT line rows for an invoice
+router.get('/local-invoices/:id/lines', (req, res) => {
+  try {
+    const inv = db.prepare('SELECT id FROM billing_invoices WHERE id = ?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+
+    const lines = db
+      .prepare('SELECT * FROM billing_invoice_lines WHERE invoice_id = ? ORDER BY bt_126_line_id')
+      .all(req.params.id);
+    res.json(lines);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/billing/local-invoices/:id/lines - add a line (auto-populate BT fields from product)
+router.post('/local-invoices/:id/lines', (req, res) => {
+  try {
+    const inv = db.prepare('SELECT id FROM billing_invoices WHERE id = ?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+
+    const body = req.body || {};
+    const productId = body.productId || null;
+    let product = null;
+    if (productId) {
+      const row = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
+      if (row) product = { ...row, prices: row.prices ? JSON.parse(row.prices) : {} };
+    }
+
+    const qty = body.bt_129_invoiced_quantity != null ? Number(body.bt_129_invoiced_quantity) : 0;
+    const price = body.bt_146_item_net_price != null
+      ? Number(body.bt_146_item_net_price)
+      : (product ? (Object.values(product.prices || {})[0] || 0) : 0);
+    const netAmount = body.bt_131_line_net_amount != null
+      ? Number(body.bt_131_line_net_amount)
+      : qty * price;
+
+    const vatRate = body.bt_152_line_vat_rate != null
+      ? Number(body.bt_152_line_vat_rate)
+      : (product?.cotaTVA != null ? product.cotaTVA : null);
+    const vatCategoryCode = body.bt_151_line_vat_category_code !== undefined
+      ? body.bt_151_line_vat_category_code
+      : (vatRate === 19 ? 'S' : (vatRate != null ? '' : null));
+
+    // Determine next line id
+    const maxLine = db
+      .prepare('SELECT MAX(bt_126_line_id) as m FROM billing_invoice_lines WHERE invoice_id = ?')
+      .get(req.params.id);
+    const lineId = (maxLine?.m || 0) + 1;
+
+    const result = db.prepare(`
+      INSERT INTO billing_invoice_lines (
+        invoice_id, bt_126_line_id, bt_127_line_note,
+        bt_129_invoiced_quantity, bt_129_unit_code,
+        bt_131_line_net_amount, bt_146_item_net_price,
+        bt_147_item_price_discount, bt_148_item_gross_price,
+        bt_151_line_vat_category_code, bt_152_line_vat_rate,
+        bt_153_item_name, bt_154_item_description,
+        bt_155_seller_item_id, bt_156_buyer_item_id, bt_157_item_barcode
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      req.params.id,
+      lineId,
+      body.bt_127_line_note || null,
+      qty,
+      body.bt_129_unit_code || product?.um || null,
+      netAmount,
+      price,
+      body.bt_147_item_price_discount != null ? Number(body.bt_147_item_price_discount) : null,
+      body.bt_148_item_gross_price != null ? Number(body.bt_148_item_gross_price) : null,
+      vatCategoryCode,
+      vatRate,
+      body.bt_153_item_name || product?.descriere || null,
+      body.bt_154_item_description || null,
+      body.bt_155_seller_item_id || product?.codArticolFurnizor || null,
+      body.bt_156_buyer_item_id || null,
+      body.bt_157_item_barcode || product?.codBare || null
+    );
+
+    const newLine = db
+      .prepare('SELECT * FROM billing_invoice_lines WHERE id = ?')
+      .get(result.lastInsertRowid);
+    res.status(201).json(newLine);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/billing/local-invoices/:id/lines/:lineId - update a line
+router.put('/local-invoices/:id/lines/:lineId', (req, res) => {
+  try {
+    const inv = db.prepare('SELECT id FROM billing_invoices WHERE id = ?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+
+    const line = db
+      .prepare('SELECT * FROM billing_invoice_lines WHERE id = ? AND invoice_id = ?')
+      .get(req.params.lineId, req.params.id);
+    if (!line) return res.status(404).json({ error: 'Line not found' });
+
+    const body = req.body || {};
+    const productId = body.productId || null;
+    let product = null;
+    if (productId) {
+      const row = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
+      if (row) product = { ...row, prices: row.prices ? JSON.parse(row.prices) : {} };
+    }
+
+    const qty = body.bt_129_invoiced_quantity != null
+      ? Number(body.bt_129_invoiced_quantity)
+      : line.bt_129_invoiced_quantity;
+    const price = body.bt_146_item_net_price != null
+      ? Number(body.bt_146_item_net_price)
+      : (product ? (Object.values(product.prices || {})[0] || line.bt_146_item_net_price) : line.bt_146_item_net_price);
+    const netAmount = body.bt_131_line_net_amount != null
+      ? Number(body.bt_131_line_net_amount)
+      : qty * price;
+
+    const vatRate = body.bt_152_line_vat_rate !== undefined
+      ? (body.bt_152_line_vat_rate != null ? Number(body.bt_152_line_vat_rate) : null)
+      : (product?.cotaTVA != null ? product.cotaTVA : line.bt_152_line_vat_rate);
+    const vatCategoryCode = body.bt_151_line_vat_category_code !== undefined
+      ? body.bt_151_line_vat_category_code
+      : (vatRate === 19 ? 'S' : (vatRate != null ? '' : line.bt_151_line_vat_category_code));
+
+    db.prepare(`
+      UPDATE billing_invoice_lines SET
+        bt_127_line_note = ?,
+        bt_129_invoiced_quantity = ?,
+        bt_129_unit_code = ?,
+        bt_131_line_net_amount = ?,
+        bt_146_item_net_price = ?,
+        bt_147_item_price_discount = ?,
+        bt_148_item_gross_price = ?,
+        bt_151_line_vat_category_code = ?,
+        bt_152_line_vat_rate = ?,
+        bt_153_item_name = ?,
+        bt_154_item_description = ?,
+        bt_155_seller_item_id = ?,
+        bt_156_buyer_item_id = ?,
+        bt_157_item_barcode = ?
+      WHERE id = ? AND invoice_id = ?
+    `).run(
+      body.bt_127_line_note !== undefined ? body.bt_127_line_note : line.bt_127_line_note,
+      qty,
+      body.bt_129_unit_code !== undefined ? body.bt_129_unit_code : (product?.um || line.bt_129_unit_code),
+      netAmount,
+      price,
+      body.bt_147_item_price_discount !== undefined ? body.bt_147_item_price_discount : line.bt_147_item_price_discount,
+      body.bt_148_item_gross_price !== undefined ? body.bt_148_item_gross_price : line.bt_148_item_gross_price,
+      vatCategoryCode,
+      vatRate,
+      body.bt_153_item_name !== undefined ? body.bt_153_item_name : (product?.descriere || line.bt_153_item_name),
+      body.bt_154_item_description !== undefined ? body.bt_154_item_description : line.bt_154_item_description,
+      body.bt_155_seller_item_id !== undefined ? body.bt_155_seller_item_id : (product?.codArticolFurnizor || line.bt_155_seller_item_id),
+      body.bt_156_buyer_item_id !== undefined ? body.bt_156_buyer_item_id : line.bt_156_buyer_item_id,
+      body.bt_157_item_barcode !== undefined ? body.bt_157_item_barcode : (product?.codBare || line.bt_157_item_barcode),
+      req.params.lineId,
+      req.params.id
+    );
+
+    const updated = db
+      .prepare('SELECT * FROM billing_invoice_lines WHERE id = ?')
+      .get(req.params.lineId);
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/billing/local-invoices/:id/lines/:lineId - delete a line
+router.delete('/local-invoices/:id/lines/:lineId', (req, res) => {
+  try {
+    const inv = db.prepare('SELECT id FROM billing_invoices WHERE id = ?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+
+    const result = db
+      .prepare('DELETE FROM billing_invoice_lines WHERE id = ? AND invoice_id = ?')
+      .run(req.params.lineId, req.params.id);
+    if (result.changes === 0) return res.status(404).json({ error: 'Line not found' });
+
+    res.json({ success: true });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

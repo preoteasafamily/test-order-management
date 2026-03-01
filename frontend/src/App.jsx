@@ -1341,6 +1341,7 @@ const App = () => {
             API_URL={API_URL}
             orders={orders}
             clients={clients}
+            products={products}
             showMessage={showMessage}
           />
         );
