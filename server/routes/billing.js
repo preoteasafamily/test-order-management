@@ -87,9 +87,20 @@ const getBillingSettings = () => {
   return db.prepare('SELECT * FROM billing_settings WHERE id = 1').get();
 };
 
+// Get company/seller settings from app_config (BT-27…BT-43, BT-84 IBAN, BT-85 Banca)
+const getCompanySettings = () => {
+  const row = db.prepare("SELECT value FROM app_config WHERE key = 'company'").get();
+  if (!row) return {};
+  try {
+    return JSON.parse(row.value);
+  } catch {
+    return {};
+  }
+};
+
 // Generate PDF for invoice and save to disk
 // Header: two-column layout – Seller (left, no title) | Buyer (right-aligned, no title)
-// Seller data read from billing_settings (BT-27…BT-43, BT-84 IBAN, BT-85 Banca); Buyer from invoice snapshot.
+// Seller data read from app_config (company, BT-27…BT-43, BT-84 IBAN, BT-85 Banca); Buyer from invoice snapshot.
 // Address is split across two lines: street on line 1, city+county on line 2.
 // Right column is omitted gracefully when buyer data is absent.
 // Table columns: Nr. crt. | Cod (EAN/barcode, BT-157) | Descriere | UM | Cant. | Preț | Total
@@ -135,9 +146,9 @@ const generateInvoicePdf = (invoice, order, client) => {
     doc.moveDown(0.5);
 
     // Two-column header: Seller (left, no title) | Buyer (right-aligned, no title)
-    // Seller data comes from billing_settings; Buyer data from invoice snapshot/client.
+    // Seller data comes from app_config (company); Buyer data from invoice snapshot/client.
     // If buyer data is absent the right column is omitted and layout is unaffected.
-    const settings = getBillingSettings();
+    const company = getCompanySettings();
     const pageWidth = doc.page.width;
     const colLeft      = 50;
     const rightMargin  = pageWidth - 50;
@@ -148,17 +159,17 @@ const generateInvoicePdf = (invoice, order, client) => {
     let leftY  = headerStartY;
     let rightY = headerStartY;
 
-    // LEFT COLUMN – Seller (Vânzător) from billing_settings BT-27…BT-43, BT-84, BT-85
-    const sellerName   = settings?.bt_27_seller_name;
-    const sellerCIF    = settings?.bt_31_32_seller_vat_identifier || settings?.bt_29_seller_identifier;
-    const sellerRegCom = settings?.bt_30_seller_legal_registration;
-    const sellerStreet = settings?.bt_35_seller_address;
-    const sellerCity   = settings?.bt_37_seller_city;
-    const sellerRegion = settings?.bt_39_seller_region;
-    const sellerPhone  = settings?.bt_42_seller_phone;
-    const sellerEmail  = settings?.bt_43_seller_email;
-    const sellerBanca  = settings?.bt_85_payee_bank_name;
-    const sellerIBAN   = settings?.bt_84_payee_iban;
+    // LEFT COLUMN – Seller (Vânzător) from app_config (company) BT-27…BT-43, BT-84, BT-85
+    const sellerName   = company?.bt_27_seller_name;
+    const sellerCIF    = company?.bt_31_32_seller_vat_identifier || company?.bt_29_seller_identifier;
+    const sellerRegCom = company?.bt_30_seller_legal_registration;
+    const sellerStreet = company?.bt_35_seller_address;
+    const sellerCity   = company?.bt_37_seller_city;
+    const sellerRegion = company?.bt_39_seller_region;
+    const sellerPhone  = company?.bt_42_seller_phone;
+    const sellerEmail  = company?.bt_43_seller_email;
+    const sellerBanca  = company?.bt_85_payee_bank_name;
+    const sellerIBAN   = company?.bt_84_payee_iban;
 
     if (sellerName || sellerCIF) {
       doc.font('Helvetica-Bold').fontSize(9);
