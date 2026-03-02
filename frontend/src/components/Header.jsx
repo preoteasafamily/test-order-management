@@ -14,9 +14,7 @@ const Header = ({ currentUser, setCurrentUser, mobileMenuOpen, setMobileMenuOpen
           <Menu className="w-6 h-6 text-gray-600" />
         </button>
         
-        <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-800 rounded-full flex items-center justify-center">
-          <span className="text-xl sm:text-2xl font-bold text-white">S</span>
-        </div>
+        <img src="/samlax.svg" alt="Samlax" className="w-8 h-8 sm:w-10 sm:h-10" />
         <div>
           <h1 className="text-base sm:text-xl font-bold text-gray-800">
             Samlax
