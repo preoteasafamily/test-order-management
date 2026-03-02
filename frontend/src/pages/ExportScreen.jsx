@@ -83,16 +83,28 @@ const ExportScreen = ({
       xml += `      <FurnizorInformatiiSuplimentare></FurnizorInformatiiSuplimentare>\n`;
       xml += `      <ClientNume>${client.nume}</ClientNume>\n`;
       xml += `      <ClientInformatiiSuplimentare></ClientInformatiiSuplimentare>\n`;
-      xml += `      <ClientCIF>${client.cif}</ClientCIF>\n`;
-      xml += `      <ClientNrRegCom>${client.nrRegCom}</ClientNrRegCom>\n`;
-      xml += `      <ClientJudet>${client.judet}</ClientJudet>\n`;
-      xml += `      <ClientLocalitate>${client.localitate}</ClientLocalitate>\n`;
-      xml += `      <ClientTara>RO</ClientTara>\n`;
-      xml += `      <ClientAdresa>${client.strada}</ClientAdresa>\n`;
-      xml += `      <ClientTelefon></ClientTelefon>\n`;
-      xml += `      <ClientEmail></ClientEmail>\n`;
-      xml += `      <ClientBanca></ClientBanca>\n`;
-      xml += `      <ClientIBAN></ClientIBAN>\n`;
+      xml += `      <ClientCIF>${client.cif || ""}</ClientCIF>\n`;
+      xml += `      <ClientNrRegCom>${client.nrRegCom || ""}</ClientNrRegCom>\n`;
+      xml += `      <ClientJudet>${client.judet || ""}</ClientJudet>\n`;
+      xml += `      <ClientLocalitate>${client.localitate || ""}</ClientLocalitate>\n`;
+      xml += `      <ClientTara>${client.buyer_country || "RO"}</ClientTara>\n`;
+      xml += `      <ClientAdresa>${client.strada || ""}</ClientAdresa>\n`;
+      xml += `      <ClientTelefon>${client.telefon || ""}</ClientTelefon>\n`;
+      xml += `      <ClientEmail>${client.email || ""}</ClientEmail>\n`;
+      xml += `      <ClientBanca>${client.banca || ""}</ClientBanca>\n`;
+      xml += `      <ClientIBAN>${client.iban || ""}</ClientIBAN>\n`;
+      // Delivery address / BuyerDelivery – shown only when at least one field is populated
+      const hasDelivery = client.delivery_address || client.delivery_city || client.delivery_name || client.delivery_gln;
+      if (hasDelivery) {
+        xml += `      <AdresaLivrare>\n`;
+        if (client.delivery_name)    xml += `        <NumeLoc>${client.delivery_name}</NumeLoc>\n`;
+        if (client.delivery_gln)     xml += `        <GLN>${client.delivery_gln}</GLN>\n`;
+        if (client.delivery_address) xml += `        <Adresa>${client.delivery_address}</Adresa>\n`;
+        if (client.delivery_city)    xml += `        <Localitate>${client.delivery_city}</Localitate>\n`;
+        if (client.delivery_region)  xml += `        <Judet>${client.delivery_region}</Judet>\n`;
+        xml += `        <Tara>${client.delivery_country || "RO"}</Tara>\n`;
+        xml += `      </AdresaLivrare>\n`;
+      }
       xml += `      <FacturaNumar>${invoiceNumber}</FacturaNumar>\n`;
 
       const [year, month, day] = selectedDate.split("-");
@@ -121,7 +133,7 @@ const ExportScreen = ({
         xml += `          <Descriere>${product.descriere}</Descriere>\n`;
         xml += `          <CodArticolFurnizor>${product.codArticolFurnizor} </CodArticolFurnizor>\n`;
         xml += `          <CodArticolClient></CodArticolClient>\n`;
-        xml += `          <CodBare/>\n`;
+        xml += `          <CodBare>${product.codBare || ""}</CodBare>\n`;
         xml += `          <InformatiiSuplimentare>Lot:${company.lotNumberCurrent}</InformatiiSuplimentare>\n`;
         xml += `          <UM>${product.um}</UM>\n`;
         xml += `          <Cantitate>${item.quantity.toFixed(3)}</Cantitate>\n`;
