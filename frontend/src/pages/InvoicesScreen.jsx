@@ -74,18 +74,25 @@ const generateInvoicePDF = (inv, company, client) => {
 
   // LEFT COLUMN – Seller (Vânzător); no section title per invoice requirements
   if (company) {
+    const sellerName   = company.bt_27_seller_name;
+    const sellerCIF    = company.bt_31_32_seller_vat_identifier || company.bt_29_seller_identifier;
+    const sellerRegCom = company.bt_30_seller_legal_registration;
+    const sellerAddr   = [company.bt_35_seller_address, company.bt_37_seller_city, company.bt_39_seller_region].filter(Boolean).join(", ");
+    const sellerPhone  = company.bt_42_seller_phone;
+    const sellerEmail  = company.bt_43_seller_email;
+    const sellerBanca  = company.bt_85_payee_bank_name;
+    const sellerIBAN   = company.bt_84_payee_iban;
     doc.setFontSize(9);
     doc.setFont("helvetica", "bold");
-    if (company.furnizorNume)    { doc.text(company.furnizorNume, colLeft, leftY); leftY += 12; }
+    if (sellerName)   { doc.text(sellerName, colLeft, leftY); leftY += 12; }
     doc.setFont("helvetica", "normal");
-    if (company.furnizorCIF)     { doc.text(`CIF: ${company.furnizorCIF}`, colLeft, leftY); leftY += 12; }
-    if (company.furnizorNrRegCom){ doc.text(`Reg. Com.: ${company.furnizorNrRegCom}`, colLeft, leftY); leftY += 12; }
-    const sellerAddr = [company.furnizorStrada, company.furnizorLocalitate, company.furnizorJudet].filter(Boolean).join(", ");
-    if (sellerAddr)              { doc.text(sellerAddr, colLeft, leftY); leftY += 12; }
-    if (company.furnizorTelefon) { doc.text(`Tel: ${company.furnizorTelefon}`, colLeft, leftY); leftY += 12; }
-    if (company.furnizorEmail)   { doc.text(`Email: ${company.furnizorEmail}`, colLeft, leftY); leftY += 12; }
-    if (company.furnizorBanca)   { doc.text(`Bancă: ${company.furnizorBanca}`, colLeft, leftY); leftY += 12; }
-    if (company.furnizorIBAN)    { doc.text(`IBAN: ${company.furnizorIBAN}`, colLeft, leftY); leftY += 12; }
+    if (sellerCIF)    { doc.text(`CIF: ${sellerCIF}`, colLeft, leftY); leftY += 12; }
+    if (sellerRegCom) { doc.text(`Reg. Com.: ${sellerRegCom}`, colLeft, leftY); leftY += 12; }
+    if (sellerAddr)   { doc.text(sellerAddr, colLeft, leftY); leftY += 12; }
+    if (sellerPhone)  { doc.text(`Tel: ${sellerPhone}`, colLeft, leftY); leftY += 12; }
+    if (sellerEmail)  { doc.text(`Email: ${sellerEmail}`, colLeft, leftY); leftY += 12; }
+    if (sellerBanca)  { doc.text(`Bancă: ${sellerBanca}`, colLeft, leftY); leftY += 12; }
+    if (sellerIBAN)   { doc.text(`IBAN: ${sellerIBAN}`, colLeft, leftY); leftY += 12; }
   }
 
   // RIGHT COLUMN – Buyer (Cumpărător); omitted gracefully if no buyer data exists; no section title
@@ -226,20 +233,20 @@ const generateInvoiceUBL = (inv, company, client) => {
   if (company) {
     xml += `  <cac:AccountingSupplierParty>
     <cac:Party>
-      <cac:PartyName><cbc:Name>${esc(company.furnizorNume)}</cbc:Name></cac:PartyName>
+      <cac:PartyName><cbc:Name>${esc(company.bt_27_seller_name)}</cbc:Name></cac:PartyName>
       <cac:PostalAddress>
-        <cbc:StreetName>${esc(company.furnizorStrada)}</cbc:StreetName>
-        <cbc:CityName>${esc(company.furnizorLocalitate)}</cbc:CityName>
-        <cbc:CountrySubentity>${esc(company.furnizorJudet)}</cbc:CountrySubentity>
-        <cac:Country><cbc:IdentificationCode>RO</cbc:IdentificationCode></cac:Country>
+        <cbc:StreetName>${esc(company.bt_35_seller_address)}</cbc:StreetName>
+        <cbc:CityName>${esc(company.bt_37_seller_city)}</cbc:CityName>
+        <cbc:CountrySubentity>${esc(company.bt_39_seller_region)}</cbc:CountrySubentity>
+        <cac:Country><cbc:IdentificationCode>${esc(company.bt_40_seller_country || 'RO')}</cbc:IdentificationCode></cac:Country>
       </cac:PostalAddress>
       <cac:PartyTaxScheme>
-        <cbc:CompanyID>${esc(company.furnizorCIF)}</cbc:CompanyID>
+        <cbc:CompanyID>${esc(company.bt_31_32_seller_vat_identifier || company.bt_29_seller_identifier)}</cbc:CompanyID>
         <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
       </cac:PartyTaxScheme>
       <cac:PartyLegalEntity>
-        <cbc:RegistrationName>${esc(company.furnizorNume)}</cbc:RegistrationName>
-        <cbc:CompanyID>${esc(company.furnizorNrRegCom)}</cbc:CompanyID>
+        <cbc:RegistrationName>${esc(company.bt_27_seller_name)}</cbc:RegistrationName>
+        <cbc:CompanyID>${esc(company.bt_30_seller_legal_registration)}</cbc:CompanyID>
       </cac:PartyLegalEntity>
     </cac:Party>
   </cac:AccountingSupplierParty>\n`;
