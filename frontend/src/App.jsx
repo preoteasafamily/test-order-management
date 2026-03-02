@@ -1047,9 +1047,7 @@ const App = () => {
       <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-100 flex items-center justify-center p-4">
         <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-md">
           <div className="text-center mb-8">
-            <div className="w-20 h-20 bg-blue-800 rounded-full mx-auto mb-4 flex items-center justify-center">
-              <span className="text-5xl font-bold text-white">S</span>
-            </div>
+            <img src="/samlax.svg" alt="Samlax" className="w-20 h-20 mx-auto mb-4" />
             <h1 className="text-2xl font-bold text-gray-800">
               Samlax
             </h1>
