@@ -286,6 +286,28 @@ const OrdersMatrixScreen = ({
     }
   };
 
+  const handleGenerateInvoice = async (orderId) => {
+    try {
+      const response = await fetch(
+        `${API_URL}/api/billing/local-invoices/from-order`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderId }),
+        },
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        showMessage(data.error || "Eroare la generarea facturii", "error");
+        return;
+      }
+      showMessage("Factură generată cu succes!");
+      refreshBillingInvoices();
+    } catch (err) {
+      showMessage(`Eroare: ${err.message}`, "error");
+    }
+  };
+
   const handleDownloadInvoicePdf = async (externalInvoiceId) => {
     try {
       const response = await fetch(
@@ -684,7 +706,13 @@ const OrdersMatrixScreen = ({
                           );
                         }
                         return (
-                          <span className="text-xs text-amber-600">Nefacturat</span>
+                          <button
+                            onClick={() => handleGenerateInvoice(order.id)}
+                            className="text-xs text-white bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded transition"
+                            title="Generează factură"
+                          >
+                            Generează Factură
+                          </button>
                         );
                       })()}
                     </td>
