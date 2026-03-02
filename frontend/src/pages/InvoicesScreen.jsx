@@ -13,8 +13,10 @@ const stripDiacritics = (str) =>
     .replace(/\s+/g, "_");
 
 // Generate a jsPDF invoice document
-// Table columns: Nr. crt. | Cod produs | Descriere | UM | Cant. | Preț | TVA% | Total
-// Mapping: lineId -> Nr. crt. (BT-126), barcode/productCode -> Cod (BT-157/BT-155),
+// Header: two-column layout – Seller (Vânzător, left) | Buyer (Cumpărător, right)
+// Right column is omitted gracefully when buyer data is absent.
+// Table columns: Nr. crt. | Cod (EAN/barcode, BT-157) | Descriere | UM | Cant. | Preț | TVA% | Total
+// Mapping: lineId -> Nr. crt. (BT-126), barcode -> Cod (BT-157),
 //          description -> Denumire (BT-153), unit -> UM (BT-130), unitCount -> Cant. (BT-129),
 //          price -> Preț (BT-146), vat -> TVA% (BT-152), total -> Total (BT-131)
 const generateInvoicePDF = (inv, company, client) => {
@@ -44,32 +46,6 @@ const generateInvoicePDF = (inv, company, client) => {
   const pageWidth = doc.internal.pageSize.getWidth();
   let y = 40;
 
-  // Company header (only filled fields)
-  if (company) {
-    const headerLines = [
-      company.furnizorNume,
-      company.furnizorCIF ? `CIF: ${company.furnizorCIF}` : null,
-      company.furnizorNrRegCom ? `Reg. Com.: ${company.furnizorNrRegCom}` : null,
-      company.furnizorStrada || company.furnizorLocalitate
-        ? [company.furnizorStrada, company.furnizorLocalitate, company.furnizorJudet]
-            .filter(Boolean)
-            .join(", ")
-        : null,
-      company.furnizorTelefon ? `Tel: ${company.furnizorTelefon}` : null,
-      company.furnizorEmail ? `Email: ${company.furnizorEmail}` : null,
-      company.furnizorBanca ? `Bancă: ${company.furnizorBanca}` : null,
-      company.furnizorIBAN ? `IBAN: ${company.furnizorIBAN}` : null,
-    ].filter(Boolean);
-
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    for (const line of headerLines) {
-      doc.text(line, 40, y);
-      y += 13;
-    }
-    y += 6;
-  }
-
   // Title
   doc.setFontSize(18);
   doc.setFont("helvetica", "bold");
@@ -84,25 +60,59 @@ const generateInvoicePDF = (inv, company, client) => {
   }
 
   doc.setFontSize(10);
-  doc.text(`Data: ${inv.document_date || "-"}`, pageWidth / 2, y, { align: "center" });
-  y += 20;
-
-  // Buyer / Cumpărător info – all available client fields
-  doc.setFont("helvetica", "bold");
-  doc.text("Cumpărător:", 40, y);
-  y += 14;
   doc.setFont("helvetica", "normal");
-  doc.text(cName, 40, y);
-  y += 13;
-  if (cCIF) { doc.text(`CIF: ${cCIF}`, 40, y); y += 13; }
-  if (cNrRegCom) { doc.text(`Reg. Com.: ${cNrRegCom}`, 40, y); y += 13; }
-  if (cStrada) { doc.text(`Adresă: ${cStrada}`, 40, y); y += 13; }
-  if (cLocalitate || cJudet) {
-    doc.text([cLocalitate, cJudet].filter(Boolean).join(", "), 40, y);
-    y += 13;
+  doc.text(`Data: ${inv.document_date || "-"}`, pageWidth / 2, y, { align: "center" });
+  y += 18;
+
+  // Two-column header: Seller (Vânzător) left | Buyer (Cumpărător) right
+  // Seller is always left-aligned; Buyer is right-aligned (starts at page midpoint).
+  // If buyer data is missing the right column is omitted and layout is unaffected.
+  const colLeft = 40;
+  const colRight = Math.floor(pageWidth / 2) + 10;
+  let leftY = y;
+  let rightY = y;
+
+  // LEFT COLUMN – Seller (Vânzător)
+  if (company) {
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text("Vânzător:", colLeft, leftY);
+    leftY += 13;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    if (company.furnizorNume)    { doc.text(company.furnizorNume, colLeft, leftY); leftY += 12; }
+    if (company.furnizorCIF)     { doc.text(`CIF: ${company.furnizorCIF}`, colLeft, leftY); leftY += 12; }
+    if (company.furnizorNrRegCom){ doc.text(`Reg. Com.: ${company.furnizorNrRegCom}`, colLeft, leftY); leftY += 12; }
+    const sellerAddr = [company.furnizorStrada, company.furnizorLocalitate, company.furnizorJudet].filter(Boolean).join(", ");
+    if (sellerAddr)              { doc.text(sellerAddr, colLeft, leftY); leftY += 12; }
+    if (company.furnizorTelefon) { doc.text(`Tel: ${company.furnizorTelefon}`, colLeft, leftY); leftY += 12; }
+    if (company.furnizorEmail)   { doc.text(`Email: ${company.furnizorEmail}`, colLeft, leftY); leftY += 12; }
+    if (company.furnizorBanca)   { doc.text(`Bancă: ${company.furnizorBanca}`, colLeft, leftY); leftY += 12; }
+    if (company.furnizorIBAN)    { doc.text(`IBAN: ${company.furnizorIBAN}`, colLeft, leftY); leftY += 12; }
   }
-  if (cTara && cTara !== "RO") { doc.text(`Țara: ${cTara}`, 40, y); y += 13; }
-  y += 6;
+
+  // RIGHT COLUMN – Buyer (Cumpărător); omitted gracefully if no buyer data exists
+  const hasBuyerData = cName !== "-" || cCIF || cNrRegCom || cStrada || cLocalitate;
+  if (hasBuyerData) {
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text("Cumpărător:", colRight, rightY);
+    rightY += 13;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text(cName, colRight, rightY);
+    rightY += 12;
+    if (cCIF)    { doc.text(`CIF: ${cCIF}`, colRight, rightY); rightY += 12; }
+    if (cNrRegCom) { doc.text(`Reg. Com.: ${cNrRegCom}`, colRight, rightY); rightY += 12; }
+    if (cStrada) { doc.text(`Adresă: ${cStrada}`, colRight, rightY); rightY += 12; }
+    if (cLocalitate || cJudet) {
+      doc.text([cLocalitate, cJudet].filter(Boolean).join(", "), colRight, rightY);
+      rightY += 12;
+    }
+    if (cTara && cTara !== "RO") { doc.text(`Țara: ${cTara}`, colRight, rightY); rightY += 12; }
+  }
+
+  y = Math.max(leftY, rightY) + 8;
 
   // Delivery address section (shown only when at least one delivery field is populated)
   const hasDelivery = dAddress || dCity || dName || dGLN;
@@ -130,7 +140,7 @@ const generateInvoicePDF = (inv, company, client) => {
       head: [["Nr.", "Cod", "Descriere", "UM", "Cant.", "Preț", "TVA%", "Total"]],
       body: lines.map((item, idx) => [
         item.lineId != null ? item.lineId : idx + 1,
-        item.barcode || item.productCode || "-",
+        item.barcode || "-",
         item.description || item.descriere || "-",
         item.unit || item.um || "buc",
         item.unitCount || item.quantity || "0",
@@ -174,9 +184,12 @@ const generateInvoicePDF = (inv, company, client) => {
 // Generate a UBL 2.1 XML string for a single invoice
 // Structure: Invoice > AccountingSupplierParty, AccountingCustomerParty,
 //            Delivery (BuyerDelivery with address + GLN), InvoiceLine[]
-// Line columns: ID (Nr. crt. BT-126), Item.SellersItemIdentification (Cod, BT-155/BT-157),
+// Line columns: ID (Nr. crt. BT-126), StandardItemIdentification (Cod/EAN, BT-157),
+//               SellersItemIdentification (codArticolFurnizor, BT-155, supplementary),
 //               Item.Name (Denumire, BT-153), InvoicedQuantity (UM/Cant., BT-129),
 //               Price.PriceAmount (Preț, BT-146), LineExtensionAmount (Total, BT-131)
+// The barcode/EAN (item.barcode → BT-157) is the primary Cod identifier on each line,
+// matching the "Cod" column in the PDF invoice table.
 const generateInvoiceUBL = (inv, company, client) => {
   const snapshot =
     inv.raw_snapshot && typeof inv.raw_snapshot === "object"
