@@ -13,8 +13,8 @@ const stripDiacritics = (str) =>
     .replace(/\s+/g, "_");
 
 // Generate a jsPDF invoice document
-// Header: two-column layout – Seller (Vânzător, left) | Buyer (Cumpărător, right)
-// Right column is omitted gracefully when buyer data is absent.
+// Header: two-column layout – Seller (left, no title) | Buyer (right, no title)
+// Right column is omitted gracefully when buyer data is absent. No branding on invoice.
 // Table columns: Nr. crt. | Cod (EAN/barcode, BT-157) | Descriere | UM | Cant. | Preț | TVA% | Total
 // Mapping: lineId -> Nr. crt. (BT-126), barcode -> Cod (BT-157),
 //          description -> Denumire (BT-153), unit -> UM (BT-130), unitCount -> Cant. (BT-129),
@@ -72,15 +72,12 @@ const generateInvoicePDF = (inv, company, client) => {
   let leftY = y;
   let rightY = y;
 
-  // LEFT COLUMN – Seller (Vânzător)
+  // LEFT COLUMN – Seller (Vânzător); no section title per invoice requirements
   if (company) {
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.text("Vânzător:", colLeft, leftY);
-    leftY += 13;
-    doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
     if (company.furnizorNume)    { doc.text(company.furnizorNume, colLeft, leftY); leftY += 12; }
+    doc.setFont("helvetica", "normal");
     if (company.furnizorCIF)     { doc.text(`CIF: ${company.furnizorCIF}`, colLeft, leftY); leftY += 12; }
     if (company.furnizorNrRegCom){ doc.text(`Reg. Com.: ${company.furnizorNrRegCom}`, colLeft, leftY); leftY += 12; }
     const sellerAddr = [company.furnizorStrada, company.furnizorLocalitate, company.furnizorJudet].filter(Boolean).join(", ");
@@ -91,17 +88,14 @@ const generateInvoicePDF = (inv, company, client) => {
     if (company.furnizorIBAN)    { doc.text(`IBAN: ${company.furnizorIBAN}`, colLeft, leftY); leftY += 12; }
   }
 
-  // RIGHT COLUMN – Buyer (Cumpărător); omitted gracefully if no buyer data exists
+  // RIGHT COLUMN – Buyer (Cumpărător); omitted gracefully if no buyer data exists; no section title
   const hasBuyerData = cName !== "-" || cCIF || cNrRegCom || cStrada || cLocalitate;
   if (hasBuyerData) {
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.text("Cumpărător:", colRight, rightY);
-    rightY += 13;
-    doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
     doc.text(cName, colRight, rightY);
     rightY += 12;
+    doc.setFont("helvetica", "normal");
     if (cCIF)    { doc.text(`CIF: ${cCIF}`, colRight, rightY); rightY += 12; }
     if (cNrRegCom) { doc.text(`Reg. Com.: ${cNrRegCom}`, colRight, rightY); rightY += 12; }
     if (cStrada) { doc.text(`Adresă: ${cStrada}`, colRight, rightY); rightY += 12; }

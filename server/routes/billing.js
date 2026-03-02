@@ -265,10 +265,6 @@ const generateInvoicePdf = (invoice, order, client) => {
       doc.text(`${label} ${value} RON`, { align: 'right' });
     }
 
-    // Footer – app branding
-    doc.moveDown(1);
-    doc.fontSize(7).font('Helvetica').fillColor('#888888').text('Samlax', { align: 'center' });
-
     doc.end();
 
     stream.on('finish', () => resolve(pdfPath));
