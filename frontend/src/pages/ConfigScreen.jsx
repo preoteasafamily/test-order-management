@@ -38,8 +38,8 @@ const ConfigScreen = ({
   }, [company]);
 
   const handleSaveConfig = async () => {
-    if (!localCompany.furnizorNume || !localCompany.furnizorCIF) {
-      showMessage("Completați datele obligatorii!  ", "error");
+    if (!localCompany.bt_27_seller_name || !localCompany.bt_31_32_seller_vat_identifier) {
+      showMessage("Completați datele obligatorii din secțiunea e-Factura Vânzător (BT-27 Denumire și BT-31/32 CIF)!", "error");
       return;
     }
 
@@ -213,123 +213,8 @@ const ConfigScreen = ({
       </h2>
 
       <div className="bg-white p-6 rounded-lg shadow space-y-6">
-        {/* DATE IDENTIFICARE */}
-        <div>
-          <h3 className="text-lg font-semibold mb-4">Date Identificare</h3>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                CUI/CIF
-              </label>
-              <input
-                type="text"
-                value={localCompany.furnizorCIF}
-                onChange={(e) =>
-                  setLocalCompany({
-                    ...localCompany,
-                    furnizorCIF: e.target.value,
-                  })
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus: ring-blue-500 focus: border-transparent"
-                placeholder="RO12345678"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Nr. Reg. Com.
-              </label>
-              <input
-                type="text"
-                value={localCompany.furnizorNrRegCom}
-                onChange={(e) =>
-                  setLocalCompany({
-                    ...localCompany,
-                    furnizorNrRegCom: e.target.value,
-                  })
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="J14/603/1993"
-              />
-            </div>
-          </div>
-
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Denumire firmă
-            </label>
-            <input
-              type="text"
-              value={localCompany.furnizorNume}
-              onChange={(e) =>
-                setLocalCompany({
-                  ...localCompany,
-                  furnizorNume: e.target.value,
-                })
-              }
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="SC PANIFICATIE SRL"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm: grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Județ
-              </label>
-              <input
-                type="text"
-                value={localCompany.furnizorJudet}
-                onChange={(e) =>
-                  setLocalCompany({
-                    ...localCompany,
-                    furnizorJudet: e.target.value,
-                  })
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus: ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Covasna"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Localitate
-              </label>
-              <input
-                type="text"
-                value={localCompany.furnizorLocalitate}
-                onChange={(e) =>
-                  setLocalCompany({
-                    ...localCompany,
-                    furnizorLocalitate: e.target.value,
-                  })
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus: ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Sfântu Gheorghe"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Adresă
-            </label>
-            <input
-              type="text"
-              value={localCompany.furnizorStrada}
-              onChange={(e) =>
-                setLocalCompany({
-                  ...localCompany,
-                  furnizorStrada: e.target.value,
-                })
-              }
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Str. Fabricii nr. 10"
-            />
-          </div>
-        </div>
-
         {/* SERIE DOCUMENTE */}
-        <div className="border-t pt-6">
+        <div>
           <h3 className="text-lg font-semibold mb-4">Serie Documente</h3>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
@@ -437,10 +322,13 @@ const ConfigScreen = ({
 
         {/* DATE E-FACTURA VANZATOR */}
         <div className="border-t pt-6">
-          <h3 className="text-lg font-semibold mb-1">Date e-Factura Vânzător</h3>
-          <p className="text-sm text-gray-500 mb-4">
-            Câmpuri BT utilizate la generarea facturilor electronice (e-Factura). Dacă sunt completate, vor fi preluate automat pe fiecare factură.
-          </p>
+          <h3 className="text-lg font-semibold mb-1">Date e-Factura Vânzător (BT-xx)</h3>
+          <div className="bg-amber-50 border border-amber-400 rounded-lg p-3 mb-4 flex items-start gap-2">
+            <span className="text-amber-700 font-bold text-lg leading-none">⚠️</span>
+            <p className="text-sm text-amber-800 font-semibold">
+              Aceste date sunt folosite pe factură! Toate datele vânzătorului de pe factură (PDF, UBL și e-Factura) sunt preluate exclusiv din această secțiune.
+            </p>
+          </div>
 
           {/* Identitate vânzător */}
           <h4 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">
