@@ -25,9 +25,9 @@ const buildHeaderRows = (company, snap, client) => {
   const cTara = snap.clientTara || client?.buyer_country || "RO";
 
   const sellerAddr = [
-    company?.furnizorStrada,
-    company?.furnizorLocalitate,
-    company?.furnizorJudet,
+    company?.bt_35_seller_address,
+    company?.bt_37_seller_city,
+    company?.bt_39_seller_region,
   ]
     .filter(Boolean)
     .join(", ");
@@ -35,17 +35,19 @@ const buildHeaderRows = (company, snap, client) => {
 
   return [
     {
-      seller: company?.furnizorNume || "",
+      seller: company?.bt_27_seller_name || "",
       buyer: cName || "",
       bold: true,
     },
     {
-      seller: company?.furnizorCIF ? `CIF: ${company.furnizorCIF}` : "",
+      seller: company?.bt_31_32_seller_vat_identifier || company?.bt_29_seller_identifier
+        ? `CIF: ${company.bt_31_32_seller_vat_identifier || company.bt_29_seller_identifier}`
+        : "",
       buyer: cCIF ? `CIF: ${cCIF}` : "",
     },
     {
-      seller: company?.furnizorNrRegCom
-        ? `Reg.Com.: ${company.furnizorNrRegCom}`
+      seller: company?.bt_30_seller_legal_registration
+        ? `Reg.Com.: ${company.bt_30_seller_legal_registration}`
         : "",
       buyer: cNrRegCom ? `Reg.Com.: ${cNrRegCom}` : "",
     },
@@ -54,13 +56,13 @@ const buildHeaderRows = (company, snap, client) => {
       buyer: buyerAddr,
     },
     {
-      seller: company?.furnizorTelefon
-        ? `Tel: ${company.furnizorTelefon}`
+      seller: company?.bt_42_seller_phone
+        ? `Tel: ${company.bt_42_seller_phone}`
         : "",
       buyer: cTara && cTara !== "RO" ? `Tara: ${cTara}` : "",
     },
     {
-      seller: company?.furnizorEmail ? `Email: ${company.furnizorEmail}` : "",
+      seller: company?.bt_43_seller_email ? `Email: ${company.bt_43_seller_email}` : "",
       buyer: "",
     },
   ].filter((r) => r.seller || r.buyer);
@@ -213,20 +215,20 @@ const generateUBL = (inv, company, client) => {
   if (company) {
     xml += `  <cac:AccountingSupplierParty>
     <cac:Party>
-      <cac:PartyName><cbc:Name>${esc(company.furnizorNume)}</cbc:Name></cac:PartyName>
+      <cac:PartyName><cbc:Name>${esc(company.bt_27_seller_name)}</cbc:Name></cac:PartyName>
       <cac:PostalAddress>
-        <cbc:StreetName>${esc(company.furnizorStrada)}</cbc:StreetName>
-        <cbc:CityName>${esc(company.furnizorLocalitate)}</cbc:CityName>
-        <cbc:CountrySubentity>${esc(company.furnizorJudet)}</cbc:CountrySubentity>
-        <cac:Country><cbc:IdentificationCode>RO</cbc:IdentificationCode></cac:Country>
+        <cbc:StreetName>${esc(company.bt_35_seller_address)}</cbc:StreetName>
+        <cbc:CityName>${esc(company.bt_37_seller_city)}</cbc:CityName>
+        <cbc:CountrySubentity>${esc(company.bt_39_seller_region)}</cbc:CountrySubentity>
+        <cac:Country><cbc:IdentificationCode>${esc(company.bt_40_seller_country || 'RO')}</cbc:IdentificationCode></cac:Country>
       </cac:PostalAddress>
       <cac:PartyTaxScheme>
-        <cbc:CompanyID>${esc(company.furnizorCIF)}</cbc:CompanyID>
+        <cbc:CompanyID>${esc(company.bt_31_32_seller_vat_identifier || company.bt_29_seller_identifier)}</cbc:CompanyID>
         <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
       </cac:PartyTaxScheme>
       <cac:PartyLegalEntity>
-        <cbc:RegistrationName>${esc(company.furnizorNume)}</cbc:RegistrationName>
-        <cbc:CompanyID>${esc(company.furnizorNrRegCom)}</cbc:CompanyID>
+        <cbc:RegistrationName>${esc(company.bt_27_seller_name)}</cbc:RegistrationName>
+        <cbc:CompanyID>${esc(company.bt_30_seller_legal_registration)}</cbc:CompanyID>
       </cac:PartyLegalEntity>
     </cac:Party>
   </cac:AccountingSupplierParty>\n`;
