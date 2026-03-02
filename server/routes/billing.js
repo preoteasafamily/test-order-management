@@ -88,7 +88,7 @@ const getBillingSettings = () => {
 };
 
 // Generate PDF for invoice and save to disk
-// Header: two-column layout – Seller (Vânzător, left) | Buyer (Cumpărător, right)
+// Header: two-column layout – Seller (left, no title) | Buyer (right-aligned, no title)
 // Seller data read from billing_settings (BT-27…BT-43); Buyer from invoice snapshot.
 // Right column is omitted gracefully when buyer data is absent.
 // Table columns: Nr. crt. | Cod (EAN/barcode, BT-157) | Descriere | UM | Cant. | Preț | Total
@@ -133,7 +133,7 @@ const generateInvoicePdf = (invoice, order, client) => {
     doc.fontSize(10).text(`Data: ${invoice.document_date || order?.date || '-'}`, { align: 'center' });
     doc.moveDown(0.5);
 
-    // Two-column header: Seller (Vânzător) left | Buyer (Cumpărător) right
+    // Two-column header: Seller (left, no title) | Buyer (right-aligned, no title)
     // Seller data comes from billing_settings; Buyer data from invoice snapshot/client.
     // If buyer data is absent the right column is omitted and layout is unaffected.
     const settings = getBillingSettings();
@@ -155,10 +155,9 @@ const generateInvoicePdf = (invoice, order, client) => {
     const sellerEmail  = settings?.bt_43_seller_email;
 
     if (sellerName || sellerCIF) {
-      doc.fontSize(10).font('Helvetica-Bold').text('Vânzător:', colLeft, leftY);
-      leftY += 14;
-      doc.font('Helvetica').fontSize(9);
+      doc.font('Helvetica-Bold').fontSize(9);
       if (sellerName)   { doc.text(sellerName,                   colLeft, leftY); leftY += 12; }
+      doc.font('Helvetica').fontSize(9);
       if (sellerCIF)    { doc.text(`CIF: ${sellerCIF}`,          colLeft, leftY); leftY += 12; }
       if (sellerRegCom) { doc.text(`Reg. Com.: ${sellerRegCom}`, colLeft, leftY); leftY += 12; }
       const sellerAddrLine = [sellerAddr, sellerCity, sellerRegion].filter(Boolean).join(', ');
@@ -168,20 +167,20 @@ const generateInvoicePdf = (invoice, order, client) => {
     }
 
     // RIGHT COLUMN – Buyer (Cumpărător) BT-44…BT-55; omitted if no buyer data
+    const rightColWidth = pageWidth - 50 - colRight; // width from colRight to right margin
     const hasBuyerData = c.nume || c.cif || c.nrRegCom || c.strada;
     if (hasBuyerData) {
-      doc.fontSize(10).font('Helvetica-Bold').text('Cumpărător:', colRight, rightY);
-      rightY += 14;
+      doc.font('Helvetica-Bold').fontSize(9);
+      doc.text(c.nume || invoice.external_client_id || '-', colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12;
       doc.font('Helvetica').fontSize(9);
-      doc.text(c.nume || invoice.external_client_id || '-', colRight, rightY); rightY += 12;
-      if (c.cif)      { doc.text(`CIF: ${c.cif}`,                                   colRight, rightY); rightY += 12; }
-      if (c.nrRegCom) { doc.text(`Reg. Com.: ${c.nrRegCom}`,                         colRight, rightY); rightY += 12; }
-      if (c.strada)   { doc.text(`Adresă: ${c.strada}`,                              colRight, rightY); rightY += 12; }
+      if (c.cif)      { doc.text(`CIF: ${c.cif}`,                                   colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12; }
+      if (c.nrRegCom) { doc.text(`Reg. Com.: ${c.nrRegCom}`,                         colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12; }
+      if (c.strada)   { doc.text(`Adresă: ${c.strada}`,                              colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12; }
       if (c.localitate || c.judet) {
-        doc.text([c.localitate, c.judet].filter(Boolean).join(', '),                  colRight, rightY);
+        doc.text([c.localitate, c.judet].filter(Boolean).join(', '),                  colRight, rightY, { width: rightColWidth, align: 'right' });
         rightY += 12;
       }
-      if (c.tara && c.tara !== 'RO') { doc.text(`Țara: ${c.tara}`,                  colRight, rightY); rightY += 12; }
+      if (c.tara && c.tara !== 'RO') { doc.text(`Țara: ${c.tara}`,                  colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12; }
     }
 
     // Advance cursor past both columns; reset x to left margin for subsequent flowing text
@@ -265,6 +264,10 @@ const generateInvoicePdf = (invoice, order, client) => {
     for (const [label, value] of totals) {
       doc.text(`${label} ${value} RON`, { align: 'right' });
     }
+
+    // Footer – app branding
+    doc.moveDown(1);
+    doc.fontSize(7).font('Helvetica').fillColor('#888888').text('Samlax', { align: 'center' });
 
     doc.end();
 
