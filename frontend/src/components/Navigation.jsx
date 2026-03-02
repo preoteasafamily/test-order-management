@@ -102,6 +102,12 @@ const Navigation = ({ currentUser, activeSection, setActiveSection, mobileMenuOp
       icon: Receipt,
       roles: ["admin", "birou"],
     },
+    {
+      id: "invoices-v2",
+      label: "Facturi V2",
+      icon: Receipt,
+      roles: ["admin", "birou"],
+    },
   ];
 
   const handleNavClick = (itemId) => {

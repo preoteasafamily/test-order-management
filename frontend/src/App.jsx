@@ -18,6 +18,7 @@ import UserManager from "./pages/UserManager";
 import DataManagementScreen from "./pages/DataManagementScreen";
 import AgentMapScreen from "./pages/AgentMapScreen";
 import InvoicesScreen from "./pages/InvoicesScreen";
+import InvoicesV2Screen from "./pages/InvoicesV2Screen";
 
 const App = () => {
   // API Configuration
@@ -1340,6 +1341,15 @@ const App = () => {
             orders={orders}
             clients={clients}
             products={products}
+            showMessage={showMessage}
+          />
+        );
+      case "invoices-v2":
+        return (
+          <InvoicesV2Screen
+            API_URL={API_URL}
+            orders={orders}
+            clients={clients}
             showMessage={showMessage}
           />
         );
