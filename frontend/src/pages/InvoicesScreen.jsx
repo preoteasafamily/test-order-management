@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { FileText, Download, RefreshCw, Settings, Save, CheckSquare, Square, List, X, Plus, Trash2, Edit2 } from "lucide-react";
+import { FileText, FileCode, Download, RefreshCw, Settings, Save, CheckSquare, Square, List, X, Plus, Trash2, Edit2 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import JSZip from "jszip";
@@ -13,7 +13,11 @@ const stripDiacritics = (str) =>
     .replace(/\s+/g, "_");
 
 // Generate a jsPDF invoice document
-const generateInvoicePDF = (inv, company) => {
+// Table columns: Nr. crt. | Cod produs | Descriere | UM | Cant. | Preț | TVA% | Total
+// Mapping: lineId -> Nr. crt. (BT-126), barcode/productCode -> Cod (BT-157/BT-155),
+//          description -> Denumire (BT-153), unit -> UM (BT-130), unitCount -> Cant. (BT-129),
+//          price -> Preț (BT-146), vat -> TVA% (BT-152), total -> Total (BT-131)
+const generateInvoicePDF = (inv, company, client) => {
   const doc = new jsPDF({ format: "a4", unit: "pt" });
   const snapshot =
     inv.raw_snapshot && typeof inv.raw_snapshot === "object"
@@ -21,6 +25,21 @@ const generateInvoicePDF = (inv, company) => {
       : inv.raw_snapshot
       ? JSON.parse(inv.raw_snapshot)
       : {};
+
+  // Resolve client fields: prefer snapshot (captured at invoice time), then live client object
+  const cName         = snapshot.clientName         || client?.nume         || inv.client_name || inv.external_client_id || "-";
+  const cCIF          = snapshot.clientCIF          || client?.cif          || null;
+  const cNrRegCom     = snapshot.clientNrRegCom     || client?.nrRegCom     || null;
+  const cStrada       = snapshot.clientStrada       || client?.strada       || null;
+  const cLocalitate   = snapshot.clientLocalitate   || client?.localitate   || null;
+  const cJudet        = snapshot.clientJudet        || client?.judet        || null;
+  const cTara         = snapshot.clientTara         || client?.buyer_country || "RO";
+  const dName         = snapshot.clientDeliveryName    || client?.delivery_name    || null;
+  const dGLN          = snapshot.clientDeliveryGLN     || client?.delivery_gln     || null;
+  const dAddress      = snapshot.clientDeliveryAddress || client?.delivery_address || null;
+  const dCity         = snapshot.clientDeliveryCity    || client?.delivery_city    || null;
+  const dRegion       = snapshot.clientDeliveryRegion  || client?.delivery_region  || null;
+  const dCountry      = snapshot.clientDeliveryCountry || client?.delivery_country || "RO";
 
   const pageWidth = doc.internal.pageSize.getWidth();
   let y = 40;
@@ -68,21 +87,50 @@ const generateInvoicePDF = (inv, company) => {
   doc.text(`Data: ${inv.document_date || "-"}`, pageWidth / 2, y, { align: "center" });
   y += 20;
 
-  // Client info
-  const clientName = snapshot.clientName || inv.client_name || inv.external_client_id || "-";
+  // Buyer / Cumpărător info – all available client fields
   doc.setFont("helvetica", "bold");
-  doc.text("Client:", 40, y);
+  doc.text("Cumpărător:", 40, y);
+  y += 14;
   doc.setFont("helvetica", "normal");
-  doc.text(clientName, 100, y);
-  y += 20;
+  doc.text(cName, 40, y);
+  y += 13;
+  if (cCIF) { doc.text(`CIF: ${cCIF}`, 40, y); y += 13; }
+  if (cNrRegCom) { doc.text(`Reg. Com.: ${cNrRegCom}`, 40, y); y += 13; }
+  if (cStrada) { doc.text(`Adresă: ${cStrada}`, 40, y); y += 13; }
+  if (cLocalitate || cJudet) {
+    doc.text([cLocalitate, cJudet].filter(Boolean).join(", "), 40, y);
+    y += 13;
+  }
+  if (cTara && cTara !== "RO") { doc.text(`Țara: ${cTara}`, 40, y); y += 13; }
+  y += 6;
 
-  // Items table
+  // Delivery address section (shown only when at least one delivery field is populated)
+  const hasDelivery = dAddress || dCity || dName || dGLN;
+  if (hasDelivery) {
+    doc.setFont("helvetica", "bold");
+    doc.text("Adresă de livrare:", 40, y);
+    y += 14;
+    doc.setFont("helvetica", "normal");
+    if (dName)    { doc.text(dName, 40, y); y += 13; }
+    if (dGLN)     { doc.text(`GLN: ${dGLN}`, 40, y); y += 13; }
+    if (dAddress) { doc.text(dAddress, 40, y); y += 13; }
+    if (dCity || dRegion) {
+      doc.text([dCity, dRegion].filter(Boolean).join(", "), 40, y);
+      y += 13;
+    }
+    if (dCountry && dCountry !== "RO") { doc.text(`Țara: ${dCountry}`, 40, y); y += 13; }
+    y += 6;
+  }
+
+  // Items table – columns: Nr. crt. | Cod | Descriere | UM | Cant. | Preț | TVA% | Total
   const lines = snapshot.lines || snapshot.documentPositions || [];
   if (lines.length > 0) {
     autoTable(doc, {
       startY: y,
-      head: [["Descriere", "UM", "Cant.", "Pret", "TVA%", "Total"]],
-      body: lines.map((item) => [
+      head: [["Nr.", "Cod", "Descriere", "UM", "Cant.", "Preț", "TVA%", "Total"]],
+      body: lines.map((item, idx) => [
+        item.lineId != null ? item.lineId : idx + 1,
+        item.barcode || item.productCode || "-",
         item.description || item.descriere || "-",
         item.unit || item.um || "buc",
         item.unitCount || item.quantity || "0",
@@ -92,6 +140,16 @@ const generateInvoicePDF = (inv, company) => {
       ]),
       styles: { fontSize: 8 },
       headStyles: { fillColor: [245, 158, 11] },
+      columnStyles: {
+        0: { cellWidth: 25 },   // Nr.
+        1: { cellWidth: 70 },   // Cod
+        2: { cellWidth: "auto" }, // Descriere – flexible
+        3: { cellWidth: 28 },   // UM
+        4: { cellWidth: 35 },   // Cant.
+        5: { cellWidth: 48 },   // Preț
+        6: { cellWidth: 35 },   // TVA%
+        7: { cellWidth: 50 },   // Total
+      },
     });
     y = doc.lastAutoTable.finalY + 10;
   }
@@ -111,6 +169,153 @@ const generateInvoicePDF = (inv, company) => {
   doc.text(`Total de plata: ${totalCuTva} RON`, pageWidth - 40, y, { align: "right" });
 
   return doc;
+};
+
+// Generate a UBL 2.1 XML string for a single invoice
+// Structure: Invoice > AccountingSupplierParty, AccountingCustomerParty,
+//            Delivery (BuyerDelivery with address + GLN), InvoiceLine[]
+// Line columns: ID (Nr. crt. BT-126), Item.SellersItemIdentification (Cod, BT-155/BT-157),
+//               Item.Name (Denumire, BT-153), InvoicedQuantity (UM/Cant., BT-129),
+//               Price.PriceAmount (Preț, BT-146), LineExtensionAmount (Total, BT-131)
+const generateInvoiceUBL = (inv, company, client) => {
+  const snapshot =
+    inv.raw_snapshot && typeof inv.raw_snapshot === "object"
+      ? inv.raw_snapshot
+      : inv.raw_snapshot
+      ? JSON.parse(inv.raw_snapshot)
+      : {};
+
+  const esc = (v) => String(v || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  const cName       = snapshot.clientName         || client?.nume         || inv.client_name || inv.external_client_id || "";
+  const cCIF        = snapshot.clientCIF          || client?.cif          || "";
+  const cNrRegCom   = snapshot.clientNrRegCom     || client?.nrRegCom     || "";
+  const cStrada     = snapshot.clientStrada       || client?.strada       || "";
+  const cCity       = snapshot.clientLocalitate   || client?.localitate   || "";
+  const cRegion     = snapshot.clientJudet        || client?.judet        || "";
+  const cCountry    = snapshot.clientTara         || client?.buyer_country || "RO";
+  const dName       = snapshot.clientDeliveryName    || client?.delivery_name    || "";
+  const dGLN        = snapshot.clientDeliveryGLN     || client?.delivery_gln     || "";
+  const dAddress    = snapshot.clientDeliveryAddress || client?.delivery_address || "";
+  const dCity       = snapshot.clientDeliveryCity    || client?.delivery_city    || "";
+  const dRegion     = snapshot.clientDeliveryRegion  || client?.delivery_region  || "";
+  const dCountry    = snapshot.clientDeliveryCountry || client?.delivery_country || "RO";
+
+  const hasDelivery = dAddress || dCity || dName || dGLN;
+
+  const lines = snapshot.lines || snapshot.documentPositions || [];
+
+  let xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
+  <cbc:ID>${esc(inv.invoice_code || inv.id)}</cbc:ID>
+  <cbc:IssueDate>${esc(inv.document_date || "")}</cbc:IssueDate>
+  <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
+  <cbc:DocumentCurrencyCode>RON</cbc:DocumentCurrencyCode>\n`;
+
+  // Seller (AccountingSupplierParty)
+  if (company) {
+    xml += `  <cac:AccountingSupplierParty>
+    <cac:Party>
+      <cac:PartyName><cbc:Name>${esc(company.furnizorNume)}</cbc:Name></cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:StreetName>${esc(company.furnizorStrada)}</cbc:StreetName>
+        <cbc:CityName>${esc(company.furnizorLocalitate)}</cbc:CityName>
+        <cbc:CountrySubentity>${esc(company.furnizorJudet)}</cbc:CountrySubentity>
+        <cac:Country><cbc:IdentificationCode>RO</cbc:IdentificationCode></cac:Country>
+      </cac:PostalAddress>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID>${esc(company.furnizorCIF)}</cbc:CompanyID>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>${esc(company.furnizorNume)}</cbc:RegistrationName>
+        <cbc:CompanyID>${esc(company.furnizorNrRegCom)}</cbc:CompanyID>
+      </cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingSupplierParty>\n`;
+  }
+
+  // Buyer (AccountingCustomerParty)
+  xml += `  <cac:AccountingCustomerParty>
+    <cac:Party>
+      <cac:PartyName><cbc:Name>${esc(cName)}</cbc:Name></cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:StreetName>${esc(cStrada)}</cbc:StreetName>
+        <cbc:CityName>${esc(cCity)}</cbc:CityName>
+        <cbc:CountrySubentity>${esc(cRegion)}</cbc:CountrySubentity>
+        <cac:Country><cbc:IdentificationCode>${esc(cCountry)}</cbc:IdentificationCode></cac:Country>
+      </cac:PostalAddress>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID>${esc(cCIF)}</cbc:CompanyID>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>${esc(cName)}</cbc:RegistrationName>
+        <cbc:CompanyID>${esc(cNrRegCom)}</cbc:CompanyID>
+      </cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingCustomerParty>\n`;
+
+  // Delivery / BuyerDelivery – shown only when at least one delivery field is populated
+  if (hasDelivery) {
+    xml += `  <cac:Delivery>
+    <cac:DeliveryLocation>\n`;
+    if (dGLN) {
+      xml += `      <cbc:ID schemeID="GLN">${esc(dGLN)}</cbc:ID>\n`;
+    }
+    if (dName) {
+      xml += `      <cbc:Name>${esc(dName)}</cbc:Name>\n`;
+    }
+    xml += `      <cac:Address>
+        <cbc:StreetName>${esc(dAddress)}</cbc:StreetName>
+        <cbc:CityName>${esc(dCity)}</cbc:CityName>
+        <cbc:CountrySubentity>${esc(dRegion)}</cbc:CountrySubentity>
+        <cac:Country><cbc:IdentificationCode>${esc(dCountry)}</cbc:IdentificationCode></cac:Country>
+      </cac:Address>
+    </cac:DeliveryLocation>
+  </cac:Delivery>\n`;
+  }
+
+  // Invoice lines – Nr. crt. | Cod | Denumire | UM | Cant. | Preț | Total
+  lines.forEach((item, idx) => {
+    const lineId = item.lineId != null ? item.lineId : idx + 1;
+    const barcode = item.barcode || "";
+    const productCode = item.productCode || "";
+    const desc = item.description || item.descriere || "";
+    const um = item.unit || item.um || "C62"; // C62 = unit (UN/CEFACT)
+    const qty = Number(item.unitCount || item.quantity || 0).toFixed(3);
+    const price = Number(item.price || 0).toFixed(4);
+    const total = Number(item.total || (parseFloat(qty) * parseFloat(price))).toFixed(2);
+    const vatRate = item.vat != null ? String(item.vat) : "19";
+
+    xml += `  <cac:InvoiceLine>
+    <cbc:ID>${lineId}</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="${esc(um)}">${qty}</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="RON">${total}</cbc:LineExtensionAmount>
+    <cac:Item>
+      <cbc:Name>${esc(desc)}</cbc:Name>\n`;
+    if (productCode) {
+      xml += `      <cac:SellersItemIdentification><cbc:ID>${esc(productCode)}</cbc:ID></cac:SellersItemIdentification>\n`;
+    }
+    if (barcode) {
+      xml += `      <cac:StandardItemIdentification><cbc:ID schemeID="0160">${esc(barcode)}</cbc:ID></cac:StandardItemIdentification>\n`;
+    }
+    xml += `      <cac:ClassifiedTaxCategory>
+        <cbc:Percent>${esc(vatRate)}</cbc:Percent>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:ClassifiedTaxCategory>
+    </cac:Item>
+    <cac:Price>
+      <cbc:PriceAmount currencyID="RON">${price}</cbc:PriceAmount>
+    </cac:Price>
+  </cac:InvoiceLine>\n`;
+  });
+
+  xml += `</Invoice>`;
+  return xml;
 };
 
 const InvoicesScreen = ({ API_URL, orders, clients, products = [], showMessage, currentUser }) => {
@@ -211,11 +416,28 @@ const InvoicesScreen = ({ API_URL, orders, clients, products = [], showMessage, 
 
   const handleDownloadLocalPdf = (inv) => {
     try {
-      const doc = generateInvoicePDF(inv, company);
+      const { client } = getOrderInfo(inv.order_id);
+      const doc = generateInvoicePDF(inv, company, client);
       const filename = `factura-${stripDiacritics(inv.invoice_code || inv.id)}.pdf`;
       doc.save(filename);
     } catch (err) {
       showMessage(`Eroare la generarea PDF: ${err.message}`, "error");
+    }
+  };
+
+  const handleDownloadLocalUBL = (inv) => {
+    try {
+      const { client } = getOrderInfo(inv.order_id);
+      const xml = generateInvoiceUBL(inv, company, client);
+      const blob = new Blob([xml], { type: "application/xml" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `factura-${stripDiacritics(inv.invoice_code || inv.id)}.xml`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      showMessage(`Eroare la generarea UBL: ${err.message}`, "error");
     }
   };
 
@@ -250,8 +472,8 @@ const InvoicesScreen = ({ API_URL, orders, clients, products = [], showMessage, 
       const zip = new JSZip();
       const selected = localInvoices.filter((inv) => selectedIds.has(inv.id));
       for (const inv of selected) {
-        const doc = generateInvoicePDF(inv, company);
         const { order, client } = getOrderInfo(inv.order_id);
+        const doc = generateInvoicePDF(inv, company, client);
         const clientName = stripDiacritics(
           client?.nume || inv.client_name || inv.external_client_id || "Client"
         );
@@ -885,6 +1107,9 @@ const InvoicesScreen = ({ API_URL, orders, clients, products = [], showMessage, 
                   <th className="px-4 py-3 text-center font-semibold text-gray-700">
                     PDF
                   </th>
+                  <th className="px-4 py-3 text-center font-semibold text-gray-700">
+                    UBL
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -953,6 +1178,15 @@ const InvoicesScreen = ({ API_URL, orders, clients, products = [], showMessage, 
                           title="Descarcă PDF"
                         >
                           <Download className="w-4 h-4" />
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => handleDownloadLocalUBL(inv)}
+                          className="p-1.5 hover:bg-green-100 rounded text-green-600 transition"
+                          title="Descarcă UBL XML"
+                        >
+                          <FileCode className="w-4 h-4" />
                         </button>
                       </td>
                     </tr>

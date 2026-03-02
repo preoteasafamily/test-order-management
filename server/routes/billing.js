@@ -52,26 +52,30 @@ const formatNumber = (n) => {
 };
 
 // Map order items to DocumentPositionAttributes
+// Each line includes: lineId (Nr. crt.), barcode (EAN/codBare), productCode (codArticolFurnizor),
+// description, unit, unitCount, price, total, vat
 const mapOrderItems = (items, products) => {
-  return items.map((item) => {
+  return items.map((item, index) => {
     const product = products
       ? products.find((p) => p.id === item.productId)
       : null;
 
     const pos = {
-      description: product?.descriere || item.productId || 'Produs',
-      unit: product?.um || 'buc',
-      unitCount: String(item.quantity || 0),
-      price: formatNumber(item.price),
-      total: formatNumber((item.quantity || 0) * (item.price || 0)),
+      lineId: index + 1,                                              // BT-126 / Nr. crt.
+      barcode: product?.codBare || null,                             // BT-157 / EAN cod bare
+      description: product?.descriere || item.productId || 'Produs', // BT-153
+      unit: product?.um || 'buc',                                    // BT-130
+      unitCount: String(item.quantity || 0),                         // BT-129
+      price: formatNumber(item.price),                               // BT-146
+      total: formatNumber((item.quantity || 0) * (item.price || 0)), // BT-131
     };
 
     if (product?.codArticolFurnizor) {
-      pos.productCode = product.codArticolFurnizor;
+      pos.productCode = product.codArticolFurnizor; // BT-155
     }
 
     if (product?.cotaTVA !== undefined && product?.cotaTVA !== null) {
-      pos.vat = String(product.cotaTVA);
+      pos.vat = String(product.cotaTVA); // BT-152
     }
 
     return pos;
@@ -84,6 +88,7 @@ const getBillingSettings = () => {
 };
 
 // Generate PDF for invoice and save to disk
+// Table columns: Nr. crt. | Cod produs | Descriere | UM | Cant. | Preț | Total
 const generateInvoicePdf = (invoice, order, client) => {
   return new Promise((resolve, reject) => {
     const snapshot = invoice.raw_snapshot
@@ -91,6 +96,23 @@ const generateInvoicePdf = (invoice, order, client) => {
           ? JSON.parse(invoice.raw_snapshot)
           : invoice.raw_snapshot)
       : {};
+
+    // Prefer snapshot client fields (stored at invoice time) then fallback to live client object
+    const c = {
+      nume:             snapshot.clientName     || client?.nume             || null,
+      cif:              snapshot.clientCIF      || client?.cif              || null,
+      nrRegCom:         snapshot.clientNrRegCom || client?.nrRegCom         || null,
+      strada:           snapshot.clientStrada   || client?.strada           || null,
+      localitate:       snapshot.clientLocalitate || client?.localitate     || null,
+      judet:            snapshot.clientJudet    || client?.judet            || null,
+      tara:             snapshot.clientTara     || client?.buyer_country    || 'RO',
+      deliveryName:     snapshot.clientDeliveryName    || client?.delivery_name    || null,
+      deliveryGLN:      snapshot.clientDeliveryGLN     || client?.delivery_gln     || null,
+      deliveryAddress:  snapshot.clientDeliveryAddress || client?.delivery_address || null,
+      deliveryCity:     snapshot.clientDeliveryCity    || client?.delivery_city    || null,
+      deliveryRegion:   snapshot.clientDeliveryRegion  || client?.delivery_region  || null,
+      deliveryCountry:  snapshot.clientDeliveryCountry || client?.delivery_country || 'RO',
+    };
 
     const pdfPath = path.join(INVOICE_STORAGE_DIR, `${invoice.id}.pdf`);
     const doc = new PDFDocument({ margin: 50, size: 'A4' });
@@ -108,52 +130,79 @@ const generateInvoicePdf = (invoice, order, client) => {
     doc.fontSize(10).text(`Data: ${invoice.document_date || order?.date || '-'}`, { align: 'center' });
     doc.moveDown(1);
 
-    // Client info
-    doc.fontSize(11).font('Helvetica-Bold').text('Client:');
+    // Client / Cumpărător info – all available fields
+    doc.fontSize(11).font('Helvetica-Bold').text('Cumpărător:');
     doc.font('Helvetica').fontSize(10);
-    if (client) {
-      doc.text(client.nume || '-');
-      if (client.cif) doc.text(`CIF: ${client.cif}`);
-      if (client.nrRegCom) doc.text(`Reg. Com.: ${client.nrRegCom}`);
-      if (client.localitate) doc.text(`${client.localitate}${client.judet ? ', ' + client.judet : ''}`);
-    } else {
-      doc.text(invoice.external_client_id || '-');
+    doc.text(c.nume || invoice.external_client_id || '-');
+    if (c.cif)        doc.text(`CIF: ${c.cif}`);
+    if (c.nrRegCom)   doc.text(`Reg. Com.: ${c.nrRegCom}`);
+    if (c.strada)     doc.text(`Adresă: ${c.strada}`);
+    if (c.localitate || c.judet) {
+      doc.text([c.localitate, c.judet].filter(Boolean).join(', '));
     }
-    doc.moveDown(1);
+    if (c.tara && c.tara !== 'RO') doc.text(`Țara: ${c.tara}`);
+    doc.moveDown(0.5);
 
-    // Items table
+    // Delivery address section (shown only when at least one delivery field is populated)
+    const hasDelivery = c.deliveryAddress || c.deliveryCity || c.deliveryName || c.deliveryGLN;
+    if (hasDelivery) {
+      doc.fontSize(11).font('Helvetica-Bold').text('Adresă de livrare:');
+      doc.font('Helvetica').fontSize(10);
+      if (c.deliveryName)    doc.text(c.deliveryName);
+      if (c.deliveryGLN)     doc.text(`GLN: ${c.deliveryGLN}`);
+      if (c.deliveryAddress) doc.text(c.deliveryAddress);
+      if (c.deliveryCity || c.deliveryRegion) {
+        doc.text([c.deliveryCity, c.deliveryRegion].filter(Boolean).join(', '));
+      }
+      if (c.deliveryCountry && c.deliveryCountry !== 'RO') doc.text(`Țara: ${c.deliveryCountry}`);
+      doc.moveDown(0.5);
+    }
+
+    doc.moveDown(0.5);
+
+    // Items table – columns: Nr. | Cod | Descriere | UM | Cant. | Preț | Total
     const items = snapshot.lines || snapshot.documentPositions || [];
     if (items.length > 0) {
       doc.fontSize(11).font('Helvetica-Bold').text('Produse:');
       doc.moveDown(0.3);
 
       const tableTop = doc.y;
-      const col = { desc: 50, qty: 300, price: 370, total: 450 };
+      // Column x-positions (left margin = 50, right edge = 540)
+      const col = { nr: 50, cod: 75, desc: 160, um: 340, qty: 370, price: 415, total: 470 };
 
       // Table header
-      doc.fontSize(9).font('Helvetica-Bold');
-      doc.text('Descriere', col.desc, tableTop, { width: 240 });
-      doc.text('Cant.', col.qty, tableTop, { width: 60, align: 'right' });
-      doc.text('Preț', col.price, tableTop, { width: 70, align: 'right' });
-      doc.text('Total', col.total, tableTop, { width: 70, align: 'right' });
+      doc.fontSize(8).font('Helvetica-Bold');
+      doc.text('Nr.',    col.nr,   tableTop, { width: 22,  align: 'right' });
+      doc.text('Cod',    col.cod,  tableTop, { width: 82,  align: 'left'  });
+      doc.text('Descriere', col.desc, tableTop, { width: 175, align: 'left' });
+      doc.text('UM',     col.um,   tableTop, { width: 27,  align: 'left'  });
+      doc.text('Cant.',  col.qty,  tableTop, { width: 42,  align: 'right' });
+      doc.text('Preț',   col.price, tableTop, { width: 52,  align: 'right' });
+      doc.text('Total',  col.total, tableTop, { width: 68,  align: 'right' });
 
-      doc.moveTo(50, doc.y + 3).lineTo(540, doc.y + 3).stroke();
-      doc.moveDown(0.5);
+      doc.moveTo(50, doc.y + 2).lineTo(540, doc.y + 2).stroke();
+      doc.moveDown(0.4);
 
-      doc.font('Helvetica').fontSize(9);
-      for (const item of items) {
+      doc.font('Helvetica').fontSize(8);
+      items.forEach((item, idx) => {
         const y = doc.y;
-        const desc = item.description || item.descriere || '-';
-        const qty = item.unitCount || item.quantity || '0';
-        const price = item.price || '0.00';
-        const total = item.total || formatNumber((parseFloat(qty) || 0) * (parseFloat(price) || 0));
+        const nr    = item.lineId    != null ? String(item.lineId) : String(idx + 1);
+        const code  = item.barcode   || item.productCode || '';
+        const desc  = item.description || item.descriere || '-';
+        const um    = item.unit      || item.um    || '';
+        const qty   = item.unitCount || item.quantity || '0';
+        const price = item.price     || '0.00';
+        const total = item.total     || formatNumber((parseFloat(qty) || 0) * (parseFloat(price) || 0));
 
-        doc.text(desc, col.desc, y, { width: 240 });
-        doc.text(String(qty), col.qty, y, { width: 60, align: 'right' });
-        doc.text(String(price), col.price, y, { width: 70, align: 'right' });
-        doc.text(String(total), col.total, y, { width: 70, align: 'right' });
+        doc.text(nr,    col.nr,   y, { width: 22,  align: 'right' });
+        doc.text(code,  col.cod,  y, { width: 82,  align: 'left'  });
+        doc.text(desc,  col.desc, y, { width: 175, align: 'left'  });
+        doc.text(um,    col.um,   y, { width: 27,  align: 'left'  });
+        doc.text(String(qty),   col.qty,   y, { width: 42,  align: 'right' });
+        doc.text(String(price), col.price, y, { width: 52,  align: 'right' });
+        doc.text(String(total), col.total, y, { width: 68,  align: 'right' });
         doc.moveDown(0.4);
-      }
+      });
 
       doc.moveTo(50, doc.y).lineTo(540, doc.y).stroke();
       doc.moveDown(0.5);
@@ -283,7 +332,22 @@ const generateLocalInvoice = (orderId) => {
       const snapshot = {
         orderId,
         clientId: order.clientId,
-        clientName: client?.nume || null,
+        // Buyer / Cumpărător fields (BT-44 … BT-55)
+        clientName:       client?.nume        || null,
+        clientCIF:        client?.cif         || null,
+        clientNrRegCom:   client?.nrRegCom    || null,
+        clientStrada:     client?.strada      || null,
+        clientLocalitate: client?.localitate  || null,
+        clientJudet:      client?.judet       || null,
+    // NOTE: 'clientTara' in snapshot corresponds to client.buyer_country in the DB schema
+        clientTara:       client?.buyer_country || 'RO',
+        // Delivery address fields (BT-70 … BT-80)
+        clientDeliveryName:    client?.delivery_name    || null,
+        clientDeliveryGLN:     client?.delivery_gln     || null,
+        clientDeliveryAddress: client?.delivery_address || null,
+        clientDeliveryCity:    client?.delivery_city    || null,
+        clientDeliveryRegion:  client?.delivery_region  || null,
+        clientDeliveryCountry: client?.delivery_country || 'RO',
         documentDate,
         lines,
         total: order.total,
