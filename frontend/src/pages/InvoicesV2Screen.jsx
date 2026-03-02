@@ -24,14 +24,9 @@ const buildHeaderRows = (company, snap, client) => {
   const cJudet = snap.clientJudet || client?.judet || null;
   const cTara = snap.clientTara || client?.buyer_country || "RO";
 
-  const sellerAddr = [
-    company?.bt_35_seller_address,
-    company?.bt_37_seller_city,
-    company?.bt_39_seller_region,
-  ]
-    .filter(Boolean)
-    .join(", ");
-  const buyerAddr = [cStrada, cLocalitate, cJudet].filter(Boolean).join(", ");
+  const sellerStreet  = company?.bt_35_seller_address || "";
+  const sellerCityReg = [company?.bt_37_seller_city, company?.bt_39_seller_region].filter(Boolean).join(", ");
+  const buyerCityReg  = [cLocalitate, cJudet].filter(Boolean).join(", ");
 
   return [
     {
@@ -52,8 +47,12 @@ const buildHeaderRows = (company, snap, client) => {
       buyer: cNrRegCom ? `Reg.Com.: ${cNrRegCom}` : "",
     },
     {
-      seller: sellerAddr,
-      buyer: buyerAddr,
+      seller: sellerStreet,
+      buyer: cStrada || "",
+    },
+    {
+      seller: sellerCityReg,
+      buyer: buyerCityReg,
     },
     {
       seller: company?.bt_42_seller_phone
@@ -63,6 +62,14 @@ const buildHeaderRows = (company, snap, client) => {
     },
     {
       seller: company?.bt_43_seller_email ? `Email: ${company.bt_43_seller_email}` : "",
+      buyer: "",
+    },
+    {
+      seller: company?.bt_85_payee_bank_name ? `Banca: ${company.bt_85_payee_bank_name}` : "",
+      buyer: "",
+    },
+    {
+      seller: company?.bt_84_payee_iban ? `IBAN: ${company.bt_84_payee_iban}` : "",
       buyer: "",
     },
   ].filter((r) => r.seller || r.buyer);
@@ -97,11 +104,11 @@ const generatePDF = (inv, company, client) => {
   });
   y += 16;
 
-  // Row-synchronized header: seller left, buyer right
-  const leftX = 40;
-  const rightX = Math.floor(pageWidth / 2) + 10;
-  const lineH = 13;
-  const halfWidth = Math.floor(pageWidth / 2) - 50;
+  // Row-synchronized header: seller left, buyer right-aligned
+  const leftX      = 40;
+  const rightMargin = pageWidth - 40;
+  const lineH      = 13;
+  const halfWidth  = Math.floor(pageWidth / 2) - 50;
 
   const rows = buildHeaderRows(company, snap, client);
   for (const row of rows) {
@@ -110,11 +117,11 @@ const generatePDF = (inv, company, client) => {
       .setFontSize(9);
     if (row.seller) doc.text(row.seller, leftX, y, { maxWidth: halfWidth });
     if (row.buyer)
-      doc.text(row.buyer, rightX, y, { maxWidth: halfWidth });
+      doc.text(row.buyer, rightMargin, y, { align: "right", maxWidth: halfWidth });
     y += lineH;
   }
   doc.setFont("helvetica", "normal");
-  y += 8;
+  y += 12;
 
   // Products table: Nr. | Cod (barcode/EAN) | Descriere | UM | Cant. | Pret | Total
   const lines = snap.lines || snap.documentPositions || [];
