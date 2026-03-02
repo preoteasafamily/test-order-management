@@ -89,7 +89,8 @@ const getBillingSettings = () => {
 
 // Generate PDF for invoice and save to disk
 // Header: two-column layout – Seller (left, no title) | Buyer (right-aligned, no title)
-// Seller data read from billing_settings (BT-27…BT-43); Buyer from invoice snapshot.
+// Seller data read from billing_settings (BT-27…BT-43, BT-84 IBAN, BT-85 Banca); Buyer from invoice snapshot.
+// Address is split across two lines: street on line 1, city+county on line 2.
 // Right column is omitted gracefully when buyer data is absent.
 // Table columns: Nr. crt. | Cod (EAN/barcode, BT-157) | Descriere | UM | Cant. | Preț | Total
 const generateInvoicePdf = (invoice, order, client) => {
@@ -138,53 +139,60 @@ const generateInvoicePdf = (invoice, order, client) => {
     // If buyer data is absent the right column is omitted and layout is unaffected.
     const settings = getBillingSettings();
     const pageWidth = doc.page.width;
-    const colLeft  = 50;
-    const colRight = Math.floor(pageWidth / 2) + 10;
+    const colLeft      = 50;
+    const rightMargin  = pageWidth - 50;
+    const colRight     = Math.floor(pageWidth / 2) + 10;
+    const leftColWidth = colRight - colLeft - 10;
+    const rightColWidth = rightMargin - colRight;
     const headerStartY = doc.y;
     let leftY  = headerStartY;
     let rightY = headerStartY;
 
-    // LEFT COLUMN – Seller (Vânzător) from billing_settings BT-27…BT-43
+    // LEFT COLUMN – Seller (Vânzător) from billing_settings BT-27…BT-43, BT-84, BT-85
     const sellerName   = settings?.bt_27_seller_name;
     const sellerCIF    = settings?.bt_31_32_seller_vat_identifier || settings?.bt_29_seller_identifier;
     const sellerRegCom = settings?.bt_30_seller_legal_registration;
-    const sellerAddr   = settings?.bt_35_seller_address;
+    const sellerStreet = settings?.bt_35_seller_address;
     const sellerCity   = settings?.bt_37_seller_city;
     const sellerRegion = settings?.bt_39_seller_region;
     const sellerPhone  = settings?.bt_42_seller_phone;
     const sellerEmail  = settings?.bt_43_seller_email;
+    const sellerBanca  = settings?.bt_85_payee_bank_name;
+    const sellerIBAN   = settings?.bt_84_payee_iban;
 
     if (sellerName || sellerCIF) {
       doc.font('Helvetica-Bold').fontSize(9);
-      if (sellerName)   { doc.text(sellerName,                   colLeft, leftY); leftY += 12; }
+      if (sellerName)   { doc.text(sellerName,                   colLeft, leftY, { width: leftColWidth }); leftY += 12; }
       doc.font('Helvetica').fontSize(9);
       if (sellerCIF)    { doc.text(`CIF: ${sellerCIF}`,          colLeft, leftY); leftY += 12; }
       if (sellerRegCom) { doc.text(`Reg. Com.: ${sellerRegCom}`, colLeft, leftY); leftY += 12; }
-      const sellerAddrLine = [sellerAddr, sellerCity, sellerRegion].filter(Boolean).join(', ');
-      if (sellerAddrLine) { doc.text(sellerAddrLine,             colLeft, leftY); leftY += 12; }
+      if (sellerStreet) { doc.text(sellerStreet,                 colLeft, leftY, { width: leftColWidth }); leftY += 12; }
+      const sellerCityReg = [sellerCity, sellerRegion].filter(Boolean).join(', ');
+      if (sellerCityReg) { doc.text(sellerCityReg,              colLeft, leftY); leftY += 12; }
       if (sellerPhone)  { doc.text(`Tel: ${sellerPhone}`,        colLeft, leftY); leftY += 12; }
       if (sellerEmail)  { doc.text(`Email: ${sellerEmail}`,      colLeft, leftY); leftY += 12; }
+      if (sellerBanca)  { doc.text(`Banca: ${sellerBanca}`,      colLeft, leftY); leftY += 12; }
+      if (sellerIBAN)   { doc.text(`IBAN: ${sellerIBAN}`,        colLeft, leftY, { width: leftColWidth }); leftY += 12; }
     }
 
     // RIGHT COLUMN – Buyer (Cumpărător) BT-44…BT-55; omitted if no buyer data
-    const rightColWidth = pageWidth - 50 - colRight; // width from colRight to right margin
     const hasBuyerData = c.nume || c.cif || c.nrRegCom || c.strada;
     if (hasBuyerData) {
       doc.font('Helvetica-Bold').fontSize(9);
       doc.text(c.nume || invoice.external_client_id || '-', colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12;
       doc.font('Helvetica').fontSize(9);
-      if (c.cif)      { doc.text(`CIF: ${c.cif}`,                                   colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12; }
-      if (c.nrRegCom) { doc.text(`Reg. Com.: ${c.nrRegCom}`,                         colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12; }
-      if (c.strada)   { doc.text(`Adresă: ${c.strada}`,                              colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12; }
+      if (c.cif)      { doc.text(`CIF: ${c.cif}`,                             colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12; }
+      if (c.nrRegCom) { doc.text(`Reg. Com.: ${c.nrRegCom}`,                  colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12; }
+      if (c.strada)   { doc.text(c.strada,                                    colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12; }
       if (c.localitate || c.judet) {
-        doc.text([c.localitate, c.judet].filter(Boolean).join(', '),                  colRight, rightY, { width: rightColWidth, align: 'right' });
+        doc.text([c.localitate, c.judet].filter(Boolean).join(', '),           colRight, rightY, { width: rightColWidth, align: 'right' });
         rightY += 12;
       }
-      if (c.tara && c.tara !== 'RO') { doc.text(`Țara: ${c.tara}`,                  colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12; }
+      if (c.tara && c.tara !== 'RO') { doc.text(`Tara: ${c.tara}`,            colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12; }
     }
 
     // Advance cursor past both columns; reset x to left margin for subsequent flowing text
-    doc.y = Math.max(leftY, rightY) + 8;
+    doc.y = Math.max(leftY, rightY) + 14;
     doc.x = colLeft;
 
     // Delivery address section (shown only when at least one delivery field is populated)

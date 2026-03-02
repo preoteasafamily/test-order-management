@@ -64,56 +64,64 @@ const generateInvoicePDF = (inv, company, client) => {
   doc.text(`Data: ${inv.document_date || "-"}`, pageWidth / 2, y, { align: "center" });
   y += 18;
 
-  // Two-column header: Seller (Vânzător) left | Buyer (Cumpărător) right
-  // Seller is always left-aligned; Buyer is right-aligned (starts at page midpoint).
+  // Two-column header: Seller (Vânzător) left | Buyer (Cumpărător) right-aligned
+  // Seller is left-aligned; Buyer text is right-aligned to the right margin.
   // If buyer data is missing the right column is omitted and layout is unaffected.
-  const colLeft = 40;
-  const colRight = Math.floor(pageWidth / 2) + 10;
+  const colLeft       = 40;
+  const rightMargin   = pageWidth - 40;
+  const colRight      = Math.floor(pageWidth / 2) + 10;
+  const leftColWidth  = colRight - colLeft - 10;
+  const rightColWidth = rightMargin - colRight;
   let leftY = y;
   let rightY = y;
 
   // LEFT COLUMN – Seller (Vânzător); no section title per invoice requirements
   if (company) {
-    const sellerName   = company.bt_27_seller_name;
-    const sellerCIF    = company.bt_31_32_seller_vat_identifier || company.bt_29_seller_identifier;
-    const sellerRegCom = company.bt_30_seller_legal_registration;
-    const sellerAddr   = [company.bt_35_seller_address, company.bt_37_seller_city, company.bt_39_seller_region].filter(Boolean).join(", ");
-    const sellerPhone  = company.bt_42_seller_phone;
-    const sellerEmail  = company.bt_43_seller_email;
-    const sellerBanca  = company.bt_85_payee_bank_name;
-    const sellerIBAN   = company.bt_84_payee_iban;
+    const sellerName    = company.bt_27_seller_name;
+    const sellerCIF     = company.bt_31_32_seller_vat_identifier || company.bt_29_seller_identifier;
+    const sellerRegCom  = company.bt_30_seller_legal_registration;
+    const sellerStreet  = company.bt_35_seller_address;
+    const sellerCityReg = [company.bt_37_seller_city, company.bt_39_seller_region].filter(Boolean).join(", ");
+    const sellerPhone   = company.bt_42_seller_phone;
+    const sellerEmail   = company.bt_43_seller_email;
+    const sellerBanca   = company.bt_85_payee_bank_name;
+    const sellerIBAN    = company.bt_84_payee_iban;
     doc.setFontSize(9);
     doc.setFont("helvetica", "bold");
-    if (sellerName)   { doc.text(sellerName, colLeft, leftY); leftY += 12; }
+    if (sellerName)    { const ln = doc.splitTextToSize(sellerName, leftColWidth); doc.text(ln, colLeft, leftY); leftY += ln.length * 12; }
     doc.setFont("helvetica", "normal");
-    if (sellerCIF)    { doc.text(`CIF: ${sellerCIF}`, colLeft, leftY); leftY += 12; }
-    if (sellerRegCom) { doc.text(`Reg. Com.: ${sellerRegCom}`, colLeft, leftY); leftY += 12; }
-    if (sellerAddr)   { doc.text(sellerAddr, colLeft, leftY); leftY += 12; }
-    if (sellerPhone)  { doc.text(`Tel: ${sellerPhone}`, colLeft, leftY); leftY += 12; }
-    if (sellerEmail)  { doc.text(`Email: ${sellerEmail}`, colLeft, leftY); leftY += 12; }
-    if (sellerBanca)  { doc.text(`Bancă: ${sellerBanca}`, colLeft, leftY); leftY += 12; }
-    if (sellerIBAN)   { doc.text(`IBAN: ${sellerIBAN}`, colLeft, leftY); leftY += 12; }
+    if (sellerCIF)     { doc.text(`CIF: ${sellerCIF}`, colLeft, leftY); leftY += 12; }
+    if (sellerRegCom)  { doc.text(`Reg. Com.: ${sellerRegCom}`, colLeft, leftY); leftY += 12; }
+    if (sellerStreet)  { const ln = doc.splitTextToSize(sellerStreet, leftColWidth); doc.text(ln, colLeft, leftY); leftY += ln.length * 12; }
+    if (sellerCityReg) { doc.text(sellerCityReg, colLeft, leftY); leftY += 12; }
+    if (sellerPhone)   { doc.text(`Tel: ${sellerPhone}`, colLeft, leftY); leftY += 12; }
+    if (sellerEmail)   { doc.text(`Email: ${sellerEmail}`, colLeft, leftY); leftY += 12; }
+    if (sellerBanca)   { doc.text(`Banca: ${sellerBanca}`, colLeft, leftY); leftY += 12; }
+    if (sellerIBAN)    { const ln = doc.splitTextToSize(`IBAN: ${sellerIBAN}`, leftColWidth); doc.text(ln, colLeft, leftY); leftY += ln.length * 12; }
   }
 
-  // RIGHT COLUMN – Buyer (Cumpărător); omitted gracefully if no buyer data exists; no section title
+  // RIGHT COLUMN – Buyer (Cumpărător); right-aligned; omitted gracefully if no buyer data; no section title
   const hasBuyerData = cName !== "-" || cCIF || cNrRegCom || cStrada || cLocalitate;
   if (hasBuyerData) {
     doc.setFontSize(9);
     doc.setFont("helvetica", "bold");
-    doc.text(cName, colRight, rightY);
-    rightY += 12;
+    const nameLines = doc.splitTextToSize(cName, rightColWidth);
+    doc.text(nameLines, rightMargin, rightY, { align: "right" }); rightY += nameLines.length * 12;
     doc.setFont("helvetica", "normal");
-    if (cCIF)    { doc.text(`CIF: ${cCIF}`, colRight, rightY); rightY += 12; }
-    if (cNrRegCom) { doc.text(`Reg. Com.: ${cNrRegCom}`, colRight, rightY); rightY += 12; }
-    if (cStrada) { doc.text(`Adresă: ${cStrada}`, colRight, rightY); rightY += 12; }
+    if (cCIF)    { doc.text(`CIF: ${cCIF}`, rightMargin, rightY, { align: "right" }); rightY += 12; }
+    if (cNrRegCom) { doc.text(`Reg. Com.: ${cNrRegCom}`, rightMargin, rightY, { align: "right" }); rightY += 12; }
+    if (cStrada) {
+      const ln = doc.splitTextToSize(cStrada, rightColWidth);
+      doc.text(ln, rightMargin, rightY, { align: "right" }); rightY += ln.length * 12;
+    }
     if (cLocalitate || cJudet) {
-      doc.text([cLocalitate, cJudet].filter(Boolean).join(", "), colRight, rightY);
+      doc.text([cLocalitate, cJudet].filter(Boolean).join(", "), rightMargin, rightY, { align: "right" });
       rightY += 12;
     }
-    if (cTara && cTara !== "RO") { doc.text(`Țara: ${cTara}`, colRight, rightY); rightY += 12; }
+    if (cTara && cTara !== "RO") { doc.text(`Tara: ${cTara}`, rightMargin, rightY, { align: "right" }); rightY += 12; }
   }
 
-  y = Math.max(leftY, rightY) + 8;
+  y = Math.max(leftY, rightY) + 14;
 
   // Delivery address section (shown only when at least one delivery field is populated)
   const hasDelivery = dAddress || dCity || dName || dGLN;
