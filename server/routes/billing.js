@@ -566,7 +566,7 @@ router.get('/settings', (req, res) => {
 // PUT /api/billing/settings
 router.put('/settings', (req, res) => {
   try {
-    const { invoice_series, invoice_next_number, invoice_number_padding } = req.body;
+    const { invoice_series, invoice_next_number, invoice_number_padding, receipt_series, receipt_next_number } = req.body;
 
     if (invoice_series !== undefined && (typeof invoice_series !== 'string' || !invoice_series.trim())) {
       return res.status(400).json({ error: 'invoice_series must be a non-empty string' });
@@ -583,12 +583,23 @@ router.put('/settings', (req, res) => {
         return res.status(400).json({ error: 'invoice_number_padding must be between 1 and 10' });
       }
     }
+    if (receipt_series !== undefined && (typeof receipt_series !== 'string' || !receipt_series.trim())) {
+      return res.status(400).json({ error: 'receipt_series must be a non-empty string' });
+    }
+    if (receipt_next_number !== undefined) {
+      const n = parseInt(receipt_next_number, 10);
+      if (isNaN(n) || n < 1) {
+        return res.status(400).json({ error: 'receipt_next_number must be a positive integer' });
+      }
+    }
 
     const updates = [];
     const params = [];
     if (invoice_series !== undefined) { updates.push('invoice_series = ?'); params.push(invoice_series.trim()); }
     if (invoice_next_number !== undefined) { updates.push('invoice_next_number = ?'); params.push(parseInt(invoice_next_number, 10)); }
     if (invoice_number_padding !== undefined) { updates.push('invoice_number_padding = ?'); params.push(parseInt(invoice_number_padding, 10)); }
+    if (receipt_series !== undefined) { updates.push('receipt_series = ?'); params.push(receipt_series.trim()); }
+    if (receipt_next_number !== undefined) { updates.push('receipt_next_number = ?'); params.push(parseInt(receipt_next_number, 10)); }
 
     if (updates.length === 0) {
       return res.status(400).json({ error: 'No valid fields to update' });
