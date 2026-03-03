@@ -46,6 +46,27 @@ const ConfigScreen = ({
     const success = await saveData("company", localCompany);
     if (success) {
       setCompany(localCompany);
+
+      // Sync invoice and receipt series/numbers to billing_settings
+      try {
+        const billRes = await fetch(`${API_URL}/api/billing/settings`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            invoice_series: localCompany.invoiceSeries,
+            invoice_next_number: localCompany.invoiceNextNumber ?? 1,
+            receipt_series: localCompany.receiptSeries,
+            receipt_next_number: localCompany.receiptNextNumber ?? 1,
+          }),
+        });
+        if (!billRes.ok) {
+          const err = await billRes.json().catch(() => ({}));
+          console.warn("billing_settings sync failed:", err);
+        }
+      } catch (err) {
+        console.warn("Could not sync to billing_settings:", err);
+      }
+
       showMessage("Configurare salvată cu succes!");
     }
   };
@@ -282,6 +303,32 @@ const ConfigScreen = ({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Număr următor chitanță
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={localCompany.receiptNextNumber ?? 1}
+                onChange={(e) =>
+                  setLocalCompany({
+                    ...localCompany,
+                    receiptNextNumber: parseInt(e.target.value) || 1,
+                  })
+                }
+                disabled={currentUser.role !== "admin"}
+                className={`w-full px-3 py-2 border border-gray-300 rounded-lg ${
+                  currentUser.role === "admin"
+                    ? "focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-text"
+                    : "bg-gray-100 text-gray-600 cursor-not-allowed"
+                }`}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                ✏️ Numărul cu care va fi emisă următoarea chitanță
+              </p>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Număr LOT curent
