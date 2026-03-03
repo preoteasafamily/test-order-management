@@ -174,6 +174,14 @@ const App = () => {
         console.warn("API not available for dayStatus, using localStorage fallback");
         const result = localStorage.getItem(key);
         return result ? JSON.parse(result) : {};
+      } else if (key === "company") {
+        const response = await fetch(`${API_URL}/api/config/company`);
+        if (response.ok) {
+          return await response.json();
+        }
+        console.warn("API not available for company config, using localStorage fallback");
+        const result = localStorage.getItem(key);
+        return result ? JSON.parse(result) : null;
       } else {
         // For other data, use localStorage
         const result = localStorage.getItem(key);
@@ -239,11 +247,23 @@ const App = () => {
           }
         }
         return true;
-      } else {
-        // Use localStorage for other data
-        localStorage.setItem(key, JSON.stringify(data));
+      } else if (key === "company") {
+        // Save company settings to API (requires admin auth)
+        const token = localStorage.getItem("token");
+        const response = await fetch(`${API_URL}/api/config/company`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+          },
+          body: JSON.stringify(data),
+        });
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.error || "Failed to save company config");
+        }
         return true;
-      }
+      } else {
     } catch (error) {
       console.error(`Error saving ${key}:`, error);
       return false;
@@ -745,29 +765,30 @@ const App = () => {
 
   // Default data
   const getDefaultCompany = () => ({
-    furnizorNume: "SC PANIFICATIE SRL",
-    furnizorCIF: "RO4402892",
-    furnizorNrRegCom: "J14/603/1993",
-    furnizorCapital: "20000.00",
-    furnizorAdresa: "",
-    furnizorJudet: "Covasna",
-    furnizorLocalitate: "Sfântu Gheorghe",
-    furnizorStrada: "Str. Fabricii nr. 10",
-    furnizorBanca: "BCR",
-    furnizorIBAN: "RO49RNCB0000000123456789",
-    contIncasariCasa: "5311",
-    contIncasariBanca: "5121",
-    contImplicit: "5311",
-    invoiceSeries: "FAC",
-    invoiceNumber: 1,
-    receiptSeries: "CN",
-    receiptNumber: 1,
-    deliverySeries: "AVZ",
-    deliveryNumber: 1,
-    lotNumberStart: 11111,
-    lotNumberCurrent: 11111,
+    invoiceSeries: 'FAC',
+    invoiceNextNumber: 1,
+    invoiceNumberPadding: 6,
+    receiptSeries: 'CN',
+    lotNumberCurrent: 1,
     lotDate: null,
-    cotaTVA: 11,
+    // e-Factura seller identity (BT fields)
+    bt_27_seller_name: '',
+    bt_30_seller_legal_registration: '',
+    bt_31_32_seller_vat_identifier: '',
+    bt_29_seller_identifier: '',
+    // e-Factura seller address
+    bt_35_seller_address: '',
+    bt_37_seller_city: '',
+    bt_39_seller_region: '',
+    bt_40_seller_country: 'RO',
+    // e-Factura seller contact
+    bt_41_seller_contact: '',
+    bt_42_seller_phone: '',
+    bt_43_seller_email: '',
+    // e-Factura payment method details
+    bt_84_payee_iban: '',
+    bt_85_payee_bank_name: '',
+    bt_81_payment_means_code: '42',
   });
 
   const getDefaultGestiuni = () => [

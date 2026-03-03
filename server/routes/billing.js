@@ -146,8 +146,8 @@ const generateInvoicePdf = (invoice, order, client) => {
     doc.moveDown(0.5);
 
     // Two-column header: Seller (left, no title) | Buyer (right-aligned, no title)
-    // Seller data comes from app_config (company); Buyer data from invoice snapshot/client.
-    // If buyer data is absent the right column is omitted and layout is unaffected.
+    // Seller data comes from invoice snapshot (BT-xx stored at creation time), with fallback
+    // to live app_config. If buyer data is absent the right column is omitted.
     const company = getCompanySettings();
     const pageWidth = doc.page.width;
     const colLeft      = 50;
@@ -159,17 +159,18 @@ const generateInvoicePdf = (invoice, order, client) => {
     let leftY  = headerStartY;
     let rightY = headerStartY;
 
-    // LEFT COLUMN – Seller (Vânzător) from app_config (company) BT-27…BT-43, BT-84, BT-85
-    const sellerName   = company?.bt_27_seller_name;
-    const sellerCIF    = company?.bt_31_32_seller_vat_identifier || company?.bt_29_seller_identifier;
-    const sellerRegCom = company?.bt_30_seller_legal_registration;
-    const sellerStreet = company?.bt_35_seller_address;
-    const sellerCity   = company?.bt_37_seller_city;
-    const sellerRegion = company?.bt_39_seller_region;
-    const sellerPhone  = company?.bt_42_seller_phone;
-    const sellerEmail  = company?.bt_43_seller_email;
-    const sellerBanca  = company?.bt_85_payee_bank_name;
-    const sellerIBAN   = company?.bt_84_payee_iban;
+    // LEFT COLUMN – Seller (Vânzător): prefer snapshot BT-xx (historical), fallback to live app_config
+    const sellerName   = snapshot.bt_27_seller_name              || company?.bt_27_seller_name;
+    const sellerCIF    = snapshot.bt_31_32_seller_vat_identifier  || company?.bt_31_32_seller_vat_identifier
+                      || snapshot.bt_29_seller_identifier         || company?.bt_29_seller_identifier;
+    const sellerRegCom = snapshot.bt_30_seller_legal_registration || company?.bt_30_seller_legal_registration;
+    const sellerStreet = snapshot.bt_35_seller_address            || company?.bt_35_seller_address;
+    const sellerCity   = snapshot.bt_37_seller_city               || company?.bt_37_seller_city;
+    const sellerRegion = snapshot.bt_39_seller_region             || company?.bt_39_seller_region;
+    const sellerPhone  = snapshot.bt_42_seller_phone              || company?.bt_42_seller_phone;
+    const sellerEmail  = snapshot.bt_43_seller_email              || company?.bt_43_seller_email;
+    const sellerBanca  = snapshot.bt_85_payee_bank_name           || company?.bt_85_payee_bank_name;
+    const sellerIBAN   = snapshot.bt_84_payee_iban                || company?.bt_84_payee_iban;
 
     if (sellerName || sellerCIF) {
       doc.font('Helvetica-Bold').fontSize(9);
@@ -377,6 +378,9 @@ const generateLocalInvoice = (orderId) => {
     let invoiceNumber = existing?.invoice_number || null;
     let invoiceCode = existing?.invoice_code || null;
 
+    // Read seller BT-xx fields from app_config at invoice creation time (snapshot)
+    const company = getCompanySettings();
+
     // Allocate a new invoice number if this is a new invoice
     const allocateAndStore = db.transaction(() => {
       if (!invoiceNumber) {
@@ -395,6 +399,21 @@ const generateLocalInvoice = (orderId) => {
       const snapshot = {
         orderId,
         clientId: order.clientId,
+        // Seller / Vânzător BT-xx fields (snapshot at invoice creation time)
+        bt_27_seller_name:               company.bt_27_seller_name              || null,
+        bt_29_seller_identifier:         company.bt_29_seller_identifier         || null,
+        bt_30_seller_legal_registration: company.bt_30_seller_legal_registration || null,
+        bt_31_32_seller_vat_identifier:  company.bt_31_32_seller_vat_identifier  || null,
+        bt_35_seller_address:            company.bt_35_seller_address            || null,
+        bt_37_seller_city:               company.bt_37_seller_city               || null,
+        bt_39_seller_region:             company.bt_39_seller_region             || null,
+        bt_40_seller_country:            company.bt_40_seller_country            || 'RO',
+        bt_41_seller_contact:            company.bt_41_seller_contact            || null,
+        bt_42_seller_phone:              company.bt_42_seller_phone              || null,
+        bt_43_seller_email:              company.bt_43_seller_email              || null,
+        bt_84_payee_iban:                company.bt_84_payee_iban                || null,
+        bt_85_payee_bank_name:           company.bt_85_payee_bank_name           || null,
+        bt_81_payment_means_code:        company.bt_81_payment_means_code        || '42',
         // Buyer / Cumpărător fields (BT-44 … BT-55)
         clientName:       client?.nume        || null,
         clientCIF:        client?.cif         || null,
@@ -402,7 +421,7 @@ const generateLocalInvoice = (orderId) => {
         clientStrada:     client?.strada      || null,
         clientLocalitate: client?.localitate  || null,
         clientJudet:      client?.judet       || null,
-    // NOTE: 'clientTara' in snapshot corresponds to client.buyer_country in the DB schema
+        // NOTE: 'clientTara' in snapshot corresponds to client.buyer_country in the DB schema
         clientTara:       client?.buyer_country || 'RO',
         // Delivery address fields (BT-70 … BT-80)
         clientDeliveryName:    client?.delivery_name    || null,
@@ -423,7 +442,14 @@ const generateLocalInvoice = (orderId) => {
           `UPDATE billing_invoices SET
             series = ?, document_date = ?, total = ?, total_vat = ?,
             total_with_vat = ?, status = ?, raw_snapshot = ?,
-            invoice_number = ?, invoice_code = ?, updated_at = CURRENT_TIMESTAMP
+            invoice_number = ?, invoice_code = ?,
+            bt_27_seller_name = ?, bt_29_seller_identifier = ?,
+            bt_30_seller_legal_registration = ?, bt_31_32_seller_vat_identifier = ?,
+            bt_35_seller_address = ?, bt_37_seller_city = ?,
+            bt_39_seller_region = ?, bt_40_seller_country = ?,
+            bt_41_seller_contact = ?, bt_42_seller_phone = ?, bt_43_seller_email = ?,
+            bt_84_payee_iban = ?, bt_85_payee_bank_name = ?, bt_81_payment_means_code = ?,
+            updated_at = CURRENT_TIMESTAMP
           WHERE order_id = ?`
         ).run(
           invoiceCode?.split('-')[0] || null,
@@ -435,6 +461,20 @@ const generateLocalInvoice = (orderId) => {
           JSON.stringify(snapshot),
           invoiceNumber,
           invoiceCode,
+          snapshot.bt_27_seller_name,
+          snapshot.bt_29_seller_identifier,
+          snapshot.bt_30_seller_legal_registration,
+          snapshot.bt_31_32_seller_vat_identifier,
+          snapshot.bt_35_seller_address,
+          snapshot.bt_37_seller_city,
+          snapshot.bt_39_seller_region,
+          snapshot.bt_40_seller_country,
+          snapshot.bt_41_seller_contact,
+          snapshot.bt_42_seller_phone,
+          snapshot.bt_43_seller_email,
+          snapshot.bt_84_payee_iban,
+          snapshot.bt_85_payee_bank_name,
+          snapshot.bt_81_payment_means_code,
           orderId
         );
         return db.prepare('SELECT * FROM billing_invoices WHERE order_id = ?').get(orderId);
@@ -444,8 +484,14 @@ const generateLocalInvoice = (orderId) => {
           `INSERT INTO billing_invoices
             (id, order_id, series, document_date, external_client_id,
              total, total_vat, total_with_vat, status, raw_snapshot,
-             invoice_number, invoice_code, export_status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+             invoice_number, invoice_code, export_status,
+             bt_27_seller_name, bt_29_seller_identifier,
+             bt_30_seller_legal_registration, bt_31_32_seller_vat_identifier,
+             bt_35_seller_address, bt_37_seller_city,
+             bt_39_seller_region, bt_40_seller_country,
+             bt_41_seller_contact, bt_42_seller_phone, bt_43_seller_email,
+             bt_84_payee_iban, bt_85_payee_bank_name, bt_81_payment_means_code)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).run(
           localId,
           orderId,
@@ -459,7 +505,21 @@ const generateLocalInvoice = (orderId) => {
           JSON.stringify(snapshot),
           invoiceNumber,
           invoiceCode,
-          'disabled'
+          'disabled',
+          snapshot.bt_27_seller_name,
+          snapshot.bt_29_seller_identifier,
+          snapshot.bt_30_seller_legal_registration,
+          snapshot.bt_31_32_seller_vat_identifier,
+          snapshot.bt_35_seller_address,
+          snapshot.bt_37_seller_city,
+          snapshot.bt_39_seller_region,
+          snapshot.bt_40_seller_country,
+          snapshot.bt_41_seller_contact,
+          snapshot.bt_42_seller_phone,
+          snapshot.bt_43_seller_email,
+          snapshot.bt_84_payee_iban,
+          snapshot.bt_85_payee_bank_name,
+          snapshot.bt_81_payment_means_code
         );
         return db.prepare('SELECT * FROM billing_invoices WHERE id = ?').get(localId);
       }
