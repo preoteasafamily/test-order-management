@@ -1,5 +1,6 @@
 import React from 'react';
 import { LogOut, Menu } from 'lucide-react';
+import InvoiceIcon from './InvoiceIcon';
 
 const Header = ({ currentUser, setCurrentUser, mobileMenuOpen, setMobileMenuOpen }) => (
   <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4">
@@ -13,38 +14,37 @@ const Header = ({ currentUser, setCurrentUser, mobileMenuOpen, setMobileMenuOpen
         >
           <Menu className="w-6 h-6 text-gray-600" />
         </button>
-        
-        <img src="/samlax.svg" alt="Samlax" className="w-8 h-8 sm:w-10 sm:h-10" />
-        <div>
-          <h1 className="text-base sm:text-xl font-bold text-gray-800">
-            Samlax
-          </h1>
-          <p className="text-xs sm:text-sm text-gray-600">
-            {currentUser.name} (
-            {currentUser.role === "admin"
-              ? "Administrator"
-              : currentUser.role === "birou"
-                ? "Birou"
-                : "Agent"}
-            )
-          </p>
-        </div>
+
+        <InvoiceIcon className="w-8 h-8 sm:w-10 sm:h-10" />
+        <p className="text-xs sm:text-sm text-gray-600">
+          {currentUser.name}
+        </p>
       </div>
-      <button
-        onClick={() => setCurrentUser(null)}
-        className="hidden sm:flex items-center space-x-2 text-gray-600 hover:text-gray-800 transition-colors"
-      >
-        <LogOut className="w-5 h-5" />
-        <span>Ieșire</span>
-      </button>
+      <div className="hidden sm:flex flex-col items-center">
+        <button
+          onClick={() => setCurrentUser(null)}
+          className="flex items-center space-x-2 text-gray-600 hover:text-gray-800 transition-colors"
+        >
+          <LogOut className="w-5 h-5" />
+          <span>Ieșire</span>
+        </button>
+        <span className="text-xs text-gray-500 mt-1">
+          {currentUser.role === "admin" ? "Administrator" : currentUser.role === "birou" ? "Birou" : "Agent"}
+        </span>
+      </div>
       {/* Mobile Logout Button */}
-      <button
-        onClick={() => setCurrentUser(null)}
-        className="sm:hidden p-2 hover:bg-gray-100 rounded-lg"
-        aria-label="Logout"
-      >
-        <LogOut className="w-5 h-5 text-gray-600" />
-      </button>
+      <div className="sm:hidden flex flex-col items-center">
+        <button
+          onClick={() => setCurrentUser(null)}
+          className="p-2 hover:bg-gray-100 rounded-lg"
+          aria-label="Logout"
+        >
+          <LogOut className="w-5 h-5 text-gray-600" />
+        </button>
+        <span className="text-xs text-gray-500">
+          {currentUser.role === "admin" ? "Administrator" : currentUser.role === "birou" ? "Birou" : "Agent"}
+        </span>
+      </div>
     </div>
   </div>
 );
