@@ -202,7 +202,7 @@ const App = () => {
     }
   };
 
-  const saveData = async (key, data) => {
+const saveData = async (key, data) => {
     try {
       // Don't save orders to localStorage - they are managed via API
       if (key === "orders") {
@@ -212,23 +212,15 @@ const App = () => {
       
       // Use API for clients and products
       if (key === "clients") {
-        // For clients, we need to handle both create and update operations
-        // Since we're replacing the entire array, we need to sync all clients
-        // This is not efficient but maintains compatibility with existing code
-        localStorage.setItem(key, JSON.stringify(data)); // Keep localStorage as fallback
+        localStorage.setItem(key, JSON.stringify(data));
         return true;
       } else if (key === "products") {
-        // Same approach for products
-        localStorage.setItem(key, JSON.stringify(data)); // Keep localStorage as fallback
+        localStorage.setItem(key, JSON.stringify(data));
         return true;
       } else if (key === "exportCount") {
-        // exportCount is now handled directly in ExportScreen components via direct API calls
-        // This fallback is kept for compatibility but should not be used
         console.warn("exportCount should be saved directly via API in ExportScreen components");
         return true;
       } else if (key === "dayStatus") {
-        // Save day status to API - data format: { "2026-02-09": { productionExported: true, ... } }
-        // Need to save each date separately
         for (const [date, status] of Object.entries(data)) {
           const response = await fetch(`${API_URL}/api/day-status/${date}`, {
             method: "PUT",
@@ -248,7 +240,6 @@ const App = () => {
         }
         return true;
       } else if (key === "company") {
-        // Save company settings to API (requires admin auth)
         const token = localStorage.getItem("token");
         const response = await fetch(`${API_URL}/api/config/company`, {
           method: "PUT",
@@ -263,12 +254,16 @@ const App = () => {
           throw new Error(err.error || "Failed to save company config");
         }
         return true;
-      } else {
+      }
+      // (opțional) fallback aici, dacă vrei să salvezi și alte chei necunoscute:
+      // localStorage.setItem(key, JSON.stringify(data));
+      // return true;
+
     } catch (error) {
       console.error(`Error saving ${key}:`, error);
       return false;
     }
-  };
+};
 
   // API helper functions for clients
   const createClient = async (client) => {
