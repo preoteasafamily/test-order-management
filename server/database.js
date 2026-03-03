@@ -679,6 +679,46 @@ const createDefaultDayStatus = () => {
   }
 };
 
+// Migrate app_config company key from old furnizorNume style to BT-xx format
+const migrateCompanyConfigToBtFields = () => {
+  try {
+    const row = db.prepare("SELECT value FROM app_config WHERE key = 'company'").get();
+    if (!row) return;
+    let settings;
+    try { settings = JSON.parse(row.value); } catch { return; }
+
+    // Skip if already has BT-xx seller fields
+    if (settings.bt_27_seller_name !== undefined || settings.bt_31_32_seller_vat_identifier !== undefined) return;
+
+    // Migrate old furnizorNume-style fields to BT-xx
+    if (settings.furnizorNume || settings.furnizorCIF) {
+      const newSettings = {
+        ...settings,
+        bt_27_seller_name:              settings.furnizorNume       || '',
+        bt_30_seller_legal_registration: settings.furnizorNrRegCom  || '',
+        bt_31_32_seller_vat_identifier:  settings.furnizorCIF        || '',
+        bt_29_seller_identifier:         '',
+        bt_35_seller_address:            settings.furnizorStrada     || '',
+        bt_37_seller_city:               settings.furnizorLocalitate || '',
+        bt_39_seller_region:             settings.furnizorJudet      || '',
+        bt_40_seller_country:            'RO',
+        bt_41_seller_contact:            '',
+        bt_42_seller_phone:              settings.furnizorTelefon    || '',
+        bt_43_seller_email:              settings.furnizorEmail      || '',
+        bt_84_payee_iban:                settings.furnizorIBAN       || '',
+        bt_85_payee_bank_name:           settings.furnizorBanca      || '',
+        bt_81_payment_means_code:        '42',
+      };
+      db.prepare(
+        "UPDATE app_config SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = 'company'"
+      ).run(JSON.stringify(newSettings));
+      console.log('✅ Company config migrated to BT-xx format.');
+    }
+  } catch (err) {
+    console.error('Error migrating company config to BT-xx fields:', err);
+  }
+};
+
 // Initialize tables
 createTables();
 
@@ -689,6 +729,7 @@ migrateProductGroupsTable();
 migrateOrdersTableForValidata();
 migrateBillingInvoicesTable();
 migrateBillingInvoicesForEFactura();
+migrateCompanyConfigToBtFields();
 
 // Create default admin user if needed
 createDefaultAdminUser();
