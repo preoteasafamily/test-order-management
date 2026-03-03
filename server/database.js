@@ -586,12 +586,23 @@ const createTables = () => {
       invoice_series TEXT DEFAULT 'FCT',
       invoice_next_number INTEGER DEFAULT 1,
       invoice_number_padding INTEGER DEFAULT 6,
+      receipt_series TEXT DEFAULT 'CN',
+      receipt_next_number INTEGER DEFAULT 1,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
   // Insert default billing settings if not present
   db.exec(`INSERT OR IGNORE INTO billing_settings (id) VALUES (1)`);
+
+  // Migrate: add receipt columns if missing (for existing databases)
+  const billingCols = db.prepare("PRAGMA table_info(billing_settings)").all().map(c => c.name);
+  if (!billingCols.includes('receipt_series')) {
+    db.exec("ALTER TABLE billing_settings ADD COLUMN receipt_series TEXT DEFAULT 'CN'");
+  }
+  if (!billingCols.includes('receipt_next_number')) {
+    db.exec("ALTER TABLE billing_settings ADD COLUMN receipt_next_number INTEGER DEFAULT 1");
+  }
 
   // App config table (key-value store for company settings and other config)
   db.exec(`

@@ -264,6 +264,9 @@ const App = () => {
         }
         return true;
       } else {
+        localStorage.setItem(key, JSON.stringify(data));
+        return true;
+      }
     } catch (error) {
       console.error(`Error saving ${key}:`, error);
       return false;
@@ -769,6 +772,7 @@ const App = () => {
     invoiceNextNumber: 1,
     invoiceNumberPadding: 6,
     receiptSeries: 'CN',
+    receiptNextNumber: 1,
     lotNumberCurrent: 1,
     lotDate: null,
     // e-Factura seller identity (BT fields)
