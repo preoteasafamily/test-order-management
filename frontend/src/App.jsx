@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 // Imported components
 import Header from "./components/Header";
 import Navigation from "./components/Navigation";
+import LogoSvg from "./components/LogoSvg";
 import Dashboard from "./pages/Dashboard";
 import OrdersAgentScreen from "./pages/OrdersAgentScreen";
 import OrdersMatrixScreen from "./pages/OrdersMatrixScreen";
@@ -1073,7 +1074,7 @@ const App = () => {
       <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-100 flex items-center justify-center p-4">
         <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-md">
           <div className="text-center mb-8">
-            <img src="/samlax.svg" alt="Samlax" className="w-20 h-20 mx-auto mb-4" />
+            <LogoSvg width={80} height={80} className="mx-auto mb-4" />
             <h1 className="text-2xl font-bold text-gray-800">
               Samlax
             </h1>
