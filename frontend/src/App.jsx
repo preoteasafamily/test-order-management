@@ -19,6 +19,7 @@ import DataManagementScreen from "./pages/DataManagementScreen";
 import AgentMapScreen from "./pages/AgentMapScreen";
 import InvoicesScreen from "./pages/InvoicesScreen";
 import InvoicesV2Screen from "./pages/InvoicesV2Screen";
+import LogoSvg from "./components/LogoSvg";
 
 const App = () => {
   // API Configuration
@@ -1073,11 +1074,7 @@ const App = () => {
       <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-100 flex items-center justify-center p-4">
         <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-md">
           <div className="text-center mb-8">
-            <img src="/samlax.svg" alt="Samlax" className="w-20 h-20 mx-auto mb-4" />
-            <h1 className="text-2xl font-bold text-gray-800">
-              Samlax
-            </h1>
-            <p className="text-gray-600 mt-2">Sistem Management Comenzi</p>
+            <LogoSvg className="mx-auto" width={110} height={90} />
           </div>
 
           <div className="space-y-4">
