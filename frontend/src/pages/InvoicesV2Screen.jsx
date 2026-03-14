@@ -123,6 +123,37 @@ const generatePDF = (inv, company, client) => {
   doc.setFont("helvetica", "normal");
   y += 12;
 
+  // Delivery section – right column, under buyer data; same font/size/style as buyer; no section title
+  const dName    = snap.clientDeliveryName    || client?.delivery_name    || null;
+  const dGLN     = snap.clientDeliveryGLN     || client?.delivery_gln     || null;
+  const dAddress = snap.clientDeliveryAddress || client?.delivery_address || null;
+  const dCity    = snap.clientDeliveryCity    || client?.delivery_city    || null;
+  const dRegion  = snap.clientDeliveryRegion  || client?.delivery_region  || null;
+  const hasDelivery = dName || dGLN || dAddress || dCity || dRegion;
+  if (hasDelivery) {
+    doc.setFontSize(9).setFont("helvetica", "normal");
+    if (dName) {
+      const ln = doc.splitTextToSize(`Denumire Loc Livrare: ${dName}`, halfWidth);
+      doc.text(ln, rightMargin, y, { align: "right" }); y += ln.length * lineH;
+    }
+    if (dGLN) {
+      const ln = doc.splitTextToSize(`GLN Loc Livrare: ${dGLN}`, halfWidth);
+      doc.text(ln, rightMargin, y, { align: "right" }); y += ln.length * lineH;
+    }
+    if (dAddress) {
+      const ln = doc.splitTextToSize(`Adresa Livrare: ${dAddress}`, halfWidth);
+      doc.text(ln, rightMargin, y, { align: "right" }); y += ln.length * lineH;
+    }
+    if (dCity) {
+      const ln = doc.splitTextToSize(`Localitate Livrare: ${dCity}`, halfWidth);
+      doc.text(ln, rightMargin, y, { align: "right" }); y += ln.length * lineH;
+    }
+    if (dRegion) {
+      doc.text(`Judet: ${dRegion}`, rightMargin, y, { align: "right" }); y += lineH;
+    }
+    y += 4;
+  }
+
   // Products table: Nr. | Cod (barcode/EAN) | Descriere | UM | Cant. | Pret | Total
   const lines = snap.lines || snap.documentPositions || [];
   if (lines.length > 0) {
