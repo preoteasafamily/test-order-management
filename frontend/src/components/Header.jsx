@@ -16,11 +16,6 @@ const Header = ({ currentUser, setCurrentUser, mobileMenuOpen, setMobileMenuOpen
         </button>
         
         <LogoSvg width={180} height={50} />
-        <div>
-          <p className="text-xs sm:text-sm text-gray-600">
-            {currentUser.name}
-          </p>
-        </div>
       </div>
       <div className="flex flex-col items-end">
         {/* Desktop Logout Button */}
@@ -39,8 +34,8 @@ const Header = ({ currentUser, setCurrentUser, mobileMenuOpen, setMobileMenuOpen
         >
           <LogOut className="w-5 h-5 text-gray-600" />
         </button>
-        <p className="text-xs text-gray-500 mt-1" aria-label="Rol utilizator">
-          {currentUser.role === "admin"
+        <p className="text-xs text-gray-500 mt-1" aria-label="Nume și rol utilizator">
+          {currentUser.name} / {currentUser.role === "admin"
             ? "Administrator"
             : currentUser.role === "birou"
               ? "Birou"
