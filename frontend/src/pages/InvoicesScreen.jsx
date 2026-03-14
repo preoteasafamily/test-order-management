@@ -124,20 +124,17 @@ const generateInvoicePDF = (inv, company, client) => {
   y = Math.max(leftY, rightY) + 14;
 
   // Delivery address section (shown only when at least one delivery field is populated)
-  const hasDelivery = dAddress || dCity || dName || dGLN;
+  const hasDelivery = dName || dGLN || dAddress || dCity || dRegion;
   if (hasDelivery) {
     doc.setFont("helvetica", "bold");
-    doc.text("Adresă de livrare:", 40, y);
+    doc.text("Livrare:", 40, y);
     y += 14;
     doc.setFont("helvetica", "normal");
-    if (dName)    { doc.text(dName, 40, y); y += 13; }
-    if (dGLN)     { doc.text(`GLN: ${dGLN}`, 40, y); y += 13; }
-    if (dAddress) { doc.text(dAddress, 40, y); y += 13; }
-    if (dCity || dRegion) {
-      doc.text([dCity, dRegion].filter(Boolean).join(", "), 40, y);
-      y += 13;
-    }
-    if (dCountry && dCountry !== "RO") { doc.text(`Țara: ${dCountry}`, 40, y); y += 13; }
+    if (dName)    { doc.text(`Denumire Loc Livrare: ${dName}`, 40, y); y += 13; }
+    if (dGLN)     { doc.text(`GLN Loc Livrare: ${dGLN}`, 40, y); y += 13; }
+    if (dAddress) { doc.text(`Adresă Livrare: ${dAddress}`, 40, y); y += 13; }
+    if (dCity)    { doc.text(`Localitate Livrare: ${dCity}`, 40, y); y += 13; }
+    if (dRegion)  { doc.text(`Județ/Regiune Livrare: ${dRegion}`, 40, y); y += 13; }
     y += 6;
   }
 
@@ -223,7 +220,7 @@ const generateInvoiceUBL = (inv, company, client) => {
   const dRegion     = snapshot.clientDeliveryRegion  || client?.delivery_region  || "";
   const dCountry    = snapshot.clientDeliveryCountry || client?.delivery_country || "RO";
 
-  const hasDelivery = dAddress || dCity || dName || dGLN;
+  const hasDelivery = dName || dGLN || dAddress || dCity || dRegion;
 
   const lines = snapshot.lines || snapshot.documentPositions || [];
 

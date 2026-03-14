@@ -208,17 +208,15 @@ const generateInvoicePdf = (invoice, order, client) => {
     doc.x = colLeft;
 
     // Delivery address section (shown only when at least one delivery field is populated)
-    const hasDelivery = c.deliveryAddress || c.deliveryCity || c.deliveryName || c.deliveryGLN;
+    const hasDelivery = c.deliveryName || c.deliveryGLN || c.deliveryAddress || c.deliveryCity || c.deliveryRegion;
     if (hasDelivery) {
-      doc.fontSize(11).font('Helvetica-Bold').text('Adresă de livrare:', colLeft, doc.y);
+      doc.fontSize(11).font('Helvetica-Bold').text('Livrare:', colLeft, doc.y);
       doc.font('Helvetica').fontSize(10);
-      if (c.deliveryName)    doc.text(c.deliveryName);
-      if (c.deliveryGLN)     doc.text(`GLN: ${c.deliveryGLN}`);
-      if (c.deliveryAddress) doc.text(c.deliveryAddress);
-      if (c.deliveryCity || c.deliveryRegion) {
-        doc.text([c.deliveryCity, c.deliveryRegion].filter(Boolean).join(', '));
-      }
-      if (c.deliveryCountry && c.deliveryCountry !== 'RO') doc.text(`Țara: ${c.deliveryCountry}`);
+      if (c.deliveryName)    doc.text(`Denumire Loc Livrare: ${c.deliveryName}`);
+      if (c.deliveryGLN)     doc.text(`GLN Loc Livrare: ${c.deliveryGLN}`);
+      if (c.deliveryAddress) doc.text(`Adresă Livrare: ${c.deliveryAddress}`);
+      if (c.deliveryCity)    doc.text(`Localitate Livrare: ${c.deliveryCity}`);
+      if (c.deliveryRegion)  doc.text(`Județ/Regiune Livrare: ${c.deliveryRegion}`);
       doc.moveDown(0.5);
     }
 
