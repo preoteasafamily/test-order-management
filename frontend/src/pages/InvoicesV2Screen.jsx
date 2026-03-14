@@ -121,7 +121,30 @@ const generatePDF = (inv, company, client) => {
     y += lineH;
   }
   doc.setFont("helvetica", "normal");
-  y += 12;
+
+  // Delivery section – shown only when at least one delivery field is populated (no diacritics)
+  const dName    = snap.clientDeliveryName    || client?.delivery_name    || null;
+  const dGLN     = snap.clientDeliveryGLN     || client?.delivery_gln     || null;
+  const dAddress = snap.clientDeliveryAddress || client?.delivery_address || null;
+  const dCity    = snap.clientDeliveryCity    || client?.delivery_city    || null;
+  const dRegion  = snap.clientDeliveryRegion  || client?.delivery_region  || null;
+  const dCountry = snap.clientDeliveryCountry || client?.delivery_country || "RO";
+
+  const hasDelivery = dName || dGLN || dAddress || dCity;
+  if (hasDelivery) {
+    doc.setFontSize(9).setFont("helvetica", "bold");
+    doc.text("Livrare:", leftX, y);
+    y += lineH;
+    doc.setFont("helvetica", "normal");
+    if (dName)    { doc.text(dName, leftX, y, { maxWidth: halfWidth }); y += lineH; }
+    if (dGLN)     { doc.text(`GLN: ${dGLN}`, leftX, y); y += lineH; }
+    if (dAddress) { doc.text(dAddress, leftX, y, { maxWidth: halfWidth }); y += lineH; }
+    if (dCity || dRegion) {
+      doc.text([dCity, dRegion].filter(Boolean).join(", "), leftX, y);
+      y += lineH;
+    }
+    if (dCountry && dCountry !== "RO") { doc.text(`Tara: ${dCountry}`, leftX, y); y += lineH; }
+  }
 
   // Products table: Nr. | Cod (barcode/EAN) | Descriere | UM | Cant. | Pret | Total
   const lines = snap.lines || snap.documentPositions || [];
