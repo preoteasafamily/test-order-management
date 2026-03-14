@@ -203,24 +203,23 @@ const generateInvoicePdf = (invoice, order, client) => {
       if (c.tara && c.tara !== 'RO') { doc.text(`Tara: ${c.tara}`,            colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12; }
     }
 
+    // Delivery section – right-aligned below buyer data, minimum line spacing (BT-70, 71, 75, 77, 79)
+    const hasDelivery = c.deliveryName || c.deliveryGLN || c.deliveryAddress || c.deliveryCity || c.deliveryRegion;
+    if (hasDelivery) {
+      const dlh = 11;
+      doc.font('Helvetica-Bold').fontSize(9);
+      doc.text('Livrare:', colRight, rightY, { width: rightColWidth, align: 'right', lineBreak: false }); rightY += dlh;
+      doc.font('Helvetica').fontSize(9);
+      if (c.deliveryName)    { doc.text(`Denumire Loc Livrare: ${c.deliveryName}`, colRight, rightY, { width: rightColWidth, align: 'right', lineBreak: false }); rightY += dlh; }
+      if (c.deliveryGLN)     { doc.text(`GLN Loc Livrare: ${c.deliveryGLN}`,      colRight, rightY, { width: rightColWidth, align: 'right', lineBreak: false }); rightY += dlh; }
+      if (c.deliveryAddress) { doc.text(`Adres\u0103 Livrare: ${c.deliveryAddress}`, colRight, rightY, { width: rightColWidth, align: 'right', lineBreak: false }); rightY += dlh; }
+      if (c.deliveryCity)    { doc.text(`Localitate Livrare: ${c.deliveryCity}`,   colRight, rightY, { width: rightColWidth, align: 'right', lineBreak: false }); rightY += dlh; }
+      if (c.deliveryRegion)  { doc.text(`Jude\u021B: ${c.deliveryRegion}`,         colRight, rightY, { width: rightColWidth, align: 'right', lineBreak: false }); rightY += dlh; }
+    }
+
     // Advance cursor past both columns; reset x to left margin for subsequent flowing text
     doc.y = Math.max(leftY, rightY) + 14;
     doc.x = colLeft;
-
-    // Delivery address section (shown only when at least one delivery field is populated)
-    const hasDelivery = c.deliveryAddress || c.deliveryCity || c.deliveryName || c.deliveryGLN;
-    if (hasDelivery) {
-      doc.fontSize(11).font('Helvetica-Bold').text('Adresă de livrare:', colLeft, doc.y);
-      doc.font('Helvetica').fontSize(10);
-      if (c.deliveryName)    doc.text(c.deliveryName);
-      if (c.deliveryGLN)     doc.text(`GLN: ${c.deliveryGLN}`);
-      if (c.deliveryAddress) doc.text(c.deliveryAddress);
-      if (c.deliveryCity || c.deliveryRegion) {
-        doc.text([c.deliveryCity, c.deliveryRegion].filter(Boolean).join(', '));
-      }
-      if (c.deliveryCountry && c.deliveryCountry !== 'RO') doc.text(`Țara: ${c.deliveryCountry}`);
-      doc.moveDown(0.5);
-    }
 
     doc.moveDown(0.5);
 

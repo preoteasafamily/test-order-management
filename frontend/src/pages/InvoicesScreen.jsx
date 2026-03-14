@@ -121,25 +121,22 @@ const generateInvoicePDF = (inv, company, client) => {
     if (cTara && cTara !== "RO") { doc.text(`Tara: ${cTara}`, rightMargin, rightY, { align: "right" }); rightY += 12; }
   }
 
-  y = Math.max(leftY, rightY) + 14;
-
-  // Delivery address section (shown only when at least one delivery field is populated)
-  const hasDelivery = dAddress || dCity || dName || dGLN;
+  // Delivery section – right-aligned below buyer data, minimum line spacing (BT-70, 71, 75, 77, 79)
+  const hasDelivery = dName || dGLN || dAddress || dCity || dRegion;
   if (hasDelivery) {
+    const dlh = 11;
+    doc.setFontSize(9);
     doc.setFont("helvetica", "bold");
-    doc.text("Adresă de livrare:", 40, y);
-    y += 14;
+    doc.text("Livrare:", rightMargin, rightY, { align: "right" }); rightY += dlh;
     doc.setFont("helvetica", "normal");
-    if (dName)    { doc.text(dName, 40, y); y += 13; }
-    if (dGLN)     { doc.text(`GLN: ${dGLN}`, 40, y); y += 13; }
-    if (dAddress) { doc.text(dAddress, 40, y); y += 13; }
-    if (dCity || dRegion) {
-      doc.text([dCity, dRegion].filter(Boolean).join(", "), 40, y);
-      y += 13;
-    }
-    if (dCountry && dCountry !== "RO") { doc.text(`Țara: ${dCountry}`, 40, y); y += 13; }
-    y += 6;
+    if (dName)    { doc.text(`Denumire Loc Livrare: ${dName}`, rightMargin, rightY, { align: "right" }); rightY += dlh; }
+    if (dGLN)     { doc.text(`GLN Loc Livrare: ${dGLN}`, rightMargin, rightY, { align: "right" }); rightY += dlh; }
+    if (dAddress) { doc.text(`Adres\u0103 Livrare: ${dAddress}`, rightMargin, rightY, { align: "right" }); rightY += dlh; }
+    if (dCity)    { doc.text(`Localitate Livrare: ${dCity}`, rightMargin, rightY, { align: "right" }); rightY += dlh; }
+    if (dRegion)  { doc.text(`Jude\u021B: ${dRegion}`, rightMargin, rightY, { align: "right" }); rightY += dlh; }
   }
+
+  y = Math.max(leftY, rightY) + 14;
 
   // Items table – columns: Nr. crt. | Cod | Descriere | UM | Cant. | Preț | TVA% | Total
   const lines = snapshot.lines || snapshot.documentPositions || [];
