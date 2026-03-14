@@ -121,25 +121,33 @@ const generateInvoicePDF = (inv, company, client) => {
     if (cTara && cTara !== "RO") { doc.text(`Tara: ${cTara}`, rightMargin, rightY, { align: "right" }); rightY += 12; }
   }
 
-  y = Math.max(leftY, rightY) + 14;
-
-  // Delivery address section (shown only when at least one delivery field is populated)
-  const hasDelivery = dAddress || dCity || dName || dGLN;
+  // Delivery section – right column, under buyer data; same font/size/style as buyer; no section title
+  const hasDelivery = dName || dGLN || dAddress || dCity || dRegion;
   if (hasDelivery) {
-    doc.setFont("helvetica", "bold");
-    doc.text("Adresă de livrare:", 40, y);
-    y += 14;
+    doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
-    if (dName)    { doc.text(dName, 40, y); y += 13; }
-    if (dGLN)     { doc.text(`GLN: ${dGLN}`, 40, y); y += 13; }
-    if (dAddress) { doc.text(dAddress, 40, y); y += 13; }
-    if (dCity || dRegion) {
-      doc.text([dCity, dRegion].filter(Boolean).join(", "), 40, y);
-      y += 13;
+    if (dName) {
+      const ln = doc.splitTextToSize(`Denumire Loc Livrare: ${dName}`, rightColWidth);
+      doc.text(ln, rightMargin, rightY, { align: "right" }); rightY += ln.length * 12;
     }
-    if (dCountry && dCountry !== "RO") { doc.text(`Țara: ${dCountry}`, 40, y); y += 13; }
-    y += 6;
+    if (dGLN) {
+      const ln = doc.splitTextToSize(`GLN Loc Livrare: ${dGLN}`, rightColWidth);
+      doc.text(ln, rightMargin, rightY, { align: "right" }); rightY += ln.length * 12;
+    }
+    if (dAddress) {
+      const ln = doc.splitTextToSize(`Adresa Livrare: ${dAddress}`, rightColWidth);
+      doc.text(ln, rightMargin, rightY, { align: "right" }); rightY += ln.length * 12;
+    }
+    if (dCity) {
+      const ln = doc.splitTextToSize(`Localitate Livrare: ${dCity}`, rightColWidth);
+      doc.text(ln, rightMargin, rightY, { align: "right" }); rightY += ln.length * 12;
+    }
+    if (dRegion) {
+      doc.text(`Judet: ${dRegion}`, rightMargin, rightY, { align: "right" }); rightY += 12;
+    }
   }
+
+  y = Math.max(leftY, rightY) + 14;
 
   // Items table – columns: Nr. crt. | Cod | Descriere | UM | Cant. | Preț | TVA% | Total
   const lines = snapshot.lines || snapshot.documentPositions || [];
