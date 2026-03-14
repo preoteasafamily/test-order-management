@@ -110,20 +110,25 @@ const generatePDF = (inv, company, client) => {
   const lineH      = 13;
   const halfWidth  = Math.floor(pageWidth / 2) - 50;
 
+  // rightY tracks the buyer column's current vertical position separately,
+  // so that the delivery section is placed immediately under the last buyer row
+  // (not under the last seller row, which may extend further down).
+  let rightY = y;
   const rows = buildHeaderRows(company, snap, client);
   for (const row of rows) {
     doc
       .setFont("helvetica", row.bold ? "bold" : "normal")
       .setFontSize(9);
     if (row.seller) doc.text(row.seller, leftX, y, { maxWidth: halfWidth });
-    if (row.buyer)
+    if (row.buyer) {
       doc.text(row.buyer, rightMargin, y, { align: "right", maxWidth: halfWidth });
+      rightY = y + lineH;
+    }
     y += lineH;
   }
   doc.setFont("helvetica", "normal");
-  y += 12;
 
-  // Delivery section – right column, under buyer data; same font/size/style as buyer; no section title
+  // Delivery section – right column, directly under buyer data; same font/size/style as buyer
   const dName    = snap.clientDeliveryName    || client?.delivery_name    || null;
   const dGLN     = snap.clientDeliveryGLN     || client?.delivery_gln     || null;
   const dAddress = snap.clientDeliveryAddress || client?.delivery_address || null;
@@ -134,25 +139,27 @@ const generatePDF = (inv, company, client) => {
     doc.setFontSize(9).setFont("helvetica", "normal");
     if (dName) {
       const ln = doc.splitTextToSize(`Denumire Loc Livrare: ${dName}`, halfWidth);
-      doc.text(ln, rightMargin, y, { align: "right" }); y += ln.length * lineH;
+      doc.text(ln, rightMargin, rightY, { align: "right" }); rightY += ln.length * lineH;
     }
     if (dGLN) {
       const ln = doc.splitTextToSize(`GLN Loc Livrare: ${dGLN}`, halfWidth);
-      doc.text(ln, rightMargin, y, { align: "right" }); y += ln.length * lineH;
+      doc.text(ln, rightMargin, rightY, { align: "right" }); rightY += ln.length * lineH;
     }
     if (dAddress) {
       const ln = doc.splitTextToSize(`Adresa Livrare: ${dAddress}`, halfWidth);
-      doc.text(ln, rightMargin, y, { align: "right" }); y += ln.length * lineH;
+      doc.text(ln, rightMargin, rightY, { align: "right" }); rightY += ln.length * lineH;
     }
     if (dCity) {
       const ln = doc.splitTextToSize(`Localitate Livrare: ${dCity}`, halfWidth);
-      doc.text(ln, rightMargin, y, { align: "right" }); y += ln.length * lineH;
+      doc.text(ln, rightMargin, rightY, { align: "right" }); rightY += ln.length * lineH;
     }
     if (dRegion) {
-      doc.text(`Judet: ${dRegion}`, rightMargin, y, { align: "right" }); y += lineH;
+      doc.text(`Judet: ${dRegion}`, rightMargin, rightY, { align: "right" }); rightY += lineH;
     }
-    y += 4;
   }
+
+  // Table starts below whichever column is taller
+  y = Math.max(y, rightY) + lineH;
 
   // Products table: Nr. | Cod (barcode/EAN) | Descriere | UM | Cant. | Pret | Total
   const lines = snap.lines || snap.documentPositions || [];
