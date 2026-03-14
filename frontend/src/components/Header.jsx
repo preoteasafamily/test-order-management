@@ -18,31 +18,35 @@ const Header = ({ currentUser, setCurrentUser, mobileMenuOpen, setMobileMenuOpen
         <LogoSvg width={180} height={50} />
         <div>
           <p className="text-xs sm:text-sm text-gray-600">
-            {currentUser.name} (
-            {currentUser.role === "admin"
-              ? "Administrator"
-              : currentUser.role === "birou"
-                ? "Birou"
-                : "Agent"}
-            )
+            {currentUser.name}
           </p>
         </div>
       </div>
-      <button
-        onClick={() => setCurrentUser(null)}
-        className="hidden sm:flex items-center space-x-2 text-gray-600 hover:text-gray-800 transition-colors"
-      >
-        <LogOut className="w-5 h-5" />
-        <span>Ieșire</span>
-      </button>
-      {/* Mobile Logout Button */}
-      <button
-        onClick={() => setCurrentUser(null)}
-        className="sm:hidden p-2 hover:bg-gray-100 rounded-lg"
-        aria-label="Logout"
-      >
-        <LogOut className="w-5 h-5 text-gray-600" />
-      </button>
+      <div className="flex flex-col items-end">
+        {/* Desktop Logout Button */}
+        <button
+          onClick={() => setCurrentUser(null)}
+          className="hidden sm:flex items-center space-x-2 text-gray-600 hover:text-gray-800 transition-colors"
+        >
+          <LogOut className="w-5 h-5" />
+          <span>Ieșire</span>
+        </button>
+        {/* Mobile Logout Button */}
+        <button
+          onClick={() => setCurrentUser(null)}
+          className="sm:hidden p-2 hover:bg-gray-100 rounded-lg"
+          aria-label="Logout"
+        >
+          <LogOut className="w-5 h-5 text-gray-600" />
+        </button>
+        <p className="text-xs text-gray-500 mt-1" aria-label="Rol utilizator">
+          {currentUser.role === "admin"
+            ? "Administrator"
+            : currentUser.role === "birou"
+              ? "Birou"
+              : "Agent"}
+        </p>
+      </div>
     </div>
   </div>
 );
