@@ -1,5 +1,6 @@
 import React from 'react';
 import { LogOut, Menu } from 'lucide-react';
+import LogoSvg from './LogoSvg';
 
 const Header = ({ currentUser, setCurrentUser, mobileMenuOpen, setMobileMenuOpen }) => (
   <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4">
@@ -14,11 +15,8 @@ const Header = ({ currentUser, setCurrentUser, mobileMenuOpen, setMobileMenuOpen
           <Menu className="w-6 h-6 text-gray-600" />
         </button>
         
-        <img src="/samlax.svg" alt="Samlax" className="w-8 h-8 sm:w-10 sm:h-10" />
+        <LogoSvg width={180} height={50} />
         <div>
-          <h1 className="text-base sm:text-xl font-bold text-gray-800">
-            Samlax
-          </h1>
           <p className="text-xs sm:text-sm text-gray-600">
             {currentUser.name} (
             {currentUser.role === "admin"
