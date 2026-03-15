@@ -188,6 +188,27 @@ const generateInvoicePDF = (inv, company, client, agent) => {
     y = doc.lastAutoTable.finalY + 10;
   }
 
+  // Expedition section – "Date privind expediția" – shown immediately after products table
+  const hasAgentData = agentName || agentCiSerie || agentCiNumar || agentEliberatDe || agentMijlocTransp;
+  if (hasAgentData) {
+    const expX = 40;
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.text("Date privind expeditia:", expX, y);
+    y += 12;
+    doc.setFont("helvetica", "normal");
+    // Compact row 1: Delegat + Mijloc transport on the same line
+    const row1Parts = [];
+    if (agentName) row1Parts.push(`Delegat: ${agentName}`);
+    if (agentMijlocTransp) row1Parts.push(`Mijloc transport: ${agentMijlocTransp}`);
+    if (row1Parts.length > 0) { doc.text(row1Parts.join("   "), expX, y); y += 12; }
+    // Compact row 2: C.I.: serie nr eliberat de emitent – all on one line
+    const ciParts = [agentCiSerie, agentCiNumar].filter(Boolean).join(" ");
+    const ciLine = [ciParts ? `C.I.: ${ciParts}` : null, agentEliberatDe ? `eliberat de ${agentEliberatDe}` : null].filter(Boolean).join(" ");
+    if (ciLine) { doc.text(ciLine, expX, y); y += 12; }
+    y += 6;
+  }
+
   // Totals
   const totalFaraTva = Number(inv.total || 0).toFixed(2);
   const totalTva = Number(inv.total_vat || 0).toFixed(2);
@@ -201,32 +222,6 @@ const generateInvoicePDF = (inv, company, client, agent) => {
   y += 14;
   doc.setFont("helvetica", "bold");
   doc.text(`Total de plata: ${totalCuTva} RON`, pageWidth - 40, y, { align: "right" });
-
-  // Expedition section – "Date privind expediția" – shown below totals when agent data is available
-  const hasAgentData = agentName || agentCiSerie || agentCiNumar || agentEliberatDe || agentMijlocTransp;
-  if (hasAgentData) {
-    y += 24;
-    const expX = 40;
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.text("Date privind expeditia:", expX, y);
-    y += 14;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    if (agentName) {
-      doc.text(`Nume delegat: ${agentName}`, expX, y); y += 12;
-    }
-    if (agentCiSerie || agentCiNumar) {
-      const ci = [agentCiSerie, agentCiNumar].filter(Boolean).join(" ");
-      doc.text(`CI seria/nr.: ${ci}`, expX, y); y += 12;
-    }
-    if (agentEliberatDe) {
-      doc.text(`Eliberat de: ${agentEliberatDe}`, expX, y); y += 12;
-    }
-    if (agentMijlocTransp) {
-      doc.text(`Mijloc de transport: ${agentMijlocTransp}`, expX, y); y += 12;
-    }
-  }
 
   return doc;
 };
