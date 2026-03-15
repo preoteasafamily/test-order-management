@@ -268,18 +268,40 @@ const generateInvoicePdf = (invoice, order, client) => {
       doc.moveDown(0.5);
     }
 
-    // Totals
-    doc.fontSize(10).font('Helvetica');
-    const totals = [
-      ['Total fără TVA:', formatNumber(invoice.total)],
-      ['TVA:', formatNumber(invoice.total_vat)],
-    ];
-    doc.fontSize(11).font('Helvetica-Bold');
-    totals.push(['TOTAL:', formatNumber(invoice.total_with_vat)]);
+    // Two-column section: "Date privind expediția" (left) alongside totals (right)
+    const sectionY = doc.y;
+    const leftX = 50;
+    const midX = 300;
+    const rightEdge = 540;
+    const leftColW = midX - leftX - 10;
+    const rightColW = rightEdge - midX;
 
-    for (const [label, value] of totals) {
-      doc.text(`${label} ${value} RON`, { align: 'right' });
+    // LEFT column – expedition / agent data
+    let expY = sectionY;
+    const hasAgentData = snapshot.agentName || snapshot.agentCiSerie || snapshot.agentCiNumar || snapshot.agentEliberatDe || snapshot.agentMijlocTransp;
+    if (hasAgentData) {
+      doc.font('Helvetica-Bold').fontSize(9);
+      doc.text('Date privind expediția:', leftX, expY, { width: leftColW }); expY += 14;
+      doc.font('Helvetica').fontSize(9);
+      const row1Parts = [];
+      if (snapshot.agentName) row1Parts.push(`Delegat: ${snapshot.agentName}`);
+      if (snapshot.agentMijlocTransp) row1Parts.push(`Mijloc transport: ${snapshot.agentMijlocTransp}`);
+      if (row1Parts.length > 0) { doc.text(row1Parts.join('   '), leftX, expY, { width: leftColW }); expY += 12; }
+      const ciParts = [snapshot.agentCiSerie, snapshot.agentCiNumar].filter(Boolean).join(' ');
+      const ciLine = [ciParts ? `C.I.: ${ciParts}` : null, snapshot.agentEliberatDe ? `eliberat de ${snapshot.agentEliberatDe}` : null].filter(Boolean).join(' ');
+      if (ciLine) { doc.text(ciLine, leftX, expY, { width: leftColW }); expY += 12; }
     }
+
+    // RIGHT column – totals
+    let totY = sectionY;
+    doc.fontSize(10).font('Helvetica');
+    doc.text(`Total fără TVA: ${formatNumber(invoice.total)} RON`, midX, totY, { width: rightColW, align: 'right' }); totY += 14;
+    doc.text(`TVA: ${formatNumber(invoice.total_vat)} RON`, midX, totY, { width: rightColW, align: 'right' }); totY += 14;
+    doc.fontSize(11).font('Helvetica-Bold');
+    doc.text(`TOTAL: ${formatNumber(invoice.total_with_vat)} RON`, midX, totY, { width: rightColW, align: 'right' }); totY += 16;
+
+    doc.y = Math.max(expY, totY);
+    doc.x = leftX;
 
     doc.end();
 

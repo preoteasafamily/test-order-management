@@ -34,10 +34,14 @@ The favicon and UI logo is `frontend/public/samlax.svg` – a transparent "S" ic
   - **Right column (Buyer):** client data captured in the invoice snapshot (BT-44…BT-55: name, CIF, Reg. Com., address, city, county, country). Text is **right-aligned** to the page margin. If no buyer data exists the right column is omitted and the left column is displayed alone without any visual gap.
 - **Products table** – columns: `Nr.` | `Cod` | `Descriere` | `UM` | `Cant.` | `Preț` | `Total`
   - **`Cod` column** contains the EAN barcode (`codBare`, BT-157 `bt_157_item_barcode`) from the product record, *not* the supplier code (`codArticolFurnizor`, BT-155).
+- **Footer (two-column)** – rendered on the same row directly below the products table:
+  - **Left column:** `Date privind expediția:` – delegat name, mijloc transport, C.I. (serie, număr, eliberat de). Omitted when no agent data is present.
+  - **Right column:** `Total fără TVA`, `TVA`, `TOTAL` – right-aligned to the page margin.
 
 #### PDF (frontend `generateInvoicePDF` in `frontend/src/pages/InvoicesScreen.jsx`)
 
 - Same layout as the backend PDF: two-column header without section titles, `Cod` column uses EAN barcode, no branding or footer.
+- **Footer (two-column)** – same structure as backend: `Date privind expediția` left, totals right, on the same row.
 
 #### UBL/XML Export (`frontend/src/pages/InvoicesScreen.jsx`)
 
