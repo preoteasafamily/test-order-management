@@ -1107,7 +1107,7 @@ const ClientsScreen = ({
                   CUI
                 </th>
                 <th className="px-4 py-2 text-left font-semibold text-gray-700">
-                  Nr. Reg.
+                  Denumire Loc Livrare
                 </th>
                 <th className="px-4 py-2 text-left font-semibold text-gray-700">
                   Agent
@@ -1147,7 +1147,7 @@ const ClientsScreen = ({
                       {client.nume}
                     </td>
                     <td className="px-4 py-3 text-sm">{client.cif}</td>
-                    <td className="px-4 py-3 text-sm">{client.nrRegCom}</td>
+                    <td className="px-4 py-3 text-sm">{client.delivery_name || "-"}</td>
                     <td className="px-4 py-3 text-sm">{agent?.name || "-"}</td>
                     <td className="px-4 py-3 text-sm">{zone?.name || "-"}</td>
                     <td className="px-4 py-3 text-sm">
