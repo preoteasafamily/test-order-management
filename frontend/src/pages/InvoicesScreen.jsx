@@ -270,13 +270,18 @@ const generateInvoiceUBL = (inv, company, client) => {
 
   const lines = snapshot.lines || snapshot.documentPositions || [];
 
+  const issueDate = esc(inv.document_date || "");
+  const dueDate   = esc(inv.due_date || inv.document_date || "");
+
   let xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
          xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
          xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
   <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
+  <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:efactura.mfinante.ro:CIUS-RO:1.0.1</cbc:CustomizationID>
   <cbc:ID>${esc(inv.invoice_code || inv.id)}</cbc:ID>
-  <cbc:IssueDate>${esc(inv.document_date || "")}</cbc:IssueDate>
+  <cbc:IssueDate>${issueDate}</cbc:IssueDate>
+  <cbc:DueDate>${dueDate}</cbc:DueDate>
   <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
   <cbc:DocumentCurrencyCode>RON</cbc:DocumentCurrencyCode>\n`;
 
@@ -297,7 +302,7 @@ const generateInvoiceUBL = (inv, company, client) => {
       </cac:PartyTaxScheme>
       <cac:PartyLegalEntity>
         <cbc:RegistrationName>${esc(company.bt_27_seller_name)}</cbc:RegistrationName>
-        <cbc:CompanyID>${esc(company.bt_30_seller_legal_registration)}</cbc:CompanyID>
+        <cbc:CompanyLegalForm>${esc(company.bt_30_seller_legal_registration)}</cbc:CompanyLegalForm>
       </cac:PartyLegalEntity>
     </cac:Party>
   </cac:AccountingSupplierParty>\n`;
@@ -344,6 +349,57 @@ const generateInvoiceUBL = (inv, company, client) => {
   </cac:Delivery>\n`;
   }
 
+  // PaymentMeans – IBAN / bank transfer (BT-81 code 31 = credit transfer)
+  if (company && company.bt_84_payee_iban) {
+    const pmCode = company.bt_81_payment_means_code || "31";
+    xml += `  <cac:PaymentMeans>
+    <cbc:PaymentMeansCode>${esc(pmCode)}</cbc:PaymentMeansCode>
+    <cac:PayeeFinancialAccount>
+      <cbc:ID>${esc(company.bt_84_payee_iban)}</cbc:ID>
+    </cac:PayeeFinancialAccount>
+  </cac:PaymentMeans>\n`;
+  }
+
+  // TaxTotal – one TaxSubtotal per distinct VAT rate (CIUS-RO mandatory)
+  const vatGroups = {};
+  lines.forEach((item) => {
+    const rate = item.vat != null ? Number(item.vat) : 19;
+    const lineTotal = Number(item.total || (Number(item.unitCount || item.quantity || 0) * Number(item.price || 0)));
+    if (!vatGroups[rate]) vatGroups[rate] = 0;
+    vatGroups[rate] += lineTotal;
+  });
+  const totalTaxAmount = Object.entries(vatGroups).reduce((sum, [rate, taxable]) => {
+    return sum + Math.round(taxable * Number(rate) / 100 * 100) / 100;
+  }, 0);
+  xml += `  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="RON">${(inv.total_vat != null ? Number(inv.total_vat) : totalTaxAmount).toFixed(2)}</cbc:TaxAmount>\n`;
+  Object.entries(vatGroups).forEach(([rate, taxableAmt]) => {
+    const rateNum = Number(rate);
+    const taxAmt = Math.round(taxableAmt * rateNum / 100 * 100) / 100;
+    const catCode = rateNum > 0 ? "S" : "Z";
+    xml += `    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="RON">${taxableAmt.toFixed(2)}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="RON">${taxAmt.toFixed(2)}</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:ID>${catCode}</cbc:ID>
+        <cbc:Percent>${rateNum.toFixed(2)}</cbc:Percent>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>\n`;
+  });
+  xml += `  </cac:TaxTotal>\n`;
+
+  // LegalMonetaryTotal (CIUS-RO mandatory)
+  const lineExtTotal = Object.values(vatGroups).reduce((s, v) => s + v, 0);
+  const taxExcl = inv.total != null ? Number(inv.total) : lineExtTotal;
+  const taxIncl = inv.total_with_vat != null ? Number(inv.total_with_vat) : taxExcl + (inv.total_vat != null ? Number(inv.total_vat) : totalTaxAmount);
+  xml += `  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="RON">${taxExcl.toFixed(2)}</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="RON">${taxExcl.toFixed(2)}</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="RON">${taxIncl.toFixed(2)}</cbc:TaxInclusiveAmount>
+    <cbc:PayableAmount currencyID="RON">${taxIncl.toFixed(2)}</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>\n`;
+
   // Invoice lines – Nr. crt. | Cod | Denumire | UM | Cant. | Preț | Total
   lines.forEach((item, idx) => {
     const lineId = item.lineId != null ? item.lineId : idx + 1;
@@ -355,6 +411,7 @@ const generateInvoiceUBL = (inv, company, client) => {
     const price = Number(item.price || 0).toFixed(4);
     const total = Number(item.total || (parseFloat(qty) * parseFloat(price))).toFixed(2);
     const vatRate = item.vat != null ? String(item.vat) : "19";
+    const vatCatCode = Number(vatRate) > 0 ? "S" : "Z";
 
     xml += `  <cac:InvoiceLine>
     <cbc:ID>${lineId}</cbc:ID>
@@ -369,6 +426,7 @@ const generateInvoiceUBL = (inv, company, client) => {
       xml += `      <cac:StandardItemIdentification><cbc:ID schemeID="0160">${esc(barcode)}</cbc:ID></cac:StandardItemIdentification>\n`;
     }
     xml += `      <cac:ClassifiedTaxCategory>
+        <cbc:ID>${vatCatCode}</cbc:ID>
         <cbc:Percent>${esc(vatRate)}</cbc:Percent>
         <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
       </cac:ClassifiedTaxCategory>
