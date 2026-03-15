@@ -572,6 +572,11 @@ const OrdersMatrixScreen = ({
                           <div className="font-semibold text-sm">
                             {client.nume}
                           </div>
+                          {client.delivery_name && (
+                            <div className="text-xs text-blue-600 font-medium">
+                              {client.delivery_name}
+                            </div>
+                          )}
                           <div className="text-xs text-gray-500">
                             {
                               priceZones.find((z) => z.id === client.priceZone)
