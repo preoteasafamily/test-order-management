@@ -71,6 +71,15 @@ const generateInvoicePDF = (inv, company, client, agent) => {
   doc.text(`Data: ${inv.document_date || "-"}`, pageWidth / 2, y, { align: "center" });
   y += 18;
 
+  // Show order number if present
+  const nrComandaSnap = snapshot.nrComanda || null;
+  if (nrComandaSnap) {
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Nr. comandă: ${nrComandaSnap}`, pageWidth / 2, y, { align: "center" });
+    y += 14;
+  }
+
   // Two-column header: Seller (Vânzător) left | Buyer (Cumpărător) right-aligned
   // Seller is left-aligned; Buyer text is right-aligned to the right margin.
   // If buyer data is missing the right column is omitted and layout is unaffected.
@@ -284,6 +293,14 @@ const generateInvoiceUBL = (inv, company, client) => {
   <cbc:DueDate>${dueDate}</cbc:DueDate>
   <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
   <cbc:DocumentCurrencyCode>RON</cbc:DocumentCurrencyCode>\n`;
+
+  // Order reference (BT-13) – purchase order number from buyer
+  const nrComandaUBL = snapshot.nrComanda || null;
+  if (nrComandaUBL) {
+    xml += `  <cac:OrderReference>
+    <cbc:ID>${esc(nrComandaUBL)}</cbc:ID>
+  </cac:OrderReference>\n`;
+  }
 
   // Seller (AccountingSupplierParty)
   if (company) {

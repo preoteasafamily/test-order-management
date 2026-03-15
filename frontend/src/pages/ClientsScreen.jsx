@@ -94,6 +94,7 @@ const ClientsScreen = ({
       agentId: defaultAgent || "", // ✅ Will be first agent OR empty
       priceZone: defaultZone || "", // ✅ Will be first zone OR empty
       afiseazaKG: false,
+      solicitaNrComanda: false,
       productCodes: {},
       status: "active",
       activeFrom: null,
@@ -678,6 +679,22 @@ const ClientsScreen = ({
               />
               <span className="text-sm text-gray-700">
                 Afișează cantități în KG pe factură
+              </span>
+            </label>
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={localEditingClient.solicitaNrComanda || false}
+                onChange={(e) =>
+                  setLocalEditingClient({
+                    ...localEditingClient,
+                    solicitaNrComanda: e.target.checked,
+                  })
+                }
+                className="w-4 h-4 rounded"
+              />
+              <span className="text-sm text-gray-700">
+                Solicită nr. comandă
               </span>
             </label>
 
