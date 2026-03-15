@@ -89,8 +89,8 @@ app.post("/api/orders", (req, res) => {
       .prepare(
         `INSERT INTO orders (
                 id, date, clientId, agentId, paymentType, dueDate, items,
-                total, totalTVA, totalWithVAT, invoiceExported, receiptExported, validata
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                total, totalTVA, totalWithVAT, invoiceExported, receiptExported, validata, nrComanda
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         order.id,
@@ -106,6 +106,7 @@ app.post("/api/orders", (req, res) => {
         order.invoiceExported ? 1 : 0,
         order.receiptExported ? 1 : 0,
         order.validata ? 1 : 0,
+        order.nrComanda || null,
       );
     res.json({ ...order, createdAt: new Date().toISOString() });
     // Generate local invoice in background (non-blocking)
@@ -136,7 +137,8 @@ app.put("/api/orders/:id", (req, res) => {
         `UPDATE orders SET 
                 date = ?, clientId = ?, agentId = ?, paymentType = ?, dueDate = ?,
                 items = ?, total = ?, totalTVA = ?, totalWithVAT = ?,
-                invoiceExported = ?, receiptExported = ?, validata = ?, updatedAt = CURRENT_TIMESTAMP
+                invoiceExported = ?, receiptExported = ?, validata = ?, nrComanda = ?,
+                updatedAt = CURRENT_TIMESTAMP
             WHERE id = ?`,
       )
       .run(
@@ -152,6 +154,7 @@ app.put("/api/orders/:id", (req, res) => {
         order.invoiceExported ? 1 : 0,
         order.receiptExported ? 1 : 0,
         order.validata ? 1 : 0,
+        order.nrComanda || null,
         req.params.id,
       );
     if (result.changes === 0) {
@@ -203,6 +206,7 @@ app.get("/api/clients", (req, res) => {
     const clients = (rows || []).map((row) => ({
       ...row,
       afiseazaKG: row.afiseazaKG === 1,
+      solicitaNrComanda: row.solicitaNrComanda === 1,
       productCodes: row.productCodes ? JSON.parse(row.productCodes) : {},
       status: row.status || "active",
       activeFrom: row.activeFrom || null,
@@ -226,6 +230,7 @@ app.get("/api/clients/:id", (req, res) => {
       const client = {
         ...row,
         afiseazaKG: row.afiseazaKG === 1,
+        solicitaNrComanda: row.solicitaNrComanda === 1,
         productCodes: row.productCodes ? JSON.parse(row.productCodes) : {},
         status: row.status || "active",
         activeFrom: row.activeFrom || null,
@@ -322,10 +327,10 @@ app.post("/api/clients", (req, res) => {
         `INSERT INTO clients (
                 id, nume, cif, nrRegCom, codContabil, judet, localitate, strada, 
                 codPostal, telefon, email, banca, iban, agentId, priceZone, 
-                afiseazaKG, productCodes, status, activeFrom, activeTo,
+                afiseazaKG, solicitaNrComanda, productCodes, status, activeFrom, activeTo,
                 buyer_contact, buyer_country, buyer_vat_identifier,
                 delivery_name, delivery_gln, delivery_address, delivery_city, delivery_region, delivery_country
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         client.id,
@@ -344,6 +349,7 @@ app.post("/api/clients", (req, res) => {
         client.agentId,
         client.priceZone,
         client.afiseazaKG ? 1 : 0,
+        client.solicitaNrComanda ? 1 : 0,
         JSON.stringify(client.productCodes || {}),
         status,
         client.activeFrom || null,
@@ -453,8 +459,8 @@ app.put("/api/clients/:id", (req, res) => {
         `UPDATE clients SET 
                 nume = ?, cif = ?, nrRegCom = ?, codContabil = ?, judet = ?, 
                 localitate = ?, strada = ?, codPostal = ?, telefon = ?, email = ?, 
-                banca = ?, iban = ?, agentId = ?, priceZone = ?, afiseazaKG = ?, 
-                productCodes = ?, status = ?, activeFrom = ?, activeTo = ?,
+                banca = ?, iban = ?, agentId = ?, priceZone = ?, afiseazaKG = ?,
+                solicitaNrComanda = ?, productCodes = ?, status = ?, activeFrom = ?, activeTo = ?,
                 buyer_contact = ?, buyer_country = ?, buyer_vat_identifier = ?,
                 delivery_name = ?, delivery_gln = ?, delivery_address = ?,
                 delivery_city = ?, delivery_region = ?, delivery_country = ?,
@@ -477,6 +483,7 @@ app.put("/api/clients/:id", (req, res) => {
         client.agentId,
         client.priceZone,
         client.afiseazaKG ? 1 : 0,
+        client.solicitaNrComanda ? 1 : 0,
         JSON.stringify(client.productCodes || {}),
         status,
         client.activeFrom || null,
@@ -505,6 +512,7 @@ app.put("/api/clients/:id", (req, res) => {
       const updatedClient = {
         ...row,
         afiseazaKG: row.afiseazaKG === 1,
+        solicitaNrComanda: row.solicitaNrComanda === 1,
         productCodes: row.productCodes ? JSON.parse(row.productCodes) : {},
         status: row.status || "active",
         activeFrom: row.activeFrom || null,

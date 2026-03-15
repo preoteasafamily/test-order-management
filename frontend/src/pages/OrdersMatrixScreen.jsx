@@ -83,6 +83,7 @@ const OrdersMatrixScreen = ({
         matrix[client.id] = {
           paymentType: order.paymentType,
           dueDate: order.dueDate,
+          nrComanda: order.nrComanda || "",
           quantities: {},
         };
         order.items.forEach((item) => {
@@ -92,6 +93,7 @@ const OrdersMatrixScreen = ({
         matrix[client.id] = {
           paymentType: "immediate",
           dueDate: null,
+          nrComanda: "",
           quantities: {},
         };
       }
@@ -135,6 +137,16 @@ const OrdersMatrixScreen = ({
     }));
   };
 
+  const updateNrComanda = (clientId, nrComanda) => {
+    setMatrixData((prev) => ({
+      ...prev,
+      [clientId]: {
+        ...prev[clientId],
+        nrComanda,
+      },
+    }));
+  };
+
   const calculateClientTotal = (clientId) => {
     const client = clients.find((c) => c.id === clientId);
     const data = matrixData[clientId];
@@ -164,6 +176,26 @@ const OrdersMatrixScreen = ({
 
   const handleSaveMatrix = async () => {
     const newOrders = [];
+
+    // Validate nr. comandă for clients that require it
+    const missingNrComanda = [];
+    Object.entries(matrixData).forEach(([clientId, data]) => {
+      const hasItems = Object.values(data.quantities).some((q) => q > 0);
+      if (hasItems) {
+        const client = clients.find((c) => c.id === clientId);
+        if (client?.solicitaNrComanda && !data.nrComanda?.trim()) {
+          missingNrComanda.push(client.nume);
+        }
+      }
+    });
+
+    if (missingNrComanda.length > 0) {
+      showMessage(
+        `Nu s-a introdus numărul comenzii pentru: ${missingNrComanda.join(", ")}`,
+        "error",
+      );
+      return;
+    }
 
     Object.entries(matrixData).forEach(([clientId, data]) => {
       const hasItems = Object.values(data.quantities).some((q) => q > 0);
@@ -199,6 +231,7 @@ const OrdersMatrixScreen = ({
           agentId: client.agentId,
           paymentType: data.paymentType,
           dueDate: data.dueDate,
+          nrComanda: data.nrComanda || null,
           items,
           total,
           totalTVA,
@@ -419,6 +452,7 @@ const OrdersMatrixScreen = ({
                       matrix[client.id] = {
                         paymentType: order.paymentType,
                         dueDate: order.dueDate,
+                        nrComanda: order.nrComanda || "",
                         quantities: {},
                       };
                       order.items.forEach((item) => {
@@ -429,6 +463,7 @@ const OrdersMatrixScreen = ({
                       matrix[client.id] = {
                         paymentType: "immediate",
                         dueDate: null,
+                        nrComanda: "",
                         quantities: {},
                       };
                     }
@@ -550,6 +585,9 @@ const OrdersMatrixScreen = ({
                 ))}
                 <th className="px-1 py-2 text-center font-semibold" style={{ minWidth: "50px" }}>
                   Acțiuni
+                </th>
+                <th className="px-1 py-2 text-center font-semibold" style={{ minWidth: "90px" }}>
+                  Nr. comandă
                 </th>
                 <th className="px-1 py-2 text-center font-semibold" style={{ minWidth: "90px" }}>
                   Status factură
@@ -693,6 +731,27 @@ const OrdersMatrixScreen = ({
                       )}
                     </td>
                     <td className="px-1 py-2 text-center">
+                      {client.solicitaNrComanda ? (
+                        editMode && !isExported ? (
+                          <input
+                            type="text"
+                            value={data?.nrComanda || ""}
+                            onChange={(e) =>
+                              updateNrComanda(client.id, e.target.value)
+                            }
+                            className="w-20 px-1 py-1 border border-gray-300 rounded text-center text-xs"
+                            placeholder="Nr. cmd."
+                          />
+                        ) : (
+                          <span className="text-xs font-medium">
+                            {data?.nrComanda || "-"}
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-gray-300">-</span>
+                      )}
+                    </td>
+                    <td className="px-1 py-2 text-center">
                       {(() => {
                         const order = orders.find(
                           (o) => o.clientId === client.id && o.date === selectedDate,
@@ -747,6 +806,7 @@ const OrdersMatrixScreen = ({
                     {calculateProductTotal(p.id) || "-"}
                   </td>
                 ))}
+                <td className="px-1 py-2"></td>
                 <td className="px-1 py-2"></td>
                 <td className="px-1 py-2"></td>
               </tr>

@@ -458,6 +458,8 @@ const generateLocalInvoice = (orderId) => {
         agentCiNumar:      agent?.ci_numar         || null,
         agentEliberatDe:   agent?.ci_eliberat_de   || null,
         agentMijlocTransp: agent?.mijloc_transport || null,
+        // Order number (from client who requires it)
+        nrComanda:         order.nrComanda          || null,
         documentDate,
         lines,
         total: order.total,
