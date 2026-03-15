@@ -361,6 +361,10 @@ const generateLocalInvoice = (orderId) => {
       ? db.prepare('SELECT * FROM clients WHERE id = ?').get(order.clientId)
       : null;
 
+    const agent = client?.agentId
+      ? db.prepare('SELECT * FROM agents WHERE id = ?').get(client.agentId)
+      : null;
+
     const items = order.items ? JSON.parse(order.items) : [];
     const lines = mapOrderItems(items, products);
 
@@ -426,6 +430,12 @@ const generateLocalInvoice = (orderId) => {
         clientDeliveryCity:    client?.delivery_city    || null,
         clientDeliveryRegion:  client?.delivery_region  || null,
         clientDeliveryCountry: client?.delivery_country || 'RO',
+        // Agent / Delegat fields (for expedition section on invoice)
+        agentName:         agent?.name             || null,
+        agentCiSerie:      agent?.ci_serie         || null,
+        agentCiNumar:      agent?.ci_numar         || null,
+        agentEliberatDe:   agent?.ci_eliberat_de   || null,
+        agentMijlocTransp: agent?.mijloc_transport || null,
         documentDate,
         lines,
         total: order.total,

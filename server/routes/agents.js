@@ -16,6 +16,31 @@ try {
   console.log("⚠️ Migration skipped:", e.message);
 }
 
+// ✅ MIGRATION - Adaugă câmpuri CI și mijloc transport la agents
+try {
+  const agentTableInfo = db.prepare("PRAGMA table_info(agents)").all();
+  const colNames = agentTableInfo.map((col) => col.name);
+
+  if (!colNames.includes("ci_serie")) {
+    db.exec("ALTER TABLE agents ADD COLUMN ci_serie TEXT");
+    console.log("✅ agents.ci_serie column added");
+  }
+  if (!colNames.includes("ci_numar")) {
+    db.exec("ALTER TABLE agents ADD COLUMN ci_numar TEXT");
+    console.log("✅ agents.ci_numar column added");
+  }
+  if (!colNames.includes("ci_eliberat_de")) {
+    db.exec("ALTER TABLE agents ADD COLUMN ci_eliberat_de TEXT");
+    console.log("✅ agents.ci_eliberat_de column added");
+  }
+  if (!colNames.includes("mijloc_transport")) {
+    db.exec("ALTER TABLE agents ADD COLUMN mijloc_transport TEXT");
+    console.log("✅ agents.mijloc_transport column added");
+  }
+} catch (e) {
+  console.log("⚠️ Agent fields migration skipped:", e.message);
+}
+
 // ============ AGENT LOCATIONS ENDPOINTS ============
 
 // Preiau locațiile tuturor agenților (GET /api/agents/locations)
@@ -219,7 +244,7 @@ router.post("/", (req, res) => {
   try {
     console.log(`💾 Creating agent: ${agent.id} (${agent.name})`);
     const stmt = db.prepare(
-      `INSERT INTO agents (id, code, name, user_id, status, zones) VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO agents (id, code, name, user_id, status, zones, ci_serie, ci_numar, ci_eliberat_de, mijloc_transport) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     stmt.run(
       agent.id,
@@ -228,6 +253,10 @@ router.post("/", (req, res) => {
       agent.user_id || null,
       agent.status || "active",
       JSON.stringify(agent.zones || []),
+      agent.ci_serie || null,
+      agent.ci_numar || null,
+      agent.ci_eliberat_de || null,
+      agent.mijloc_transport || null,
     );
     console.log(`✅ Agent created: ${agent.id}`);
     res.json({
@@ -266,7 +295,9 @@ router.put("/:id", (req, res) => {
     console.log(`💾 Updating agent: ${req.params.id}`);
     const stmt = db.prepare(
       `UPDATE agents SET 
-                code = ?, name = ?, user_id = ?, status = ?, zones = ?, updatedAt = CURRENT_TIMESTAMP
+                code = ?, name = ?, user_id = ?, status = ?, zones = ?,
+                ci_serie = ?, ci_numar = ?, ci_eliberat_de = ?, mijloc_transport = ?,
+                updatedAt = CURRENT_TIMESTAMP
             WHERE id = ?`,
     );
     const result = stmt.run(
@@ -275,6 +306,10 @@ router.put("/:id", (req, res) => {
       agent.user_id || null,
       agent.status || "active",
       JSON.stringify(agent.zones || []),
+      agent.ci_serie || null,
+      agent.ci_numar || null,
+      agent.ci_eliberat_de || null,
+      agent.mijloc_transport || null,
       req.params.id,
     );
     if (result.changes === 0) {
