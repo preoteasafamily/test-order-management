@@ -43,10 +43,46 @@ The favicon and UI logo is `frontend/public/samlax.svg` – a transparent "S" ic
 - Same layout as the backend PDF: two-column header without section titles, `Cod` column uses EAN barcode, no branding or footer.
 - **Footer (two-column)** – same structure as backend: `Date privind expediția` left, totals right, on the same row.
 
-#### UBL/XML Export (`frontend/src/pages/InvoicesScreen.jsx`)
+#### UBL/XML Export – CIUS-RO (SPV eFactura) (`frontend/src/pages/InvoicesScreen.jsx`, `InvoicesV2Screen.jsx`)
 
-- `<StandardItemIdentification>` (`schemeID="0160"`) → EAN barcode (`item.barcode`, BT-157). This is the primary `Cod` identifier, consistent with the PDF table.
-- `<SellersItemIdentification>` → supplier article code (`item.productCode`, BT-155), kept as a separate supplementary field.
+Generated XML conforms to **UBL 2.1** with the Romanian national profile **CIUS-RO** (`urn:cen.eu:en16931:2017#compliant#urn:efactura.mfinante.ro:CIUS-RO:1.0.1`), suitable for direct upload to the SPV eFactura platform at ANAF.
+
+**Mandatory CIUS-RO fields included:**
+
+| Element | BT | Value / Source |
+|---|---|---|
+| `CustomizationID` | – | `urn:cen.eu:en16931:2017#compliant#urn:efactura.mfinante.ro:CIUS-RO:1.0.1` |
+| `ID` | BT-1 | `inv.invoice_code` or `inv.id` |
+| `IssueDate` | BT-2 | `inv.document_date` |
+| `DueDate` | BT-9 | `inv.due_date` (falls back to `IssueDate`) |
+| `InvoiceTypeCode` | BT-3 | `380` (commercial invoice) |
+| `DocumentCurrencyCode` | BT-5 | `RON` |
+| Seller `PartyTaxScheme/CompanyID` | BT-31/32 | `company.bt_31_32_seller_vat_identifier` |
+| Seller `PartyLegalEntity/RegistrationName` | BT-27 | `company.bt_27_seller_name` |
+| Seller `PartyLegalEntity/CompanyLegalForm` | BT-30 | `company.bt_30_seller_legal_registration` (e.g. `J40/…`) |
+| Buyer `PartyTaxScheme/CompanyID` | BT-48 | `client.cif` / `snapshot.clientCIF` |
+| Buyer `PartyLegalEntity/CompanyID` | BT-47 | `client.nrRegCom` / `snapshot.clientNrRegCom` |
+| `PaymentMeans/PaymentMeansCode` | BT-81 | `company.bt_81_payment_means_code` (default `31`) |
+| `PaymentMeans/PayeeFinancialAccount/ID` | BT-84 | `company.bt_84_payee_iban` |
+| `TaxTotal/TaxAmount` | BT-110 | sum of VAT per tax group |
+| `TaxSubtotal/TaxableAmount` | BT-116 | sum of line totals per VAT rate |
+| `TaxSubtotal/TaxAmount` | BT-117 | `TaxableAmount × rate / 100` |
+| `TaxSubtotal/TaxCategory/ID` | BT-118 | `S` (standard) or `Z` (zero-rated) |
+| `TaxSubtotal/TaxCategory/Percent` | BT-119 | VAT rate (19, 9, 5, 0, …) |
+| `LegalMonetaryTotal/LineExtensionAmount` | BT-106 | sum of line net amounts |
+| `LegalMonetaryTotal/TaxExclusiveAmount` | BT-109 | total ex-VAT (`inv.total`) |
+| `LegalMonetaryTotal/TaxInclusiveAmount` | BT-112 | total incl. VAT (`inv.total_with_vat`) |
+| `LegalMonetaryTotal/PayableAmount` | BT-115 | same as `TaxInclusiveAmount` |
+| `InvoiceLine/ClassifiedTaxCategory/ID` | BT-151 | `S` or `Z` per line |
+| `StandardItemIdentification` (`schemeID="0160"`) | BT-157 | EAN barcode (`item.barcode`) |
+| `SellersItemIdentification` | BT-155 | supplier article code (`item.productCode`) |
+
+**Validation notes:**
+- XML validates against UBL 2.1 XSD and CIUS-RO Schematron rules.
+- All monetary amounts use `currencyID="RON"`.
+- `TaxTotal` is grouped per distinct VAT rate; each group produces one `TaxSubtotal`.
+- `Delivery` block is emitted only when at least one delivery address field is populated.
+- `PaymentMeans` block is emitted only when `bt_84_payee_iban` is configured.
 
 #### XML Export (`frontend/src/pages/ExportScreen.jsx`, `ExportScreenGrouped.jsx`)
 
