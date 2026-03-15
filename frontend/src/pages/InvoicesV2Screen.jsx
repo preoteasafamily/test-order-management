@@ -126,12 +126,15 @@ const generatePDF = (inv, company, client, agent) => {
     doc
       .setFont("helvetica", row.bold ? "bold" : "normal")
       .setFontSize(9);
-    if (row.seller) doc.text(row.seller, leftX, y, { maxWidth: halfWidth });
-    if (row.buyer) {
-      doc.text(row.buyer, rightMargin, y, { align: "right", maxWidth: halfWidth });
-      rightY = y + lineH;
+    const sellerLines = row.seller ? doc.splitTextToSize(row.seller, halfWidth) : [];
+    const buyerLines  = row.buyer  ? doc.splitTextToSize(row.buyer,  halfWidth) : [];
+    const rowH = Math.max(sellerLines.length, buyerLines.length, 1) * lineH;
+    if (sellerLines.length > 0) doc.text(sellerLines, leftX, y);
+    if (buyerLines.length > 0) {
+      doc.text(buyerLines, rightMargin, y, { align: "right" });
+      rightY = y + rowH;
     }
-    y += lineH;
+    y += rowH;
   }
   doc.setFont("helvetica", "normal");
 
@@ -201,7 +204,7 @@ const generatePDF = (inv, company, client, agent) => {
     y = doc.lastAutoTable.finalY + 14;
   }
 
-  // Totals – positioned right after the products table with a small visual margin (~2.5 mm)
+  // Totals – positioned right after the products table with a small visual margin (~5 mm)
   doc.setFontSize(9).setFont("helvetica", "normal");
   doc.text(
     `Total fara TVA: ${Number(inv.total || 0).toFixed(2)} RON`,

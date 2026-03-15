@@ -188,7 +188,7 @@ const generateInvoicePDF = (inv, company, client, agent) => {
     y = doc.lastAutoTable.finalY + 14;
   }
 
-  // Totals – positioned right after the products table with a small visual margin (~2.5 mm)
+  // Totals – positioned right after the products table with a small visual margin (~5 mm)
   const totalFaraTva = Number(inv.total || 0).toFixed(2);
   const totalTva = Number(inv.total_vat || 0).toFixed(2);
   const totalCuTva = Number(inv.total_with_vat || 0).toFixed(2);
@@ -196,12 +196,12 @@ const generateInvoicePDF = (inv, company, client, agent) => {
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
   doc.text(`Total fara TVA: ${totalFaraTva} RON`, pageWidth - 40, y, { align: "right" });
-  y += 14;
+  y += 12;
   doc.text(`TVA: ${totalTva} RON`, pageWidth - 40, y, { align: "right" });
-  y += 14;
+  y += 12;
   doc.setFont("helvetica", "bold");
   doc.text(`Total de plata: ${totalCuTva} RON`, pageWidth - 40, y, { align: "right" });
-  y += 14;
+  y += 12;
 
   // Expedition section – "Date privind expediția" – shown after totals
   const hasAgentData = agentName || agentCiSerie || agentCiNumar || agentEliberatDe || agentMijlocTransp;
