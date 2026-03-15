@@ -185,7 +185,7 @@ const generateInvoicePDF = (inv, company, client, agent) => {
         7: { cellWidth: 50 },   // Total
       },
     });
-    y = doc.lastAutoTable.finalY + 10;
+    y = doc.lastAutoTable.finalY + 4;
   }
 
   // Totals

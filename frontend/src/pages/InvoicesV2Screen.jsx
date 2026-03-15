@@ -191,7 +191,7 @@ const generatePDF = (inv, company, client) => {
         6: { cellWidth: 55, halign: "right" },
       },
     });
-    y = doc.lastAutoTable.finalY + 10;
+    y = doc.lastAutoTable.finalY + 4;
   }
 
   // Totals
