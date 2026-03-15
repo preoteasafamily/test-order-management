@@ -198,30 +198,10 @@ const generatePDF = (inv, company, client, agent) => {
         6: { cellWidth: 55, halign: "right" },
       },
     });
-    y = doc.lastAutoTable.finalY + 10;
+    y = doc.lastAutoTable.finalY + 14;
   }
 
-  // Expedition section – "Date privind expediția" – shown immediately after products table
-  const hasAgentData = agentName || agentCiSerie || agentCiNumar || agentEliberatDe || agentMijlocTransp;
-  if (hasAgentData) {
-    const expX = 40;
-    doc.setFontSize(9).setFont("helvetica", "bold");
-    doc.text("Date privind expeditia:", expX, y);
-    y += 12;
-    doc.setFont("helvetica", "normal");
-    // Compact row 1: Delegat + Mijloc transport on the same line
-    const row1Parts = [];
-    if (agentName) row1Parts.push(`Delegat: ${agentName}`);
-    if (agentMijlocTransp) row1Parts.push(`Mijloc transport: ${agentMijlocTransp}`);
-    if (row1Parts.length > 0) { doc.text(row1Parts.join("   "), expX, y); y += 12; }
-    // Compact row 2: C.I.: serie nr eliberat de emitent – all on one line
-    const ciParts = [agentCiSerie, agentCiNumar].filter(Boolean).join(" ");
-    const ciLine = [ciParts ? `C.I.: ${ciParts}` : null, agentEliberatDe ? `eliberat de ${agentEliberatDe}` : null].filter(Boolean).join(" ");
-    if (ciLine) { doc.text(ciLine, expX, y); y += 12; }
-    y += 6;
-  }
-
-  // Totals
+  // Totals – positioned right after the products table with a small visual margin (~2.5 mm)
   doc.setFontSize(9).setFont("helvetica", "normal");
   doc.text(
     `Total fara TVA: ${Number(inv.total || 0).toFixed(2)} RON`,
@@ -244,6 +224,27 @@ const generatePDF = (inv, company, client, agent) => {
     y,
     { align: "right" }
   );
+  y += 12;
+
+  // Expedition section – "Date privind expediția" – shown after totals
+  const hasAgentData = agentName || agentCiSerie || agentCiNumar || agentEliberatDe || agentMijlocTransp;
+  if (hasAgentData) {
+    const expX = 40;
+    doc.setFontSize(9).setFont("helvetica", "bold");
+    doc.text("Date privind expeditia:", expX, y);
+    y += 12;
+    doc.setFont("helvetica", "normal");
+    // Compact row 1: Delegat + Mijloc transport on the same line
+    const row1Parts = [];
+    if (agentName) row1Parts.push(`Delegat: ${agentName}`);
+    if (agentMijlocTransp) row1Parts.push(`Mijloc transport: ${agentMijlocTransp}`);
+    if (row1Parts.length > 0) { doc.text(row1Parts.join("   "), expX, y); y += 12; }
+    // Compact row 2: C.I.: serie nr eliberat de emitent – all on one line
+    const ciParts = [agentCiSerie, agentCiNumar].filter(Boolean).join(" ");
+    const ciLine = [ciParts ? `C.I.: ${ciParts}` : null, agentEliberatDe ? `eliberat de ${agentEliberatDe}` : null].filter(Boolean).join(" ");
+    if (ciLine) { doc.text(ciLine, expX, y); y += 12; }
+    y += 6;
+  }
 
   return doc;
 };

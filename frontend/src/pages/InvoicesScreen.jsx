@@ -185,10 +185,25 @@ const generateInvoicePDF = (inv, company, client, agent) => {
         7: { cellWidth: 50 },   // Total
       },
     });
-    y = doc.lastAutoTable.finalY + 10;
+    y = doc.lastAutoTable.finalY + 14;
   }
 
-  // Expedition section – "Date privind expediția" – shown immediately after products table
+  // Totals – positioned right after the products table with a small visual margin (~2.5 mm)
+  const totalFaraTva = Number(inv.total || 0).toFixed(2);
+  const totalTva = Number(inv.total_vat || 0).toFixed(2);
+  const totalCuTva = Number(inv.total_with_vat || 0).toFixed(2);
+
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text(`Total fara TVA: ${totalFaraTva} RON`, pageWidth - 40, y, { align: "right" });
+  y += 14;
+  doc.text(`TVA: ${totalTva} RON`, pageWidth - 40, y, { align: "right" });
+  y += 14;
+  doc.setFont("helvetica", "bold");
+  doc.text(`Total de plata: ${totalCuTva} RON`, pageWidth - 40, y, { align: "right" });
+  y += 14;
+
+  // Expedition section – "Date privind expediția" – shown after totals
   const hasAgentData = agentName || agentCiSerie || agentCiNumar || agentEliberatDe || agentMijlocTransp;
   if (hasAgentData) {
     const expX = 40;
@@ -208,20 +223,6 @@ const generateInvoicePDF = (inv, company, client, agent) => {
     if (ciLine) { doc.text(ciLine, expX, y); y += 12; }
     y += 6;
   }
-
-  // Totals
-  const totalFaraTva = Number(inv.total || 0).toFixed(2);
-  const totalTva = Number(inv.total_vat || 0).toFixed(2);
-  const totalCuTva = Number(inv.total_with_vat || 0).toFixed(2);
-
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-  doc.text(`Total fara TVA: ${totalFaraTva} RON`, pageWidth - 40, y, { align: "right" });
-  y += 14;
-  doc.text(`TVA: ${totalTva} RON`, pageWidth - 40, y, { align: "right" });
-  y += 14;
-  doc.setFont("helvetica", "bold");
-  doc.text(`Total de plata: ${totalCuTva} RON`, pageWidth - 40, y, { align: "right" });
 
   return doc;
 };
