@@ -19,7 +19,7 @@ const stripDiacritics = (str) =>
 // Mapping: lineId -> Nr. crt. (BT-126), barcode -> Cod (BT-157),
 //          description -> Denumire (BT-153), unit -> UM (BT-130), unitCount -> Cant. (BT-129),
 //          price -> Preț (BT-146), vat -> TVA% (BT-152), total -> Total (BT-131)
-const generateInvoicePDF = (inv, company, client) => {
+const generateInvoicePDF = (inv, company, client, agent) => {
   const doc = new jsPDF({ format: "a4", unit: "pt" });
   const snapshot =
     inv.raw_snapshot && typeof inv.raw_snapshot === "object"
@@ -42,6 +42,13 @@ const generateInvoicePDF = (inv, company, client) => {
   const dCity         = snapshot.clientDeliveryCity    || client?.delivery_city    || null;
   const dRegion       = snapshot.clientDeliveryRegion  || client?.delivery_region  || null;
   const dCountry      = snapshot.clientDeliveryCountry || client?.delivery_country || "RO";
+
+  // Resolve agent fields: prefer snapshot (captured at invoice time), then live agent object
+  const agentName         = snapshot.agentName         || agent?.name             || null;
+  const agentCiSerie      = snapshot.agentCiSerie      || agent?.ci_serie         || null;
+  const agentCiNumar      = snapshot.agentCiNumar      || agent?.ci_numar         || null;
+  const agentEliberatDe   = snapshot.agentEliberatDe   || agent?.ci_eliberat_de   || null;
+  const agentMijlocTransp = snapshot.agentMijlocTransp || agent?.mijloc_transport || null;
 
   const pageWidth = doc.internal.pageSize.getWidth();
   let y = 40;
@@ -194,6 +201,32 @@ const generateInvoicePDF = (inv, company, client) => {
   y += 14;
   doc.setFont("helvetica", "bold");
   doc.text(`Total de plata: ${totalCuTva} RON`, pageWidth - 40, y, { align: "right" });
+
+  // Expedition section – "Date privind expediția" – shown below totals when agent data is available
+  const hasAgentData = agentName || agentCiSerie || agentCiNumar || agentEliberatDe || agentMijlocTransp;
+  if (hasAgentData) {
+    y += 24;
+    const expX = 40;
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text("Date privind expeditia:", expX, y);
+    y += 14;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    if (agentName) {
+      doc.text(`Nume delegat: ${agentName}`, expX, y); y += 12;
+    }
+    if (agentCiSerie || agentCiNumar) {
+      const ci = [agentCiSerie, agentCiNumar].filter(Boolean).join(" ");
+      doc.text(`CI seria/nr.: ${ci}`, expX, y); y += 12;
+    }
+    if (agentEliberatDe) {
+      doc.text(`Eliberat de: ${agentEliberatDe}`, expX, y); y += 12;
+    }
+    if (agentMijlocTransp) {
+      doc.text(`Mijloc de transport: ${agentMijlocTransp}`, expX, y); y += 12;
+    }
+  }
 
   return doc;
 };
@@ -348,7 +381,7 @@ const generateInvoiceUBL = (inv, company, client) => {
   return xml;
 };
 
-const InvoicesScreen = ({ API_URL, orders, clients, products = [], showMessage, currentUser }) => {
+const InvoicesScreen = ({ API_URL, orders, clients, products = [], agents = [], showMessage, currentUser }) => {
   const [localInvoices, setLocalInvoices] = useState([]);
   const [loading, setLoading] = useState(false);
   const [company, setCompany] = useState(null);
@@ -446,8 +479,8 @@ const InvoicesScreen = ({ API_URL, orders, clients, products = [], showMessage, 
 
   const handleDownloadLocalPdf = (inv) => {
     try {
-      const { client } = getOrderInfo(inv.order_id);
-      const doc = generateInvoicePDF(inv, company, client);
+      const { client, agent } = getOrderInfo(inv.order_id);
+      const doc = generateInvoicePDF(inv, company, client, agent);
       const filename = `factura-${stripDiacritics(inv.invoice_code || inv.id)}.pdf`;
       doc.save(filename);
     } catch (err) {
@@ -502,8 +535,8 @@ const InvoicesScreen = ({ API_URL, orders, clients, products = [], showMessage, 
       const zip = new JSZip();
       const selected = localInvoices.filter((inv) => selectedIds.has(inv.id));
       for (const inv of selected) {
-        const { order, client } = getOrderInfo(inv.order_id);
-        const doc = generateInvoicePDF(inv, company, client);
+        const { order, client, agent } = getOrderInfo(inv.order_id);
+        const doc = generateInvoicePDF(inv, company, client, agent);
         const clientName = stripDiacritics(
           client?.nume || inv.client_name || inv.external_client_id || "Client"
         );
@@ -556,7 +589,11 @@ const InvoicesScreen = ({ API_URL, orders, clients, products = [], showMessage, 
       order && clients
         ? clients.find((c) => c.id === order.clientId)
         : null;
-    return { order, client };
+    const agent =
+      client && agents
+        ? agents.find((a) => a.id === client.agentId)
+        : null;
+    return { order, client, agent };
   };
 
   // ---- Invoice Lines Management ----

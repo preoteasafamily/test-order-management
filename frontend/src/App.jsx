@@ -1363,6 +1363,7 @@ const App = () => {
             orders={orders}
             clients={clients}
             products={products}
+            agents={agents}
             showMessage={showMessage}
           />
         );

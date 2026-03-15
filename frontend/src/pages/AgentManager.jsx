@@ -29,6 +29,10 @@ const AgentManager = ({
       user_id: "",
       status: "active",
       zones: [],
+      ci_serie: "",
+      ci_numar: "",
+      ci_eliberat_de: "",
+      mijloc_transport: "",
     };
     setEditingAgent(newAgent);
   };
@@ -201,6 +205,71 @@ const AgentManager = ({
                 <option value="active">Activ</option>
                 <option value="inactive">Inactiv</option>
               </select>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">Date act identitate / delegație</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  CI Seria
+                </label>
+                <input
+                  type="text"
+                  value={editingAgent.ci_serie || ""}
+                  onChange={(e) =>
+                    setEditingAgent({ ...editingAgent, ci_serie: e.target.value })
+                  }
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  placeholder="ex: KV"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  CI Număr
+                </label>
+                <input
+                  type="text"
+                  value={editingAgent.ci_numar || ""}
+                  onChange={(e) =>
+                    setEditingAgent({ ...editingAgent, ci_numar: e.target.value })
+                  }
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  placeholder="ex: 123456"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Eliberat de
+                </label>
+                <input
+                  type="text"
+                  value={editingAgent.ci_eliberat_de || ""}
+                  onChange={(e) =>
+                    setEditingAgent({ ...editingAgent, ci_eliberat_de: e.target.value })
+                  }
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  placeholder="ex: SPCLEP Sfântu Gheorghe"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Mijloc de transport
+                </label>
+                <input
+                  type="text"
+                  value={editingAgent.mijloc_transport || ""}
+                  onChange={(e) =>
+                    setEditingAgent({ ...editingAgent, mijloc_transport: e.target.value })
+                  }
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  placeholder="ex: auto, B-12-ABC"
+                />
+              </div>
             </div>
           </div>
 
