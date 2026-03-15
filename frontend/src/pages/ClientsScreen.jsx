@@ -62,11 +62,15 @@ const ClientsScreen = ({
     }
   };
 
-  const filteredClients = clients.filter(
-    (c) =>
-      c.nume.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.cif.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
+  const filteredClients = clients
+    .filter(
+      (c) =>
+        c.nume.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.cif.toLowerCase().includes(searchTerm.toLowerCase()),
+    )
+    .sort((a, b) =>
+      (a.nume || "").localeCompare(b.nume || "", "ro", { sensitivity: "base" }),
+    );
 
   const handleAddClient = () => {
     const defaultAgent = agents.length > 0 ? agents[0].id : null;

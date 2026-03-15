@@ -340,6 +340,11 @@ const OrdersMatrixScreen = ({
     agentClients = agentClients.filter((c) => isClientActive(c, selectedDate));
   }
 
+  // Sort strictly by company name only, no secondary sort by delivery location
+  agentClients = agentClients.sort((a, b) =>
+    (a.nume || "").localeCompare(b.nume || "", "ro", { sensitivity: "base" }),
+  );
+
   const totalValue = agentClients.reduce(
     (sum, c) => sum + calculateClientTotal(c.id),
     0,
