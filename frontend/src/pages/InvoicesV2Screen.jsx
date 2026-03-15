@@ -111,6 +111,14 @@ const generatePDF = (inv, company, client, agent) => {
   });
   y += 16;
 
+  // Show order number if present
+  const nrComandaSnap = snap.nrComanda || null;
+  if (nrComandaSnap) {
+    doc.setFontSize(9).setFont("helvetica", "normal");
+    doc.text(`Nr. comandă: ${nrComandaSnap}`, pageWidth / 2, y, { align: "center" });
+    y += 13;
+  }
+
   // Row-synchronized header: seller left, buyer right-aligned
   const leftX      = 40;
   const rightMargin = pageWidth - 40;
@@ -301,6 +309,14 @@ const generateUBL = (inv, company, client) => {
   <cbc:DueDate>${dueDate}</cbc:DueDate>
   <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
   <cbc:DocumentCurrencyCode>RON</cbc:DocumentCurrencyCode>\n`;
+
+  // Order reference (BT-13) – purchase order number from buyer
+  const nrComandaUBL = snap.nrComanda || null;
+  if (nrComandaUBL) {
+    xml += `  <cac:OrderReference>
+    <cbc:ID>${esc(nrComandaUBL)}</cbc:ID>
+  </cac:OrderReference>\n`;
+  }
 
   if (company) {
     xml += `  <cac:AccountingSupplierParty>

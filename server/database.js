@@ -161,6 +161,36 @@ const migrateClientsTableForEFactura = () => {
   }
 };
 
+// Migrate orders table to add nrComanda column
+const migrateOrdersTableForNrComanda = () => {
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(orders)").all();
+    if (tableInfo.length === 0) return;
+    const cols = tableInfo.map(c => c.name);
+    if (!cols.includes('nrComanda')) {
+      db.exec(`ALTER TABLE orders ADD COLUMN nrComanda TEXT`);
+      console.log('✅ Orders table migrated: nrComanda column added.');
+    }
+  } catch (err) {
+    console.error('Error migrating orders table for nrComanda:', err);
+  }
+};
+
+// Migrate clients table to add solicitaNrComanda column
+const migrateClientsTableForNrComanda = () => {
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(clients)").all();
+    if (tableInfo.length === 0) return;
+    const cols = tableInfo.map(c => c.name);
+    if (!cols.includes('solicitaNrComanda')) {
+      db.exec(`ALTER TABLE clients ADD COLUMN solicitaNrComanda INTEGER DEFAULT 0`);
+      console.log('✅ Clients table migrated: solicitaNrComanda column added.');
+    }
+  } catch (err) {
+    console.error('Error migrating clients table for solicitaNrComanda:', err);
+  }
+};
+
 // Migrate billing_invoices table to add e-Factura BT columns for existing databases
 const migrateBillingInvoicesForEFactura = () => {
   try {
@@ -261,6 +291,7 @@ const createTables = () => {
       totalWithVAT REAL,
       invoiceExported INTEGER DEFAULT 0,
       receiptExported INTEGER DEFAULT 0,
+      nrComanda TEXT,
       createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
       updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
     )
@@ -326,6 +357,7 @@ const createTables = () => {
       agentId TEXT,
       priceZone TEXT,
       afiseazaKG INTEGER DEFAULT 0,
+      solicitaNrComanda INTEGER DEFAULT 0,
       productCodes TEXT,
       status TEXT DEFAULT 'active',
       activeFrom TEXT,
@@ -738,6 +770,8 @@ migrateClientsTable();
 migrateClientsTableForEFactura();
 migrateProductGroupsTable();
 migrateOrdersTableForValidata();
+migrateOrdersTableForNrComanda();
+migrateClientsTableForNrComanda();
 migrateBillingInvoicesTable();
 migrateBillingInvoicesForEFactura();
 migrateCompanyConfigToBtFields();
