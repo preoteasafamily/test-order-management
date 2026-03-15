@@ -57,3 +57,53 @@
 
 ### Cum primesc rapoartele lunare?
 **Răspuns:** Rapoartele lunare sunt trimise automat prin email la începutul fiecărei luni.
+
+---
+
+## Diagnostic: De ce durează mult livrarea task-urilor pe branch-ul main?
+
+### Cauze identificate (analiză 15 martie 2026)
+
+**1. PR-urile Copilot sunt create ca Draft (WIP)**
+Fiecare task trimis prin Copilot generează un Pull Request marcat automat ca „Draft".
+Un PR Draft **nu poate fi merge-uit** până nu este promovat manual în starea „Ready for Review".
+Acest pas intermediar necesită intervenția umană și este principala cauză de întârziere.
+
+**2. Nicio automatizare CI/CD activă pe PR-uri**
+Înainte de această actualizare, nu exista niciun workflow de build/lint care să ruleze automat
+pe PR-uri. Fără validare automată, fiecare PR necesita verificare manuală completă înainte de merge,
+mărind timpul de review.
+
+**3. Backlog acumulat de PR-uri nemerge-uite**
+La data analizei existau 16 PR-uri deschise, dintre care:
+- 13 Draft (neeligibile pentru merge)
+- 3 gata de review, dar nemerge-uite de 17–34 zile (cele mai vechi din 9 februarie)
+Backlog-ul mare înseamnă că PR-urile mai noi trebuie să „aștepte la coadă".
+
+**4. PR-uri duplicate pentru aceeași funcționalitate**
+Același task a fost creat de mai multe ori (ex: logo SVG – 5 PR-uri; secțiunea livrare factură –
+3 PR-uri). Fiecare tentativă nouă adaugă un PR suplimentar în coadă fără a elimina cele vechi.
+
+**5. Niciun pipeline de testare pe server (backend)**
+Server-ul nu are teste automate, ceea ce face dificilă validarea rapidă a modificărilor backend.
+
+---
+
+### Soluții recomandate
+
+**Imediat aplicabile:**
+1. **Revizuiți și merge-uiți PR-urile gata de review** (#3, #8, #9 sunt în așteptare de săptămâni).
+2. **Închideți PR-urile Draft depășite/duplicate** – păstrați doar cel mai recent pentru fiecare
+   funcționalitate și închideți pe celelalte.
+3. **Promovați Draft → Ready for Review** pentru PR-urile Copilot pe care le-ați aprobat.
+
+**Îmbunătățiri structurale implementate în acest PR:**
+- **Workflow CI automat** (`.github/workflows/ci.yml`): la fiecare PR spre `main` rulează
+  automat `npm run lint` și `npm run build` pe frontend. Oferă validare imediată fără review manual.
+- **Template PR** (`.github/pull_request_template.md`): standardizează ce informații trebuie
+  furnizate la fiecare PR, reducând timpul de review.
+
+**Pe termen lung:**
+- Adăugați teste automate (Jest/Vitest) pe frontend pentru componentele critice.
+- Configurați auto-merge pentru PR-urile care trec CI și au cel puțin un review aprobat.
+- Stabiliți o rutină de review săptămânală pentru PR-urile Copilot.
