@@ -62,11 +62,17 @@ const ClientsScreen = ({
     }
   };
 
-  const filteredClients = clients.filter(
-    (c) =>
-      c.nume.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.cif.toLowerCase().includes(searchTerm.toLowerCase()),
-  );
+  const filteredClients = clients
+    .filter(
+      (c) =>
+        c.nume.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.cif.toLowerCase().includes(searchTerm.toLowerCase()),
+    )
+    .sort((a, b) => {
+      const numeCompare = a.nume.localeCompare(b.nume, "ro");
+      if (numeCompare !== 0) return numeCompare;
+      return (a.delivery_name || "").localeCompare(b.delivery_name || "", "ro");
+    });
 
   const handleAddClient = () => {
     const defaultAgent = agents.length > 0 ? agents[0].id : null;
