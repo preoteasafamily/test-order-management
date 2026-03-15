@@ -76,7 +76,7 @@ const buildHeaderRows = (company, snap, client) => {
 };
 
 // Generate PDF: two-column header synchronized row by row, no titles/separators
-const generatePDF = (inv, company, client) => {
+const generatePDF = (inv, company, client, agent) => {
   const doc = new jsPDF({ format: "a4", unit: "pt" });
   const snap =
     inv.raw_snapshot && typeof inv.raw_snapshot === "object"
@@ -84,6 +84,13 @@ const generatePDF = (inv, company, client) => {
       : inv.raw_snapshot
       ? JSON.parse(inv.raw_snapshot)
       : {};
+
+  // Resolve agent fields: prefer snapshot (captured at invoice time), then live agent object
+  const agentName         = snap.agentName         || agent?.name             || null;
+  const agentCiSerie      = snap.agentCiSerie      || agent?.ci_serie         || null;
+  const agentCiNumar      = snap.agentCiNumar      || agent?.ci_numar         || null;
+  const agentEliberatDe   = snap.agentEliberatDe   || agent?.ci_eliberat_de   || null;
+  const agentMijlocTransp = snap.agentMijlocTransp || agent?.mijloc_transport || null;
 
   const pageWidth = doc.internal.pageSize.getWidth();
   let y = 40;
@@ -192,6 +199,26 @@ const generatePDF = (inv, company, client) => {
       },
     });
     y = doc.lastAutoTable.finalY + 10;
+  }
+
+  // Expedition section – "Date privind expediția" – shown immediately after products table
+  const hasAgentData = agentName || agentCiSerie || agentCiNumar || agentEliberatDe || agentMijlocTransp;
+  if (hasAgentData) {
+    const expX = 40;
+    doc.setFontSize(9).setFont("helvetica", "bold");
+    doc.text("Date privind expeditia:", expX, y);
+    y += 12;
+    doc.setFont("helvetica", "normal");
+    // Compact row 1: Delegat + Mijloc transport on the same line
+    const row1Parts = [];
+    if (agentName) row1Parts.push(`Delegat: ${agentName}`);
+    if (agentMijlocTransp) row1Parts.push(`Mijloc transport: ${agentMijlocTransp}`);
+    if (row1Parts.length > 0) { doc.text(row1Parts.join("   "), expX, y); y += 12; }
+    // Compact row 2: C.I.: serie nr eliberat de emitent – all on one line
+    const ciParts = [agentCiSerie, agentCiNumar].filter(Boolean).join(" ");
+    const ciLine = [ciParts ? `C.I.: ${ciParts}` : null, agentEliberatDe ? `eliberat de ${agentEliberatDe}` : null].filter(Boolean).join(" ");
+    if (ciLine) { doc.text(ciLine, expX, y); y += 12; }
+    y += 6;
   }
 
   // Totals
@@ -342,7 +369,7 @@ const generateUBL = (inv, company, client) => {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-const InvoicesV2Screen = ({ API_URL, orders, clients, showMessage }) => {
+const InvoicesV2Screen = ({ API_URL, orders, clients, agents, showMessage }) => {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(false);
   const [company, setCompany] = useState(null);
@@ -373,15 +400,19 @@ const InvoicesV2Screen = ({ API_URL, orders, clients, showMessage }) => {
 
   const getClientForInvoice = (inv) => {
     const order = orders ? orders.find((o) => o.id === inv.order_id) : null;
-    return order && clients
+    const client = order && clients
       ? clients.find((c) => c.id === order.clientId) || null
       : null;
+    const agent = client && agents
+      ? agents.find((a) => a.id === client.agentId) || null
+      : null;
+    return { client, agent };
   };
 
   const handlePDF = (inv) => {
     try {
-      const client = getClientForInvoice(inv);
-      generatePDF(inv, company, client).save(
+      const { client, agent } = getClientForInvoice(inv);
+      generatePDF(inv, company, client, agent).save(
         `factura-${stripDiacritics(inv.invoice_code || inv.id)}.pdf`
       );
     } catch (err) {
@@ -391,7 +422,7 @@ const InvoicesV2Screen = ({ API_URL, orders, clients, showMessage }) => {
 
   const handleUBL = (inv) => {
     try {
-      const client = getClientForInvoice(inv);
+      const { client } = getClientForInvoice(inv);
       const xml = generateUBL(inv, company, client);
       const blob = new Blob([xml], { type: "application/xml" });
       const url = URL.createObjectURL(blob);

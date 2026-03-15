@@ -1373,6 +1373,7 @@ const App = () => {
             API_URL={API_URL}
             orders={orders}
             clients={clients}
+            agents={agents}
             showMessage={showMessage}
           />
         );
