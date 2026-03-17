@@ -76,7 +76,7 @@ const buildHeaderRows = (company, snap, client) => {
 };
 
 // Generate PDF: two-column header synchronized row by row, no titles/separators
-const generatePDF = (inv, company, client, agent) => {
+const generatePDF = (inv, company, client, agent, order) => {
   const doc = new jsPDF({ format: "a4", unit: "pt" });
   const snap =
     inv.raw_snapshot && typeof inv.raw_snapshot === "object"
@@ -112,10 +112,10 @@ const generatePDF = (inv, company, client, agent) => {
   y += 16;
 
   // Show order number if present
-  const nrComandaSnap = snap.nrComanda || null;
+  const nrComandaSnap = snap.nrComanda || order?.nrComanda || null;
   if (nrComandaSnap) {
     doc.setFontSize(9).setFont("helvetica", "normal");
-    doc.text(`Nr. comandă: ${nrComandaSnap}`, pageWidth / 2, y, { align: "center" });
+    doc.text(`Nr. comanda: ${nrComandaSnap}`, pageWidth / 2, y, { align: "center" });
     y += 13;
   }
 
@@ -195,7 +195,7 @@ const generatePDF = (inv, company, client, agent) => {
               parseFloat(item.price || 0)
         ).toFixed(2),
       ]),
-      styles: { fontSize: 8 },
+      styles: { fontSize: 8, textColor: 0 },
       headStyles: { fillColor: [220, 220, 220], textColor: 0, fontStyle: "bold" },
       columnStyles: {
         0: { cellWidth: 25, halign: "right" },
@@ -510,13 +510,13 @@ const InvoicesV2Screen = ({ API_URL, orders, clients, agents, showMessage }) => 
     const agent = client && agents
       ? agents.find((a) => a.id === client.agentId) || null
       : null;
-    return { client, agent };
+    return { client, agent, order };
   };
 
   const handlePDF = (inv) => {
     try {
-      const { client, agent } = getClientForInvoice(inv);
-      generatePDF(inv, company, client, agent).save(
+      const { client, agent, order } = getClientForInvoice(inv);
+      generatePDF(inv, company, client, agent, order).save(
         `factura-${stripDiacritics(inv.invoice_code || inv.id)}.pdf`
       );
     } catch (err) {
