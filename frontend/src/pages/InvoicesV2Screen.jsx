@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { FileText, FileCode, Download, RefreshCw, X, List, Save, Plus, Trash2, Edit2 } from "lucide-react";
+import React, { useState, useEffect, useMemo } from "react";
+import { FileText, FileCode, Download, RefreshCw, X, List, Save, Plus, Trash2, Edit2, CheckSquare, Square, Printer } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -75,9 +75,9 @@ const buildHeaderRows = (company, snap, client) => {
   ].filter((r) => r.seller || r.buyer);
 };
 
-// Generate PDF: two-column header synchronized row by row, no titles/separators
-const generatePDF = (inv, company, client, agent, order) => {
-  const doc = new jsPDF({ format: "a4", unit: "pt" });
+// Draw one invoice onto the current page of an existing jsPDF document.
+// The caller is responsible for calling doc.addPage() before this when needed.
+const drawInvoiceOnDoc = (doc, inv, company, client, agent, order) => {
   const snap =
     inv.raw_snapshot && typeof inv.raw_snapshot === "object"
       ? inv.raw_snapshot
@@ -256,10 +256,13 @@ const generatePDF = (inv, company, client, agent, order) => {
     totY,
     { align: "right" }
   );
-  totY += 12;
+  totY += 12; // eslint-disable-line no-unused-vars
+};
 
-  y = Math.max(expY, totY);
-
+// Generate PDF: two-column header synchronized row by row, no titles/separators
+const generatePDF = (inv, company, client, agent, order) => {
+  const doc = new jsPDF({ format: "a4", unit: "pt" });
+  drawInvoiceOnDoc(doc, inv, company, client, agent, order);
   return doc;
 };
 
@@ -480,12 +483,30 @@ const InvoicesV2Screen = ({ API_URL, orders, clients, agents, products = [], sho
   const [settings, setSettings] = useState(null);
   const [selectedInv, setSelectedInv] = useState(null);
 
+  // Batch selection & PDF state
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [batchProgress, setBatchProgress] = useState(null); // { current, total } | null
+  const [dateFilter, setDateFilter] = useState("");
+
   // Invoice lines state
   const [linesInvoice, setLinesInvoice] = useState(null);
   const [lines, setLines] = useState([]);
   const [linesLoading, setLinesLoading] = useState(false);
   const [editingLine, setEditingLine] = useState(null);
   const [lineForm, setLineForm] = useState({});
+
+  // Pre-compute unique dates with invoice counts for the date selector (memoized for performance)
+  const availableDates = useMemo(() => {
+    const counts = {};
+    invoices.forEach((inv) => {
+      if (inv.document_date) {
+        counts[inv.document_date] = (counts[inv.document_date] || 0) + 1;
+      }
+    });
+    return Object.entries(counts)
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([date, count]) => ({ date, count }));
+  }, [invoices]);
 
   const loadData = async () => {
     setLoading(true);
@@ -544,6 +565,92 @@ const InvoicesV2Screen = ({ API_URL, orders, clients, agents, products = [], sho
       URL.revokeObjectURL(url);
     } catch (err) {
       showMessage(`Eroare UBL: ${err.message}`, "error");
+    }
+  };
+
+  // ---- Batch selection helpers ----
+
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    const visible = dateFilter
+      ? invoices.filter((inv) => inv.document_date === dateFilter)
+      : invoices;
+    if (visible.every((inv) => selectedIds.has(inv.id))) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        visible.forEach((inv) => next.delete(inv.id));
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        visible.forEach((inv) => next.add(inv.id));
+        return next;
+      });
+    }
+  };
+
+  const selectByDate = (date) => {
+    setDateFilter(date);
+    const forDate = invoices.filter((inv) => inv.document_date === date);
+    setSelectedIds(new Set(forDate.map((inv) => inv.id)));
+  };
+
+  // Batch PDF: generate a single multi-page PDF for all selected invoices.
+  // Processing is done in chunks to keep the UI responsive (important for 200-300 invoices).
+  const handleBatchPDF = async () => {
+    const selected = invoices.filter((inv) => selectedIds.has(inv.id));
+    if (selected.length === 0) {
+      showMessage("Selectați cel puțin o factură", "error");
+      return;
+    }
+
+    setBatchProgress({ current: 0, total: selected.length });
+
+    const doc = new jsPDF({ format: "a4", unit: "pt" });
+    const CHUNK_SIZE = 10;
+
+    const processChunk = (startIdx) =>
+      new Promise((resolve) => {
+        setTimeout(() => {
+          const end = Math.min(startIdx + CHUNK_SIZE, selected.length);
+          for (let i = startIdx; i < end; i++) {
+            if (i > 0) doc.addPage();
+            const inv = selected[i];
+            const { client, agent, order } = getClientForInvoice(inv);
+            drawInvoiceOnDoc(doc, inv, company, client, agent, order);
+          }
+          setBatchProgress({ current: end, total: selected.length });
+          resolve(end);
+        }, 0);
+      });
+
+    try {
+      let idx = 0;
+      while (idx < selected.length) {
+        idx = await processChunk(idx);
+      }
+
+      const dates = [...new Set(selected.map((i) => i.document_date).filter(Boolean))];
+      const filename =
+        dates.length === 1
+          ? `facturi_${dates[0].replace(/-/g, "_")}.pdf`
+          : "facturi_selectate.pdf";
+
+      doc.save(filename);
+      showMessage(`PDF generat cu succes (${selected.length} facturi)`);
+    } catch (err) {
+      showMessage(`Eroare la generarea PDF batch: ${err.message}`, "error");
+    } finally {
+      setBatchProgress(null);
     }
   };
 
@@ -994,6 +1101,65 @@ const InvoicesV2Screen = ({ API_URL, orders, clients, agents, products = [], sho
         </div>
       </div>
 
+      {/* Batch selection toolbar */}
+      {invoices.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+          <span className="text-sm font-medium text-blue-800">Selectare rapidă:</span>
+          <select
+            value={dateFilter}
+            onChange={(e) => {
+              const d = e.target.value;
+              setDateFilter(d);
+              if (d) {
+                const forDate = invoices.filter((inv) => inv.document_date === d);
+                setSelectedIds(new Set(forDate.map((inv) => inv.id)));
+              }
+            }}
+            className="text-sm border border-blue-300 rounded px-2 py-1 bg-white"
+          >
+            <option value="">— Alege ziua —</option>
+            {availableDates.map(({ date, count }) => (
+              <option key={date} value={date}>
+                {date} ({count} facturi)
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={toggleSelectAll}
+            className="flex items-center gap-1 px-3 py-1 text-sm border border-blue-300 bg-white rounded hover:bg-blue-100"
+          >
+            {(() => {
+              const visible = dateFilter
+                ? invoices.filter((inv) => inv.document_date === dateFilter)
+                : invoices;
+              return visible.length > 0 && visible.every((inv) => selectedIds.has(inv.id))
+                ? <><CheckSquare className="w-4 h-4 text-blue-600" /> Deselectează toate</>
+                : <><Square className="w-4 h-4 text-blue-600" /> Selectează toate</>;
+            })()}
+          </button>
+          {selectedIds.size > 0 && (
+            <button
+              onClick={handleBatchPDF}
+              disabled={batchProgress !== null}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-60 transition"
+            >
+              <Printer className="w-4 h-4" />
+              {batchProgress
+                ? `Generez ${batchProgress.current}/${batchProgress.total}…`
+                : `PDF Batch (${selectedIds.size} facturi)`}
+            </button>
+          )}
+          {selectedIds.size > 0 && !batchProgress && (
+            <button
+              onClick={() => { setSelectedIds(new Set()); setDateFilter(""); }}
+              className="text-xs text-gray-500 hover:text-gray-700 underline"
+            >
+              Anulează selecția
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Empty state */}
       {!loading && invoices.length === 0 && (
         <div className="text-center text-gray-500 py-10">
@@ -1008,6 +1174,22 @@ const InvoicesV2Screen = ({ API_URL, orders, clients, agents, products = [], sho
           <table className="w-full text-sm border-collapse border border-gray-300">
             <thead>
               <tr className="bg-gray-100">
+                <th className="border border-gray-300 px-2 py-2 text-center w-8">
+                  <button
+                    onClick={toggleSelectAll}
+                    title="Selectează/Deselectează toate"
+                    className="p-0.5 hover:bg-gray-200 rounded"
+                  >
+                    {(() => {
+                      const visible = dateFilter
+                        ? invoices.filter((inv) => inv.document_date === dateFilter)
+                        : invoices;
+                      return visible.length > 0 && visible.every((inv) => selectedIds.has(inv.id))
+                        ? <CheckSquare className="w-4 h-4 text-blue-600" />
+                        : <Square className="w-4 h-4 text-gray-500" />;
+                    })()}
+                  </button>
+                </th>
                 <th className="border border-gray-300 px-3 py-2 text-left">
                   Nr. Factura
                 </th>
@@ -1051,7 +1233,18 @@ const InvoicesV2Screen = ({ API_URL, orders, clients, agents, products = [], sho
 
                 return (
                   <React.Fragment key={inv.id}>
-                    <tr className="hover:bg-gray-50">
+                    <tr className={`hover:bg-gray-50 ${selectedIds.has(inv.id) ? "bg-blue-50" : ""}`}>
+                      <td className="border border-gray-300 px-2 py-2 text-center">
+                        <button
+                          onClick={() => toggleSelect(inv.id)}
+                          className="p-0.5 hover:bg-blue-100 rounded"
+                          title="Selectează pentru PDF batch"
+                        >
+                          {selectedIds.has(inv.id)
+                            ? <CheckSquare className="w-4 h-4 text-blue-600" />
+                            : <Square className="w-4 h-4 text-gray-400" />}
+                        </button>
+                      </td>
                       <td className="border border-gray-300 px-3 py-2 font-mono">
                         {inv.invoice_code || "-"}
                       </td>
@@ -1117,7 +1310,7 @@ const InvoicesV2Screen = ({ API_URL, orders, clients, agents, products = [], sho
                     {isSelected && (
                       <tr>
                         <td
-                          colSpan={8}
+                          colSpan={9}
                           className="border border-gray-300 bg-gray-50 px-4 py-4"
                         >
                           {/* Two-column header: seller left, buyer right — synchronized row by row */}
