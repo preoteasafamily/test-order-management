@@ -17,6 +17,7 @@ const exportCountersRouter = require("./routes/export-counters");
 const dayStatusRouter = require("./routes/day-status");
 const billingRouter = require("./routes/billing");
 const configRouter = require("./routes/config");
+const efacturaRouter = require("./routes/efactura");
 const { generateLocalInvoice } = require("./routes/billing");
 const { initializeClientProducts } = require("./routes/client-products");
 
@@ -39,6 +40,7 @@ app.use("/api/export-counters", exportCountersRouter);
 app.use("/api/day-status", dayStatusRouter);
 app.use("/api/billing", billingRouter);
 app.use("/api/config", configRouter);
+app.use("/api/efactura", efacturaRouter);
 
 // Health check
 app.get("/api/health", (req, res) => {

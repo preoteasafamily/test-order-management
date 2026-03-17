@@ -20,6 +20,7 @@ import DataManagementScreen from "./pages/DataManagementScreen";
 import AgentMapScreen from "./pages/AgentMapScreen";
 import InvoicesScreen from "./pages/InvoicesScreen";
 import InvoicesV2Screen from "./pages/InvoicesV2Screen";
+import EfacturaScreen from "./pages/EfacturaScreen";
 
 const App = () => {
   // API Configuration
@@ -1375,6 +1376,13 @@ const App = () => {
             clients={clients}
             agents={agents}
             products={products}
+            showMessage={showMessage}
+          />
+        );
+      case "efactura-spv":
+        return (
+          <EfacturaScreen
+            API_URL={API_URL}
             showMessage={showMessage}
           />
         );
