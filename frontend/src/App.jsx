@@ -1374,6 +1374,7 @@ const App = () => {
             orders={orders}
             clients={clients}
             agents={agents}
+            products={products}
             showMessage={showMessage}
           />
         );
