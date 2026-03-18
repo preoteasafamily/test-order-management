@@ -646,6 +646,36 @@ const createTables = () => {
     )
   `);
 
+  // SPV e-Factura settings table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS spv_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      cif TEXT DEFAULT '',
+      oauth_token TEXT DEFAULT '',
+      token_expires_at TEXT DEFAULT '',
+      environment TEXT DEFAULT 'test',
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  db.exec(`INSERT OR IGNORE INTO spv_settings (id) VALUES (1)`);
+
+  // SPV messages table – stores list of received/sent messages from ANAF
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS spv_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      anaf_message_id TEXT UNIQUE,
+      tip TEXT,
+      data_creare TEXT,
+      cif TEXT,
+      id_solicitant TEXT,
+      detalii TEXT,
+      id_descarcare TEXT,
+      downloaded_at TEXT,
+      zip_content BLOB,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   console.log('Database tables initialized');
 };
 
@@ -762,6 +792,30 @@ const migrateCompanyConfigToBtFields = () => {
   }
 };
 
+// Migrate billing_invoices table to add SPV e-Factura upload tracking columns
+const migrateBillingInvoicesForSPV = () => {
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(billing_invoices)").all();
+    if (tableInfo.length === 0) return;
+    const cols = tableInfo.map(c => c.name);
+    const toAdd = [
+      { name: 'spv_upload_id', def: 'TEXT' },
+      { name: 'spv_status', def: "TEXT DEFAULT 'none'" },
+      { name: 'spv_uploaded_at', def: 'TEXT' },
+      { name: 'spv_response', def: 'TEXT' },
+      { name: 'spv_download_id', def: 'TEXT' },
+    ];
+    for (const col of toAdd) {
+      if (!cols.includes(col.name)) {
+        db.exec(`ALTER TABLE billing_invoices ADD COLUMN ${col.name} ${col.def}`);
+      }
+    }
+    console.log('✅ billing_invoices SPV columns migration complete.');
+  } catch (err) {
+    console.error('Error migrating billing_invoices for SPV:', err);
+  }
+};
+
 // Initialize tables
 createTables();
 
@@ -775,6 +829,7 @@ migrateClientsTableForNrComanda();
 migrateBillingInvoicesTable();
 migrateBillingInvoicesForEFactura();
 migrateCompanyConfigToBtFields();
+migrateBillingInvoicesForSPV();
 
 // Create default admin user if needed
 createDefaultAdminUser();
