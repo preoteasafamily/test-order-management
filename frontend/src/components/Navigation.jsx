@@ -12,7 +12,8 @@ import {
   UserCog,
   Database,
   MapPin,
-  Receipt
+  Receipt,
+  Send
 } from 'lucide-react';
 
 const Navigation = ({ currentUser, activeSection, setActiveSection, mobileMenuOpen, setMobileMenuOpen }) => {
@@ -106,6 +107,12 @@ const Navigation = ({ currentUser, activeSection, setActiveSection, mobileMenuOp
       id: "invoices-v2",
       label: "Facturi V2",
       icon: Receipt,
+      roles: ["admin", "birou"],
+    },
+    {
+      id: "efactura-spv",
+      label: "e-Factura SPV",
+      icon: Send,
       roles: ["admin", "birou"],
     },
   ];
