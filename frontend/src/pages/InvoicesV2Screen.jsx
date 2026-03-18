@@ -185,9 +185,7 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order) => {
       body: lines.map((item, idx) => [
         item.lineId != null ? item.lineId : idx + 1,
         item.barcode || "-",
-        item.additionalInfo
-          ? `${item.description || item.descriere || "-"}\n${item.additionalInfo}`
-          : (item.description || item.descriere || "-"),
+        item.description || item.descriere || "-",
         item.unit || item.um || "-",
         item.unitCount || item.quantity || "0",
         Number(item.price || 0).toFixed(2),
