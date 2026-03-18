@@ -55,7 +55,7 @@ const formatNumber = (n) => {
 // Each line includes: lineId (Nr. crt.), barcode (EAN/codBare), productCode (codArticolFurnizor),
 // description, unit, unitCount, price, total, vat.
 // When client.afiseazaKG is set and product.gramajKg > 0, an extra KG line is added after
-// each normal line with quantity in kg, zero value/TVA/total, and additionalInfo showing preț/kg.
+// each normal line with quantity in kg, zero value/TVA/total, and additionalInfo showing pret/kg.
 const mapOrderItems = (items, products, client) => {
   const result = [];
   let lineId = 1;
@@ -95,7 +95,7 @@ const mapOrderItems = (items, products, client) => {
         lineId,
         barcode: product.codBare || null,
         description: product.descriere || item.productId || 'Produs',
-        additionalInfo: `preț/kg: ${pretPerKg.toFixed(3)} RON/kg`,
+        additionalInfo: `pret/kg: ${pretPerKg.toFixed(3)} RON/kg`,
         unit: 'kg',
         unitCount: cantitateKg.toFixed(3),
         price: '0.00',
@@ -295,7 +295,7 @@ const generateInvoicePdf = (invoice, order, client) => {
         doc.text(String(total), col.total, y, { width: 68,  align: 'right' });
         doc.moveDown(0.4);
 
-        // Render additionalInfo (e.g. preț/kg) below description for KG lines
+        // Render additionalInfo (e.g. pret/kg) below description for KG lines
         if (item.additionalInfo) {
           doc.font('Helvetica').fontSize(8)
             .text(item.additionalInfo, col.desc, doc.y, { width: 175, align: 'left' });
@@ -422,7 +422,7 @@ const upsertInvoiceLines = (invoiceId, items, products, client) => {
         null,
         0,
         product?.descriere || null,
-        `preț/kg: ${pretPerKg.toFixed(3)} RON/kg`,
+        `pret/kg: ${pretPerKg.toFixed(3)} RON/kg`,
         product?.codArticolFurnizor || null,
         product?.codBare || null
       );
