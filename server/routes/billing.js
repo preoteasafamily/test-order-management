@@ -53,20 +53,25 @@ const formatNumber = (n) => {
 
 // Map order items to DocumentPositionAttributes
 // Each line includes: lineId (Nr. crt.), barcode (EAN/codBare), productCode (codArticolFurnizor),
-// description, unit, unitCount, price, total, vat
-const mapOrderItems = (items, products) => {
-  return items.map((item, index) => {
+// description, unit, unitCount, price, total, vat.
+// When client.afiseazaKG is set and product.gramajKg > 0, an extra KG line is added after
+// each normal line with quantity in kg, zero value/TVA/total, and additionalInfo showing preț/kg.
+const mapOrderItems = (items, products, client) => {
+  const result = [];
+  let lineId = 1;
+
+  items.forEach((item) => {
     const product = products
       ? products.find((p) => p.id === item.productId)
       : null;
 
     const pos = {
-      lineId: index + 1,                                              // BT-126 / Nr. crt.
-      barcode: product?.codBare || null,                             // BT-157 / EAN cod bare
-      description: product?.descriere || item.productId || 'Produs', // BT-153
-      unit: product?.um || 'buc',                                    // BT-130
-      unitCount: String(item.quantity || 0),                         // BT-129
-      price: formatNumber(item.price),                               // BT-146
+      lineId,                                                          // BT-126 / Nr. crt.
+      barcode: product?.codBare || null,                              // BT-157 / EAN cod bare
+      description: product?.descriere || item.productId || 'Produs',  // BT-153
+      unit: product?.um || 'buc',                                     // BT-130
+      unitCount: String(item.quantity || 0),                          // BT-129
+      price: formatNumber(item.price),                                // BT-146
       total: formatNumber((item.quantity || 0) * (item.price || 0)), // BT-131
     };
 
@@ -78,8 +83,35 @@ const mapOrderItems = (items, products) => {
       pos.vat = String(product.cotaTVA); // BT-152
     }
 
-    return pos;
+    result.push(pos);
+    lineId++;
+
+    // Add supplementary KG line when client has afiseazaKG enabled and product has gramaj
+    if (client?.afiseazaKG && product?.gramajKg > 0) {
+      const gramaj = product.gramajKg;
+      const cantitateKg = (item.quantity || 0) * gramaj;
+      const pretPerKg = (item.price || 0) / gramaj;
+      const kgPos = {
+        lineId,
+        barcode: product.codBare || null,
+        description: product.descriere || item.productId || 'Produs',
+        additionalInfo: `preț/kg: ${pretPerKg.toFixed(3)} RON/kg`,
+        unit: 'kg',
+        unitCount: cantitateKg.toFixed(3),
+        price: '0.00',
+        total: '0.00',
+        vat: '0',
+        isKgLine: true,
+      };
+      if (product.codArticolFurnizor) {
+        kgPos.productCode = product.codArticolFurnizor;
+      }
+      result.push(kgPos);
+      lineId++;
+    }
   });
+
+  return result;
 };
 
 // Get current billing settings
@@ -262,6 +294,14 @@ const generateInvoicePdf = (invoice, order, client) => {
         doc.text(String(price), col.price, y, { width: 52,  align: 'right' });
         doc.text(String(total), col.total, y, { width: 68,  align: 'right' });
         doc.moveDown(0.4);
+
+        // Render additionalInfo (e.g. preț/kg) below description for KG lines
+        if (item.additionalInfo) {
+          doc.font('Helvetica-Oblique').fontSize(7)
+            .text(item.additionalInfo, col.desc, doc.y, { width: 175, align: 'left' });
+          doc.font('Helvetica').fontSize(8);
+          doc.moveDown(0.3);
+        }
       });
 
       doc.moveTo(50, doc.y).lineTo(540, doc.y).stroke();
@@ -328,7 +368,7 @@ const getDefaultProductPrice = (product) => {
 };
 
 // Upsert billing_invoice_lines rows with BT fields mapped from products
-const upsertInvoiceLines = (invoiceId, items, products) => {
+const upsertInvoiceLines = (invoiceId, items, products, client) => {
   db.prepare('DELETE FROM billing_invoice_lines WHERE invoice_id = ?').run(invoiceId);
 
   const insertLine = db.prepare(`
@@ -336,11 +376,12 @@ const upsertInvoiceLines = (invoiceId, items, products) => {
       invoice_id, bt_126_line_id, bt_129_invoiced_quantity, bt_129_unit_code,
       bt_131_line_net_amount, bt_146_item_net_price, bt_147_item_price_discount,
       bt_151_line_vat_category_code, bt_152_line_vat_rate,
-      bt_153_item_name, bt_155_seller_item_id, bt_157_item_barcode
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      bt_153_item_name, bt_154_item_description, bt_155_seller_item_id, bt_157_item_barcode
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  items.forEach((item, index) => {
+  let lineIndex = 0;
+  items.forEach((item) => {
     const product = products ? products.find((p) => p.id === item.productId) : null;
     const qty = item.quantity || 0;
     const price = item.price || 0;
@@ -350,7 +391,7 @@ const upsertInvoiceLines = (invoiceId, items, products) => {
 
     insertLine.run(
       invoiceId,
-      index + 1,
+      lineIndex + 1,
       qty,
       product?.um || null,
       netAmount,
@@ -359,9 +400,35 @@ const upsertInvoiceLines = (invoiceId, items, products) => {
       vatCategoryCode,
       vatRate,
       product?.descriere || null,
+      null,
       product?.codArticolFurnizor || null,
       product?.codBare || null
     );
+    lineIndex++;
+
+    // Insert supplementary KG line when client has afiseazaKG enabled
+    if (client?.afiseazaKG && product?.gramajKg > 0) {
+      const gramaj = product.gramajKg;
+      const cantitateKg = qty * gramaj;
+      const pretPerKg = price / gramaj;
+
+      insertLine.run(
+        invoiceId,
+        lineIndex + 1,
+        cantitateKg,
+        'kg',
+        0,
+        0,
+        0,
+        null,
+        0,
+        product?.descriere || null,
+        `preț/kg: ${pretPerKg.toFixed(3)} RON/kg`,
+        product?.codArticolFurnizor || null,
+        product?.codBare || null
+      );
+      lineIndex++;
+    }
   });
 };
 
@@ -388,7 +455,7 @@ const generateLocalInvoice = (orderId) => {
       : null;
 
     const items = order.items ? JSON.parse(order.items) : [];
-    const lines = mapOrderItems(items, products);
+    const lines = mapOrderItems(items, products, client);
 
     const documentDate = order.date || new Date().toISOString().split('T')[0];
 
@@ -558,7 +625,7 @@ const generateLocalInvoice = (orderId) => {
     const invoiceRow = allocateAndStore();
 
     // Populate billing_invoice_lines with BT fields from products
-    upsertInvoiceLines(invoiceRow.id, items, products);
+    upsertInvoiceLines(invoiceRow.id, items, products, client);
 
     // Generate PDF asynchronously (don't block the response)
     generateInvoicePdf(invoiceRow, order, client)

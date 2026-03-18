@@ -174,7 +174,9 @@ const generateInvoicePDF = (inv, company, client, agent) => {
       body: lines.map((item, idx) => [
         item.lineId != null ? item.lineId : idx + 1,
         item.barcode || "-",
-        item.description || item.descriere || "-",
+        item.additionalInfo
+          ? `${item.description || item.descriere || "-"}\n${item.additionalInfo}`
+          : (item.description || item.descriere || "-"),
         item.unit || item.um || "buc",
         item.unitCount || item.quantity || "0",
         Number(item.price || 0).toFixed(2),
@@ -378,8 +380,10 @@ const generateInvoiceUBL = (inv, company, client) => {
   }
 
   // TaxTotal – one TaxSubtotal per distinct VAT rate (CIUS-RO mandatory)
+  // KG informative lines (isKgLine) have zero value and are excluded from tax calculation
   const vatGroups = {};
   lines.forEach((item) => {
+    if (item.isKgLine) return;
     const rate = item.vat != null ? Number(item.vat) : 19;
     const lineTotal = Number(item.total || (Number(item.unitCount || item.quantity || 0) * Number(item.price || 0)));
     if (!vatGroups[rate]) vatGroups[rate] = 0;
