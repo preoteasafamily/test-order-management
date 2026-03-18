@@ -17,6 +17,10 @@ import {
   Eye,
   X,
   Info,
+  Key,
+  ExternalLink,
+  ShieldCheck,
+  BookOpen,
 } from "lucide-react";
 
 // ─── Status config ────────────────────────────────────────────────────────────
@@ -85,14 +89,32 @@ const ResponseModal = ({ invoice, onClose }) => {
 
 // ─── Settings panel ───────────────────────────────────────────────────────────
 const SettingsPanel = ({ API_URL, onClose, onSaved }) => {
-  const [form, setForm] = useState({ cif: "", token: "", tokenExpiresAt: "", environment: "test" });
+  const [settingsTab, setSettingsTab] = useState("oauth");
+  const [form, setForm] = useState({
+    cif: "", token: "", tokenExpiresAt: "", environment: "test",
+    clientId: "", clientSecret: "", redirectUri: "",
+  });
   const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [authorizing, setAuthorizing] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [hasRefreshToken, setHasRefreshToken] = useState(false);
 
   useEffect(() => {
     fetch(`${API_URL}/api/efactura/settings`)
       .then(r => r.json())
-      .then(d => setForm({ cif: d.cif || "", token: d.token || "", tokenExpiresAt: d.tokenExpiresAt || "", environment: d.environment || "test" }))
+      .then(d => {
+        setForm({
+          cif:          d.cif           || "",
+          token:        d.token         || "",
+          tokenExpiresAt: d.tokenExpiresAt || "",
+          environment:  d.environment   || "test",
+          clientId:     d.clientId      || "",
+          clientSecret: d.clientSecret  || "",
+          redirectUri:  d.redirectUri   || "",
+        });
+        setHasRefreshToken(!!d.hasRefreshToken);
+      })
       .catch(() => {});
   }, [API_URL]);
 
@@ -111,72 +133,318 @@ const SettingsPanel = ({ API_URL, onClose, onSaved }) => {
     finally { setSaving(false); }
   };
 
+  const startAuthorization = async () => {
+    setAuthorizing(true);
+    setMsg(null);
+    // Save credentials first so server has them for the callback
+    try {
+      await fetch(`${API_URL}/api/efactura/settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const r = await fetch(`${API_URL}/api/efactura/oauth/authorize`);
+      const data = await r.json();
+      if (!r.ok) { setMsg({ type: "error", text: data.error || "Eroare la generare URL autorizare." }); return; }
+      window.open(data.authUrl, "_blank", "width=900,height=700,noopener");
+      setMsg({ type: "success", text: "Fereastra de autorizare ANAF s-a deschis. Autentificați-vă cu certificatul digital, apoi reveniți aici și închideți fereastra." });
+    } catch (e) { setMsg({ type: "error", text: e.message }); }
+    finally { setAuthorizing(false); }
+  };
+
+  const refreshToken = async () => {
+    setRefreshing(true);
+    setMsg(null);
+    try {
+      const r = await fetch(`${API_URL}/api/efactura/oauth/refresh`, { method: "POST" });
+      const data = await r.json();
+      if (r.ok) {
+        setMsg({ type: "success", text: `Token reîmprospătat cu succes. Expiră la: ${data.expiresAt ? new Date(data.expiresAt).toLocaleString("ro-RO") : "necunoscut"}.` });
+        onSaved?.();
+        // Reload settings
+        const s = await fetch(`${API_URL}/api/efactura/settings`).then(x => x.json());
+        setForm(f => ({ ...f, token: s.token || "", tokenExpiresAt: s.tokenExpiresAt || "" }));
+        setHasRefreshToken(!!s.hasRefreshToken);
+      } else {
+        setMsg({ type: "error", text: data.error || "Eroare la reîmprospătare token." });
+      }
+    } catch (e) { setMsg({ type: "error", text: e.message }); }
+    finally { setRefreshing(false); }
+  };
+
+  const tokenExpired = form.tokenExpiresAt && new Date(form.tokenExpiresAt) < new Date();
+  const tokenExpiresSoon = form.tokenExpiresAt && !tokenExpired &&
+    new Date(form.tokenExpiresAt) < new Date(Date.now() + 10 * 60 * 1000);
+
   return (
     <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
-        <div className="flex items-center justify-between p-4 border-b">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
           <h3 className="font-semibold text-gray-800 flex items-center gap-2">
             <Settings className="w-5 h-5 text-amber-500" />
             Configurare SPV e-Factura
           </h3>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded"><X className="w-5 h-5" /></button>
         </div>
-        <div className="p-5 space-y-4">
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
-            <strong>⚠ Mediu TEST ANAF</strong> – Toate operațiunile folosesc endpoint-ul de test.
-            Obțineți token OAuth2 din <a href="https://logincert.anaf.ro" target="_blank" rel="noopener noreferrer" className="underline">portalul ANAF SPV</a>.
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Mediu</label>
-            <select
-              value={form.environment}
-              onChange={e => setForm(f => ({ ...f, environment: e.target.value }))}
-              className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
-            >
-              <option value="test">TEST (Sandbox ANAF)</option>
-              <option value="prod">PRODUCȚIE (atenție!)</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">CIF Furnizor *</label>
-            <input
-              className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
-              value={form.cif}
-              onChange={e => setForm(f => ({ ...f, cif: e.target.value }))}
-              placeholder="ex: RO12345678"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Token OAuth2 ANAF *</label>
-            <textarea
-              className="w-full border rounded-lg px-3 py-2 text-sm font-mono text-xs focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
-              rows={4}
-              value={form.token}
-              onChange={e => setForm(f => ({ ...f, token: e.target.value }))}
-              placeholder="Paste token Bearer obținut din portalul ANAF..."
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Token expiră la (opțional)</label>
-            <input
-              type="datetime-local"
-              className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
-              value={form.tokenExpiresAt}
-              onChange={e => setForm(f => ({ ...f, tokenExpiresAt: e.target.value }))}
-            />
-          </div>
+
+        {/* Inner tabs */}
+        <div className="flex border-b flex-shrink-0 px-4">
+          {[
+            { id: "oauth", label: "OAuth2 ANAF", icon: ShieldCheck },
+            { id: "manual", label: "Token manual", icon: Key },
+            { id: "general", label: "General", icon: Settings },
+            { id: "guide", label: "Ghid configurare", icon: BookOpen },
+          ].map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setSettingsTab(id)}
+              className={`flex items-center gap-1.5 px-3 py-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                settingsTab === id
+                  ? "border-amber-500 text-amber-700"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}>
+              <Icon className="w-4 h-4" />{label}
+            </button>
+          ))}
+        </div>
+
+        <div className="p-5 overflow-y-auto flex-1 space-y-4">
+          {/* ── OAuth2 Tab ─────────────────────────────────────────────────────── */}
+          {settingsTab === "oauth" && (
+            <>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+                <strong>🔐 Autorizare OAuth2 automată</strong> – Introduceți credențialele aplicației înregistrate în portalul ANAF, apoi apăsați „Autorizare ANAF" pentru a obține token-ul automat prin fluxul OAuth2 oficial.
+              </div>
+
+              {/* Token status */}
+              {form.token && (
+                <div className={`rounded-lg p-3 text-sm border ${
+                  tokenExpired       ? "bg-red-50 border-red-200 text-red-800" :
+                  tokenExpiresSoon   ? "bg-yellow-50 border-yellow-200 text-yellow-800" :
+                                       "bg-green-50 border-green-200 text-green-800"
+                }`}>
+                  <div className="flex items-center gap-2 font-medium">
+                    {tokenExpired     ? <XCircle className="w-4 h-4" />     :
+                     tokenExpiresSoon ? <AlertTriangle className="w-4 h-4" /> :
+                                        <CheckCircle className="w-4 h-4" />}
+                    {tokenExpired   ? "Token expirat – reîmprospătați sau reautorizați" :
+                     tokenExpiresSoon ? "Token expiră în curând" :
+                                        "Token activ"}
+                  </div>
+                  {form.tokenExpiresAt && (
+                    <p className="mt-1 text-xs opacity-80">
+                      Expiră: {new Date(form.tokenExpiresAt).toLocaleString("ro-RO")}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Client ID *</label>
+                <input
+                  className="w-full border rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                  value={form.clientId}
+                  onChange={e => setForm(f => ({ ...f, clientId: e.target.value }))}
+                  placeholder="Client ID primit de la ANAF după înregistrare"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Client Secret *</label>
+                <input
+                  type="password"
+                  className="w-full border rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                  value={form.clientSecret}
+                  onChange={e => setForm(f => ({ ...f, clientSecret: e.target.value }))}
+                  placeholder="Client Secret primit de la ANAF"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Redirect URI *</label>
+                <input
+                  className="w-full border rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                  value={form.redirectUri}
+                  onChange={e => setForm(f => ({ ...f, redirectUri: e.target.value }))}
+                  placeholder="ex: http://localhost:5000/api/efactura/oauth/callback"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Trebuie să corespundă exact cu redirect_uri înregistrată în portalul ANAF.
+                  Exemplu: <code className="bg-gray-100 px-1 rounded">{window.location.origin.replace(/:\d+$/, ":5000")}/api/efactura/oauth/callback</code>
+                </p>
+              </div>
+
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={startAuthorization}
+                  disabled={authorizing || !form.clientId || !form.redirectUri}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+                  {authorizing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
+                  Autorizare ANAF
+                </button>
+                {hasRefreshToken && (
+                  <button
+                    onClick={refreshToken}
+                    disabled={refreshing}
+                    className="flex items-center gap-2 px-4 py-2 border border-blue-300 text-blue-700 rounded-lg text-sm hover:bg-blue-50 disabled:opacity-50">
+                    {refreshing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    Reîmprospătare token
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* ── Manual token Tab ──────────────────────────────────────────────── */}
+          {settingsTab === "manual" && (
+            <>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+                <strong>⚠ Token manual</strong> – Introduceți direct un token Bearer obținut manual din portalul ANAF sau din alte unelte. Recomandăm fluxul OAuth2 automat din tab-ul anterior.
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Token OAuth2 ANAF</label>
+                <textarea
+                  className="w-full border rounded-lg px-3 py-2 text-sm font-mono text-xs focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                  rows={5}
+                  value={form.token}
+                  onChange={e => setForm(f => ({ ...f, token: e.target.value }))}
+                  placeholder="Paste token Bearer obținut din portalul ANAF..."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Token expiră la (opțional)</label>
+                <input
+                  type="datetime-local"
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                  value={form.tokenExpiresAt ? form.tokenExpiresAt.slice(0, 16) : ""}
+                  onChange={e => setForm(f => ({ ...f, tokenExpiresAt: e.target.value }))}
+                />
+              </div>
+            </>
+          )}
+
+          {/* ── General Tab ───────────────────────────────────────────────────── */}
+          {settingsTab === "general" && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Mediu</label>
+                <select
+                  value={form.environment}
+                  onChange={e => setForm(f => ({ ...f, environment: e.target.value }))}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400 focus:border-amber-400">
+                  <option value="test">TEST (Sandbox ANAF)</option>
+                  <option value="prod">PRODUCȚIE (atenție!)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">CIF Furnizor *</label>
+                <input
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                  value={form.cif}
+                  onChange={e => setForm(f => ({ ...f, cif: e.target.value }))}
+                  placeholder="ex: RO12345678"
+                />
+              </div>
+            </>
+          )}
+
+          {/* ── Guide Tab ─────────────────────────────────────────────────────── */}
+          {settingsTab === "guide" && (
+            <div className="space-y-4 text-sm text-gray-700">
+              <h4 className="font-semibold text-gray-800 text-base">Ghid pas cu pas – Integrare OAuth2 ANAF e-Factura</h4>
+
+              <ol className="space-y-5 list-decimal pl-5">
+                <li>
+                  <strong>Înregistrare aplicație în portalul ANAF</strong>
+                  <ul className="mt-1 space-y-1 list-disc pl-4 text-gray-600">
+                    <li>Accesați <a href="https://logincert.anaf.ro" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">https://logincert.anaf.ro</a> și autentificați-vă cu certificatul digital calificat (token USB sau smart card).</li>
+                    <li>Mergeți la secțiunea <strong>„Aplicații înregistrate"</strong> și creați o aplicație nouă.</li>
+                    <li>Completați numele aplicației, descrierea și <strong>Redirect URI</strong> (ex: <code className="bg-gray-100 px-1 rounded">http://localhost:5000/api/efactura/oauth/callback</code> pentru mediul local sau URL-ul serverului vostru în producție).</li>
+                    <li>Bifați scope-urile necesare: <strong>offline_access</strong> (pentru refresh token).</li>
+                    <li>Salvați și notați <strong>Client ID</strong> și <strong>Client Secret</strong> generate.</li>
+                  </ul>
+                </li>
+
+                <li>
+                  <strong>Configurare credențiale în aplicație</strong>
+                  <ul className="mt-1 space-y-1 list-disc pl-4 text-gray-600">
+                    <li>Deschideți tab-ul <strong>„OAuth2 ANAF"</strong> din această fereastră.</li>
+                    <li>Introduceți <strong>Client ID</strong> și <strong>Client Secret</strong> obținute la pasul anterior.</li>
+                    <li>Setați <strong>Redirect URI</strong> identic cu cel introdus în portalul ANAF.</li>
+                    <li>Mergeți la tab-ul <strong>„General"</strong> și setați CIF-ul furnizorului și mediul (TEST sau PRODUCȚIE).</li>
+                    <li>Apăsați <strong>„Salvează"</strong>.</li>
+                  </ul>
+                </li>
+
+                <li>
+                  <strong>Autorizare și obținere token</strong>
+                  <ul className="mt-1 space-y-1 list-disc pl-4 text-gray-600">
+                    <li>Apăsați butonul <strong>„Autorizare ANAF"</strong> din tab-ul OAuth2.</li>
+                    <li>Se va deschide o fereastră nouă cu pagina de autentificare ANAF.</li>
+                    <li>Autentificați-vă cu <strong>certificatul digital calificat</strong>.</li>
+                    <li>Confirmați acordul pentru aplicație când vi se solicită.</li>
+                    <li>Aplicația va prelua automat token-ul și refresh token-ul; fereastra se poate închide după redirecționare.</li>
+                  </ul>
+                </li>
+
+                <li>
+                  <strong>Reîmprospătare automată token</strong>
+                  <ul className="mt-1 space-y-1 list-disc pl-4 text-gray-600">
+                    <li>Token-ul de acces expiră de obicei în câteva ore.</li>
+                    <li>Apăsați <strong>„Reîmprospătare token"</strong> (apare după prima autorizare) pentru a obține un token nou fără a vă mai autentifica.</li>
+                    <li>Refresh token-ul are o valabilitate mai mare; dacă și acesta expiră, reluați autorizarea de la pasul 3.</li>
+                  </ul>
+                </li>
+
+                <li>
+                  <strong>Transmitere facturi în SPV</strong>
+                  <ul className="mt-1 space-y-1 list-disc pl-4 text-gray-600">
+                    <li>Reveniți la ecranul principal e-Factura SPV.</li>
+                    <li>Selectați facturile de transmis și apăsați <strong>„Transmite selectate"</strong>.</li>
+                    <li>Verificați starea cu <strong>„Verifică status ANAF"</strong>.</li>
+                    <li>Descărcați răspunsul ANAF (ZIP) dacă este necesar.</li>
+                  </ul>
+                </li>
+              </ol>
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-yellow-800 text-xs">
+                <strong>Notă importantă:</strong> Mediul de TEST ANAF folosește aceeași infrastructură OAuth2 ca și producția, dar facturile trimise nu sunt considerate documente fiscale oficiale. Testați cu facturi fictive înainte de a activa mediul de producție.
+              </div>
+
+              <div className="flex gap-2 flex-wrap">
+                <a
+                  href="https://static.anaf.ro/static/10/Anaf/Informatii_R/API/Oauth_procedura_inregistrare_aplicatii_portal_ANAF.pdf"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-blue-600 hover:underline text-xs">
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Documentație oficială OAuth2 ANAF (PDF)
+                </a>
+                <a
+                  href="https://mfinante.gov.ro/ro/web/efactura/informatii-tehnice"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-blue-600 hover:underline text-xs">
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Documentație API e-Factura ANAF
+                </a>
+              </div>
+            </div>
+          )}
+
           {msg && (
-            <div className={`rounded-lg p-3 text-sm ${msg.type === "success" ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
+            <div className={`rounded-lg p-3 text-sm ${msg.type === "success" ? "bg-green-50 text-green-800 border border-green-200" : "bg-red-50 text-red-800 border border-red-200"}`}>
               {msg.text}
             </div>
           )}
-          <div className="flex justify-end gap-2">
-            <button onClick={onClose} className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">Anulare</button>
+        </div>
+
+        <div className="flex justify-end gap-2 p-4 border-t flex-shrink-0">
+          <button onClick={onClose} className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">Închide</button>
+          {settingsTab !== "guide" && (
             <button onClick={save} disabled={saving} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 flex items-center gap-2">
               {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : null}
               Salvează
             </button>
-          </div>
+          )}
         </div>
       </div>
     </div>
@@ -322,6 +590,24 @@ const EfacturaScreen = ({ API_URL, showMessage }) => {
   const [filterStatus, setFilterStatus] = useState("all");
   const [expandedRows, setExpandedRows] = useState(new Set());
 
+  // Detect OAuth2 callback results in URL params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauthSuccess = params.get("oauth_success");
+    const oauthError   = params.get("oauth_error");
+    if (oauthSuccess) {
+      showMessage("✅ Autorizare ANAF reușită! Token OAuth2 salvat cu succes.", "success");
+      setShowSettings(true);
+      // Remove oauth query params and hash from URL
+      window.history.replaceState({}, "", window.location.pathname);
+    } else if (oauthError) {
+      showMessage(`❌ Eroare autorizare ANAF: ${oauthError}`, "error");
+      setShowSettings(true);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Date range – default: current month
   const today = new Date();
   const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split("T")[0];
@@ -464,7 +750,7 @@ const EfacturaScreen = ({ API_URL, showMessage }) => {
         <button
           onClick={() => setShowSettings(true)}
           className="flex items-center gap-2 px-3 py-2 border rounded-lg text-sm hover:bg-gray-50 text-gray-700">
-          <Settings className="w-4 h-4" /> Configurare token
+          <Settings className="w-4 h-4" /> Configurare OAuth2 / Token
         </button>
       </div>
 

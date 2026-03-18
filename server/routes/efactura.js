@@ -27,6 +27,10 @@ router.use(efacturaLimiter);
 const ANAF_TEST_BASE = 'https://api.anaf.ro/test/FCTEL/rest';
 const ANAF_PROD_BASE = 'https://api.anaf.ro/prod/FCTEL/rest';
 
+// ANAF OAuth2 endpoints
+const ANAF_AUTH_URL   = 'https://logincert.anaf.ro/anaf-oauth2/v1/authorize';
+const ANAF_TOKEN_URL  = 'https://logincert.anaf.ro/anaf-oauth2/v1/token';
+
 // Delay between consecutive ANAF API calls to avoid rate limiting
 const UPLOAD_RATE_LIMIT_DELAY_MS = 300;
 const STATUS_RATE_LIMIT_DELAY_MS = 200;
@@ -214,7 +218,16 @@ const buildUBL = (inv) => {
 router.get('/settings', (req, res) => {
   try {
     const s = getSpvSettings();
-    res.json({ cif: s.cif || '', token: s.oauth_token || '', tokenExpiresAt: s.token_expires_at || '', environment: s.environment || 'test' });
+    res.json({
+      cif:           s.cif            || '',
+      token:         s.oauth_token    || '',
+      tokenExpiresAt: s.token_expires_at || '',
+      environment:   s.environment    || 'test',
+      clientId:      s.client_id      || '',
+      clientSecret:  s.client_secret  || '',
+      redirectUri:   s.redirect_uri   || '',
+      hasRefreshToken: !!(s.refresh_token),
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -223,12 +236,160 @@ router.get('/settings', (req, res) => {
 // PUT /api/efactura/settings
 router.put('/settings', (req, res) => {
   try {
-    const { cif, token, tokenExpiresAt, environment } = req.body;
+    const { cif, token, tokenExpiresAt, environment, clientId, clientSecret, redirectUri } = req.body;
     db.prepare(
-      `UPDATE spv_settings SET cif = ?, oauth_token = ?, token_expires_at = ?, environment = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`
-    ).run(cif || '', token || '', tokenExpiresAt || '', environment || 'test');
+      `UPDATE spv_settings SET cif = ?, oauth_token = ?, token_expires_at = ?, environment = ?,
+       client_id = ?, client_secret = ?, redirect_uri = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`
+    ).run(
+      cif || '',
+      token || '',
+      tokenExpiresAt || '',
+      environment || 'test',
+      clientId || '',
+      clientSecret || '',
+      redirectUri || '',
+    );
     res.json({ success: true });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── OAuth2 ANAF flow ─────────────────────────────────────────────────────────
+
+// GET /api/efactura/oauth/authorize
+// Returns the ANAF authorization URL for the user to visit
+router.get('/oauth/authorize', (req, res) => {
+  try {
+    const settings = getSpvSettings();
+    if (!settings.client_id) {
+      return res.status(400).json({ error: 'client_id ANAF lipsă. Configurați credențialele OAuth2 în setări.' });
+    }
+    if (!settings.redirect_uri) {
+      return res.status(400).json({ error: 'redirect_uri lipsă. Configurați redirect_uri în setări.' });
+    }
+
+    const params = new URLSearchParams({
+      response_type:      'code',
+      client_id:          settings.client_id,
+      redirect_uri:       settings.redirect_uri,
+      token_content_type: 'jwt',
+      scope:              'offline_access',
+    });
+
+    const authUrl = `${ANAF_AUTH_URL}?${params.toString()}`;
+    res.json({ authUrl });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/efactura/oauth/callback
+// ANAF redirects here after the user authenticates; exchanges code for tokens
+router.get('/oauth/callback', async (req, res) => {
+  const { code, error: oauthError, error_description } = req.query;
+
+  if (oauthError) {
+    const msg = error_description || oauthError;
+    return res.redirect(`/?oauth_error=${encodeURIComponent(msg)}#efactura-spv`);
+  }
+
+  if (!code) {
+    return res.redirect('/?oauth_error=Cod+de+autorizare+lipsă#efactura-spv');
+  }
+
+  try {
+    const settings = getSpvSettings();
+
+    const body = new URLSearchParams({
+      grant_type:    'authorization_code',
+      code,
+      redirect_uri:  settings.redirect_uri,
+      client_id:     settings.client_id,
+      client_secret: settings.client_secret,
+    });
+
+    const tokenRes = await fetch(ANAF_TOKEN_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body:    body.toString(),
+    });
+
+    const tokenData = await tokenRes.json().catch(() => ({}));
+
+    if (!tokenRes.ok) {
+      const errMsg = tokenData.error_description || tokenData.error || JSON.stringify(tokenData);
+      return res.redirect(`/?oauth_error=${encodeURIComponent(errMsg)}#efactura-spv`);
+    }
+
+    const expiresAt = tokenData.expires_in
+      ? new Date(Date.now() + Number(tokenData.expires_in) * 1000).toISOString()
+      : '';
+
+    db.prepare(
+      `UPDATE spv_settings SET oauth_token = ?, refresh_token = ?, token_expires_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`
+    ).run(
+      tokenData.access_token  || '',
+      tokenData.refresh_token || '',
+      expiresAt,
+    );
+
+    res.redirect('/?oauth_success=1#efactura-spv');
+  } catch (err) {
+    console.error('OAuth2 callback error:', err);
+    res.redirect(`/?oauth_error=${encodeURIComponent(err.message)}#efactura-spv`);
+  }
+});
+
+// POST /api/efactura/oauth/refresh
+// Uses the stored refresh_token to obtain a new access_token
+router.post('/oauth/refresh', async (req, res) => {
+  try {
+    const settings = getSpvSettings();
+
+    if (!settings.refresh_token) {
+      return res.status(400).json({ error: 'Nu există refresh token salvat. Autorizați din nou aplicația.' });
+    }
+    if (!settings.client_id || !settings.client_secret) {
+      return res.status(400).json({ error: 'client_id / client_secret lipsă. Configurați credențialele OAuth2.' });
+    }
+
+    const body = new URLSearchParams({
+      grant_type:    'refresh_token',
+      refresh_token: settings.refresh_token,
+      client_id:     settings.client_id,
+      client_secret: settings.client_secret,
+    });
+
+    const tokenRes = await fetch(ANAF_TOKEN_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body:    body.toString(),
+    });
+
+    const tokenData = await tokenRes.json().catch(() => ({}));
+
+    if (!tokenRes.ok) {
+      const errMsg = tokenData.error_description || tokenData.error || JSON.stringify(tokenData);
+      return res.status(400).json({ error: `Refresh eșuat: ${errMsg}` });
+    }
+
+    const expiresAt = tokenData.expires_in
+      ? new Date(Date.now() + Number(tokenData.expires_in) * 1000).toISOString()
+      : '';
+
+    db.prepare(
+      `UPDATE spv_settings SET oauth_token = ?, refresh_token = ?, token_expires_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`
+    ).run(
+      tokenData.access_token  || '',
+      // Preserve existing refresh_token if provider doesn't return a new one (common for ANAF)
+      tokenData.refresh_token || settings.refresh_token,
+      expiresAt,
+    );
+
+    res.json({ success: true, expiresAt });
+  } catch (err) {
+    console.error('OAuth2 refresh error:', err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -792,6 +792,29 @@ const migrateCompanyConfigToBtFields = () => {
   }
 };
 
+// Migrate spv_settings table to add OAuth2 client credentials columns
+const migrateSpvSettingsForOAuth2 = () => {
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(spv_settings)").all();
+    if (tableInfo.length === 0) return;
+    const cols = tableInfo.map(c => c.name);
+    const toAdd = [
+      { name: 'client_id',     def: "TEXT DEFAULT ''" },
+      { name: 'client_secret', def: "TEXT DEFAULT ''" },
+      { name: 'redirect_uri',  def: "TEXT DEFAULT ''" },
+      { name: 'refresh_token', def: "TEXT DEFAULT ''" },
+    ];
+    for (const col of toAdd) {
+      if (!cols.includes(col.name)) {
+        db.exec(`ALTER TABLE spv_settings ADD COLUMN ${col.name} ${col.def}`);
+      }
+    }
+    console.log('✅ spv_settings OAuth2 columns migration complete.');
+  } catch (err) {
+    console.error('Error migrating spv_settings for OAuth2:', err);
+  }
+};
+
 // Migrate billing_invoices table to add SPV e-Factura upload tracking columns
 const migrateBillingInvoicesForSPV = () => {
   try {
@@ -830,6 +853,7 @@ migrateBillingInvoicesTable();
 migrateBillingInvoicesForEFactura();
 migrateCompanyConfigToBtFields();
 migrateBillingInvoicesForSPV();
+migrateSpvSettingsForOAuth2();
 
 // Create default admin user if needed
 createDefaultAdminUser();
