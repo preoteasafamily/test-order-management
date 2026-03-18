@@ -611,6 +611,23 @@ const createTables = () => {
     )
   `);
 
+  // Receipts table (chitanțe)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS receipts (
+      id TEXT PRIMARY KEY,
+      invoice_id TEXT NOT NULL UNIQUE,
+      order_id TEXT NOT NULL,
+      receipt_number INTEGER NOT NULL,
+      receipt_code TEXT NOT NULL,
+      document_date TEXT NOT NULL,
+      total REAL NOT NULL,
+      pdf_path TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (invoice_id) REFERENCES billing_invoices(id)
+    )
+  `);
+
   // Billing Settings table
   db.exec(`
     CREATE TABLE IF NOT EXISTS billing_settings (
@@ -839,6 +856,30 @@ const migrateBillingInvoicesForSPV = () => {
   }
 };
 
+// Migrate receipts table (create if missing on existing databases)
+const migrateReceiptsTable = () => {
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS receipts (
+        id TEXT PRIMARY KEY,
+        invoice_id TEXT NOT NULL UNIQUE,
+        order_id TEXT NOT NULL,
+        receipt_number INTEGER NOT NULL,
+        receipt_code TEXT NOT NULL,
+        document_date TEXT NOT NULL,
+        total REAL NOT NULL,
+        pdf_path TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (invoice_id) REFERENCES billing_invoices(id)
+      )
+    `);
+    console.log('✅ receipts table migration complete.');
+  } catch (err) {
+    console.error('Error migrating receipts table:', err);
+  }
+};
+
 // Initialize tables
 createTables();
 
@@ -854,6 +895,7 @@ migrateBillingInvoicesForEFactura();
 migrateCompanyConfigToBtFields();
 migrateBillingInvoicesForSPV();
 migrateSpvSettingsForOAuth2();
+migrateReceiptsTable();
 
 // Create default admin user if needed
 createDefaultAdminUser();

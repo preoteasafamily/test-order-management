@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { FileText, FileCode, Download, RefreshCw, Settings, Save, CheckSquare, Square, List, X, Plus, Trash2, Edit2 } from "lucide-react";
+import { FileText, FileCode, Download, RefreshCw, Settings, Save, CheckSquare, Square, List, X, Plus, Trash2, Edit2, Receipt } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import JSZip from "jszip";
@@ -50,6 +50,10 @@ const generateInvoicePDF = (inv, company, client, agent) => {
   const agentEliberatDe   = snapshot.agentEliberatDe   || agent?.ci_eliberat_de   || null;
   const agentMijlocTransp = snapshot.agentMijlocTransp || agent?.mijloc_transport || null;
 
+  // Due date and payment type from snapshot
+  const dueDate    = inv.bt_9_due_date || snapshot.dueDate || null;
+  const paymentType = snapshot.paymentType || null;
+
   const pageWidth = doc.internal.pageSize.getWidth();
   let y = 40;
 
@@ -68,7 +72,10 @@ const generateInvoicePDF = (inv, company, client, agent) => {
 
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
-  doc.text(`Data: ${inv.document_date || "-"}`, pageWidth / 2, y, { align: "center" });
+  const dateLine = dueDate
+    ? `Data: ${inv.document_date || "-"}     Scadent la: ${dueDate}`
+    : `Data: ${inv.document_date || "-"}`;
+  doc.text(dateLine, pageWidth / 2, y, { align: "center" });
   y += 18;
 
   // Show order number if present
@@ -76,7 +83,7 @@ const generateInvoicePDF = (inv, company, client, agent) => {
   if (nrComandaSnap) {
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
-    doc.text(`Nr. comandă: ${nrComandaSnap}`, pageWidth / 2, y, { align: "center" });
+    doc.text(`Nr. comanda: ${nrComandaSnap}`, pageWidth / 2, y, { align: "center" });
     y += 14;
   }
 
@@ -238,6 +245,56 @@ const generateInvoicePDF = (inv, company, client, agent) => {
   totY += 14;
 
   y = Math.max(expY, totY);
+
+  // Chitanță section – appended at bottom of invoice for immediate/cash payments without due date
+  if (paymentType === "immediate" && !dueDate) {
+    y += 20;
+    // Dashed separator line
+    doc.setDrawColor(150, 150, 150);
+    doc.setLineDashPattern([4, 3], 0);
+    doc.line(40, y, pageWidth - 40, y);
+    doc.setLineDashPattern([], 0);
+    doc.setDrawColor(0, 0, 0);
+    y += 14;
+
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("CHITANTA", pageWidth / 2, y, { align: "center" });
+    y += 16;
+
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Data: ${inv.document_date || "-"}`, pageWidth / 2, y, { align: "center" });
+    y += 14;
+
+    if (company?.bt_27_seller_name) {
+      const sellerLine = [company.bt_27_seller_name, company.bt_31_32_seller_vat_identifier ? `CIF: ${company.bt_31_32_seller_vat_identifier}` : null].filter(Boolean).join(", ");
+      doc.text(sellerLine, 40, y, { maxWidth: pageWidth - 80 });
+      y += 12;
+    }
+
+    const clientLine = [cName, cCIF ? `CIF: ${cCIF}` : null].filter(Boolean).join(", ");
+    doc.text(`Am primit de la: ${clientLine}`, 40, y, { maxWidth: pageWidth - 80 });
+    y += 14;
+
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Suma de: ${Number(inv.total_with_vat || 0).toFixed(2)} RON`, 40, y);
+    y += 14;
+
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    if (inv.invoice_code) {
+      doc.text(`Reprezentand: contravaloarea facturii ${inv.invoice_code}`, 40, y, { maxWidth: pageWidth - 80 });
+      y += 14;
+    }
+    y += 16;
+
+    // Signature lines
+    const midX = Math.floor(pageWidth / 2);
+    doc.text("Platitor,", 40, y);
+    doc.text("Casier,", midX, y);
+  }
 
   return doc;
 };
@@ -564,6 +621,57 @@ const InvoicesScreen = ({ API_URL, orders, clients, products = [], agents = [], 
       doc.save(filename);
     } catch (err) {
       showMessage(`Eroare la generarea PDF: ${err.message}`, "error");
+    }
+  };
+
+  const handleReceiptAction = async (inv) => {
+    try {
+      // Check if a receipt already exists for this invoice
+      const checkRes = await fetch(`${API_URL}/api/billing/local-invoices/${inv.id}/receipt`);
+      if (checkRes.ok) {
+        // Receipt exists – download the receipt PDF
+        const receiptPdfRes = await fetch(`${API_URL}/api/billing/local-invoices/${inv.id}/receipt/pdf`);
+        if (!receiptPdfRes.ok) {
+          showMessage("Eroare la descarcarea chitantei", "error");
+          return;
+        }
+        const blob = await receiptPdfRes.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `chitanta-${stripDiacritics(inv.invoice_code || inv.id)}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else if (checkRes.status === 404) {
+        // No receipt yet – generate it
+        const genRes = await fetch(`${API_URL}/api/billing/local-invoices/${inv.id}/receipt`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+        if (!genRes.ok) {
+          const err = await genRes.json();
+          showMessage(err.error || "Eroare la generarea chitantei", "error");
+          return;
+        }
+        // Download the newly created receipt PDF
+        const receiptPdfRes = await fetch(`${API_URL}/api/billing/local-invoices/${inv.id}/receipt/pdf`);
+        if (!receiptPdfRes.ok) {
+          showMessage("Chitanta a fost generata, dar PDF-ul nu a putut fi descarcat", "error");
+          return;
+        }
+        const blob = await receiptPdfRes.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `chitanta-${stripDiacritics(inv.invoice_code || inv.id)}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showMessage("Chitanta a fost generata si salvata!");
+      } else {
+        showMessage("Eroare la verificarea chitantei", "error");
+      }
+    } catch (err) {
+      showMessage(`Eroare: ${err.message}`, "error");
     }
   };
 
@@ -1256,11 +1364,20 @@ const InvoicesScreen = ({ API_URL, orders, clients, products = [], agents = [], 
                   <th className="px-4 py-3 text-center font-semibold text-gray-700">
                     UBL
                   </th>
+                  <th className="px-4 py-3 text-center font-semibold text-gray-700">
+                    Chitanta
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {localInvoices.map((inv) => {
                   const { order, client } = getOrderInfo(inv.order_id);
+                  const snapshot = inv.raw_snapshot && typeof inv.raw_snapshot === "object"
+                    ? inv.raw_snapshot
+                    : inv.raw_snapshot ? JSON.parse(inv.raw_snapshot) : {};
+                  const isCashPayment = (snapshot.paymentType || order?.paymentType) === "immediate";
+                  const hasDueDate = !!(inv.bt_9_due_date || snapshot.dueDate || order?.dueDate);
+                  const showReceiptBtn = isCashPayment && !hasDueDate;
                   return (
                     <tr
                       key={inv.id}
@@ -1334,6 +1451,17 @@ const InvoicesScreen = ({ API_URL, orders, clients, products = [], agents = [], 
                         >
                           <FileCode className="w-4 h-4" />
                         </button>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {showReceiptBtn && (
+                          <button
+                            onClick={() => handleReceiptAction(inv)}
+                            className="p-1.5 hover:bg-purple-100 rounded text-purple-600 transition"
+                            title="Vizualizare / Generare chitanta"
+                          >
+                            <Receipt className="w-4 h-4" />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );

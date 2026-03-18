@@ -26,6 +26,12 @@ if (!fs.existsSync(INVOICE_STORAGE_DIR)) {
   fs.mkdirSync(INVOICE_STORAGE_DIR, { recursive: true });
 }
 
+// Storage directory for generated receipt PDFs
+const RECEIPT_STORAGE_DIR = path.join(__dirname, '..', 'storage', 'receipts');
+if (!fs.existsSync(RECEIPT_STORAGE_DIR)) {
+  fs.mkdirSync(RECEIPT_STORAGE_DIR, { recursive: true });
+}
+
 // GraphQL helper using Node built-in fetch
 const gqlFetch = async (apiKey, query, variables = {}) => {
   const credentials = Buffer.from(`${apiKey}:`).toString('base64');
@@ -135,7 +141,8 @@ const getCompanySettings = () => {
 // Address is split across two lines: street on line 1, city+county on line 2.
 // Right column is omitted gracefully when buyer data is absent.
 // Table columns: Nr. crt. | Cod (EAN/barcode, BT-157) | Descriere | UM | Cant. | Preț | Total
-const generateInvoicePdf = (invoice, order, client) => {
+// receiptData: optional receipt record to append chitanță section at bottom (for immediate/cash payments)
+const generateInvoicePdf = (invoice, order, client, receiptData) => {
   return new Promise((resolve, reject) => {
     const snapshot = invoice.raw_snapshot
       ? (typeof invoice.raw_snapshot === 'string'
@@ -160,6 +167,9 @@ const generateInvoicePdf = (invoice, order, client) => {
       deliveryCountry:  snapshot.clientDeliveryCountry || client?.delivery_country || 'RO',
     };
 
+    // Due date from invoice bt_9_due_date, snapshot, or order
+    const dueDate = invoice.bt_9_due_date || snapshot.dueDate || order?.dueDate || null;
+
     const pdfPath = path.join(INVOICE_STORAGE_DIR, `${invoice.id}.pdf`);
     const doc = new PDFDocument({ margin: 50, size: 'A4' });
     const stream = fs.createWriteStream(pdfPath);
@@ -173,7 +183,10 @@ const generateInvoicePdf = (invoice, order, client) => {
     if (invoice.invoice_code) {
       doc.fontSize(14).font('Helvetica').text(`Nr: ${invoice.invoice_code}`, { align: 'center' });
     }
-    doc.fontSize(10).text(`Data: ${invoice.document_date || order?.date || '-'}`, { align: 'center' });
+    // Show due date on the same line as invoice date when set
+    const dateStr = invoice.document_date || order?.date || '-';
+    const dateLine = dueDate ? `Data: ${dateStr}     Scadent la: ${dueDate}` : `Data: ${dateStr}`;
+    doc.fontSize(10).text(dateLine, { align: 'center' });
     doc.moveDown(0.5);
 
     // Two-column header: Seller (left, no title) | Buyer (right-aligned, no title)
@@ -334,6 +347,43 @@ const generateInvoicePdf = (invoice, order, client) => {
     doc.y = Math.max(expY, totY);
     doc.x = leftX;
 
+    // Chitanță section – appended at bottom of invoice when receiptData provided (immediate/cash payment)
+    if (receiptData) {
+      doc.moveDown(1.5);
+      const chitY = doc.y;
+      // Separator line
+      doc.moveTo(50, chitY).lineTo(545, chitY).lineWidth(1).dash(4, { space: 3 }).stroke();
+      doc.undash();
+      doc.moveDown(0.6);
+
+      const company = getCompanySettings();
+      const chitX = 50;
+      const chitPageWidth = doc.page.width - 100;
+
+      doc.fontSize(14).font('Helvetica-Bold').text('CHITANTA', chitX, doc.y, { align: 'center', width: chitPageWidth });
+      doc.fontSize(11).font('Helvetica').text(`Nr: ${receiptData.receipt_code}`, chitX, doc.y, { align: 'center', width: chitPageWidth });
+      doc.fontSize(9).text(`Data: ${receiptData.document_date}`, chitX, doc.y, { align: 'center', width: chitPageWidth });
+      doc.moveDown(0.5);
+
+      doc.fontSize(9).font('Helvetica');
+      if (company?.bt_27_seller_name) {
+        doc.text(`${company.bt_27_seller_name}${company.bt_31_32_seller_vat_identifier ? ', CIF: ' + company.bt_31_32_seller_vat_identifier : ''}`, chitX, doc.y, { width: chitPageWidth });
+      }
+      doc.text(`Am primit de la: ${c.nume || '-'}${c.cif ? ', CIF: ' + c.cif : ''}`, chitX, doc.y, { width: chitPageWidth });
+      doc.fontSize(11).font('Helvetica-Bold');
+      doc.text(`Suma de: ${formatNumber(receiptData.total)} RON`, chitX, doc.y, { width: chitPageWidth });
+      doc.fontSize(9).font('Helvetica');
+      doc.text(`Reprezentand: contravaloarea facturii ${invoice.invoice_code || ''}`, chitX, doc.y, { width: chitPageWidth });
+      doc.moveDown(0.8);
+
+      // Signature area – two columns
+      const sigMidX = 50 + Math.floor(chitPageWidth / 2) + 10;
+      const sigY = doc.y;
+      doc.font('Helvetica').fontSize(9);
+      doc.text('Platitor,', 50, sigY, { width: sigMidX - 60 });
+      doc.text('Casier,', sigMidX, sigY, { width: chitPageWidth - (sigMidX - 50) });
+    }
+
     doc.end();
 
     stream.on('finish', () => resolve(pdfPath));
@@ -421,6 +471,105 @@ const upsertInvoiceLines = (invoiceId, items, products, client) => {
       lineIndex++;
     }
   });
+};
+
+// Generate a standalone receipt (chitanță) PDF and save it to disk
+const generateReceiptPdf = (receipt, invoice, client) => {
+  return new Promise((resolve, reject) => {
+    const pdfPath = path.join(RECEIPT_STORAGE_DIR, `${receipt.id}.pdf`);
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    const stream = fs.createWriteStream(pdfPath);
+
+    doc.pipe(stream);
+
+    const company = getCompanySettings();
+    const pageWidth = doc.page.width;
+    const contentWidth = pageWidth - 100;
+
+    doc.fontSize(18).font('Helvetica-Bold').text('CHITANTA', { align: 'center' });
+    doc.fontSize(12).font('Helvetica').text(`Nr: ${receipt.receipt_code}`, { align: 'center' });
+    doc.fontSize(10).text(`Data: ${receipt.document_date}`, { align: 'center' });
+    doc.moveDown(0.8);
+
+    if (company?.bt_27_seller_name) {
+      const sellerLine = [company.bt_27_seller_name, company.bt_31_32_seller_vat_identifier ? `CIF: ${company.bt_31_32_seller_vat_identifier}` : null].filter(Boolean).join(', ');
+      doc.fontSize(9).font('Helvetica').text(sellerLine, 50, doc.y, { width: contentWidth });
+    }
+
+    const clientName = client?.nume || invoice?.client_name || '-';
+    const clientCIF = client?.cif || null;
+    const clientStr = [clientName, clientCIF ? `CIF: ${clientCIF}` : null].filter(Boolean).join(', ');
+    doc.fontSize(9).font('Helvetica').text(`Am primit de la: ${clientStr}`, 50, doc.y, { width: contentWidth });
+
+    doc.moveDown(0.5);
+    doc.fontSize(13).font('Helvetica-Bold').text(`Suma de: ${formatNumber(receipt.total)} RON`, 50, doc.y, { width: contentWidth });
+    doc.fontSize(9).font('Helvetica');
+    if (invoice?.invoice_code) {
+      doc.text(`Reprezentand: contravaloarea facturii ${invoice.invoice_code}`, 50, doc.y, { width: contentWidth });
+    }
+    doc.moveDown(1.5);
+
+    // Signature area
+    const sigY = doc.y;
+    const midX = 50 + Math.floor(contentWidth / 2) + 10;
+    doc.text('Platitor,', 50, sigY, { width: midX - 60 });
+    doc.text('Casier,', midX, sigY, { width: contentWidth - (midX - 50) });
+
+    doc.end();
+
+    stream.on('finish', () => resolve(pdfPath));
+    stream.on('error', reject);
+  });
+};
+
+// Generate (or return existing) a receipt for an invoice (cash payment, no due date)
+// invoiceRow: billing_invoices record; order: orders record
+// Returns the receipt record (or null on error)
+const generateLocalReceipt = (invoiceRow, order) => {
+  try {
+    const existing = db.prepare('SELECT * FROM receipts WHERE invoice_id = ?').get(invoiceRow.id);
+    if (existing) return existing;
+
+    const settings = getBillingSettings();
+    const receiptNumber = settings.receipt_next_number || 1;
+    const series = settings.receipt_series || 'CN';
+    const receiptCode = `${series}-${String(receiptNumber).padStart(6, '0')}`;
+
+    // Increment next receipt number
+    db.prepare('UPDATE billing_settings SET receipt_next_number = receipt_next_number + 1, updated_at = CURRENT_TIMESTAMP WHERE id = 1').run();
+
+    const receiptId = `receipt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const documentDate = invoiceRow.document_date || order?.date || new Date().toISOString().split('T')[0];
+    const total = invoiceRow.total_with_vat || 0;
+
+    db.prepare(`
+      INSERT INTO receipts (id, invoice_id, order_id, receipt_number, receipt_code, document_date, total)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(receiptId, invoiceRow.id, invoiceRow.order_id, receiptNumber, receiptCode, documentDate, total);
+
+    const receipt = db.prepare('SELECT * FROM receipts WHERE id = ?').get(receiptId);
+
+    // Generate standalone receipt PDF asynchronously
+    const client = invoiceRow.order_id
+      ? (() => {
+          const orderRow = db.prepare('SELECT clientId FROM orders WHERE id = ?').get(invoiceRow.order_id);
+          return orderRow?.clientId ? db.prepare('SELECT * FROM clients WHERE id = ?').get(orderRow.clientId) : null;
+        })()
+      : null;
+
+    generateReceiptPdf(receipt, invoiceRow, client)
+      .then((pdfPath) => {
+        db.prepare('UPDATE receipts SET pdf_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(pdfPath, receiptId);
+      })
+      .catch((err) => {
+        console.error(`Receipt PDF generation failed for receipt ${receiptId}:`, err);
+      });
+
+    return receipt;
+  } catch (err) {
+    console.error('generateLocalReceipt error:', err);
+    return null;
+  }
 };
 
 // Generate (or regenerate) a local invoice for an order (synchronous, uses transaction)
@@ -518,6 +667,9 @@ const generateLocalInvoice = (orderId) => {
         agentMijlocTransp: agent?.mijloc_transport || null,
         // Order number (from client who requires it)
         nrComanda:         order.nrComanda          || null,
+        // Payment / due date fields
+        paymentType:       order.paymentType        || null,
+        dueDate:           order.dueDate            || null,
         documentDate,
         lines,
         total: order.total,
@@ -531,6 +683,7 @@ const generateLocalInvoice = (orderId) => {
             series = ?, document_date = ?, total = ?, total_vat = ?,
             total_with_vat = ?, status = ?, raw_snapshot = ?,
             invoice_number = ?, invoice_code = ?,
+            bt_9_due_date = ?,
             bt_27_seller_name = ?, bt_29_seller_identifier = ?,
             bt_30_seller_legal_registration = ?, bt_31_32_seller_vat_identifier = ?,
             bt_35_seller_address = ?, bt_37_seller_city = ?,
@@ -549,6 +702,7 @@ const generateLocalInvoice = (orderId) => {
           JSON.stringify(snapshot),
           invoiceNumber,
           invoiceCode,
+          order.dueDate || null,
           snapshot.bt_27_seller_name,
           snapshot.bt_29_seller_identifier,
           snapshot.bt_30_seller_legal_registration,
@@ -573,13 +727,14 @@ const generateLocalInvoice = (orderId) => {
             (id, order_id, series, document_date, external_client_id,
              total, total_vat, total_with_vat, status, raw_snapshot,
              invoice_number, invoice_code, export_status,
+             bt_9_due_date,
              bt_27_seller_name, bt_29_seller_identifier,
              bt_30_seller_legal_registration, bt_31_32_seller_vat_identifier,
              bt_35_seller_address, bt_37_seller_city,
              bt_39_seller_region, bt_40_seller_country,
              bt_41_seller_contact, bt_42_seller_phone, bt_43_seller_email,
              bt_84_payee_iban, bt_85_payee_bank_name, bt_81_payment_means_code)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).run(
           localId,
           orderId,
@@ -594,6 +749,7 @@ const generateLocalInvoice = (orderId) => {
           invoiceNumber,
           invoiceCode,
           'disabled',
+          order.dueDate || null,
           snapshot.bt_27_seller_name,
           snapshot.bt_29_seller_identifier,
           snapshot.bt_30_seller_legal_registration,
@@ -618,8 +774,20 @@ const generateLocalInvoice = (orderId) => {
     // Populate billing_invoice_lines with BT fields from products
     upsertInvoiceLines(invoiceRow.id, items, products, client);
 
+    // For immediate (cash) payments without a due date, auto-generate a receipt (chitanță)
+    const isCashPayment = order.paymentType === 'immediate';
+    const hasDueDate = !!(order.dueDate);
+    let receiptData = null;
+    if (isCashPayment && !hasDueDate) {
+      try {
+        receiptData = generateLocalReceipt(invoiceRow, order);
+      } catch (err) {
+        console.error(`Receipt generation failed for invoice ${invoiceRow.id}:`, err);
+      }
+    }
+
     // Generate PDF asynchronously (don't block the response)
-    generateInvoicePdf(invoiceRow, order, client)
+    generateInvoicePdf(invoiceRow, order, client, receiptData)
       .then((pdfPath) => {
         db.prepare(
           'UPDATE billing_invoices SET pdf_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
@@ -698,6 +866,87 @@ router.put('/settings', (req, res) => {
 
     res.json(getBillingSettings());
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ RECEIPT (CHITANȚĂ) ENDPOINTS ============
+
+// GET /api/billing/local-invoices/:id/receipt - get receipt info for an invoice
+router.get('/local-invoices/:id/receipt', (req, res) => {
+  try {
+    const inv = db.prepare('SELECT id FROM billing_invoices WHERE id = ?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+
+    const receipt = db.prepare('SELECT * FROM receipts WHERE invoice_id = ?').get(req.params.id);
+    if (!receipt) return res.status(404).json({ error: 'Receipt not found' });
+
+    res.json(receipt);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/billing/local-invoices/:id/receipt - generate receipt for an invoice (if not already created)
+router.post('/local-invoices/:id/receipt', (req, res) => {
+  try {
+    const inv = db.prepare('SELECT * FROM billing_invoices WHERE id = ?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+
+    const existing = db.prepare('SELECT * FROM receipts WHERE invoice_id = ?').get(req.params.id);
+    if (existing) return res.json(existing);
+
+    const order = inv.order_id ? db.prepare('SELECT * FROM orders WHERE id = ?').get(inv.order_id) : null;
+    const receipt = generateLocalReceipt(inv, order);
+    if (!receipt) return res.status(500).json({ error: 'Receipt generation failed' });
+
+    // Regenerate invoice PDF to include chitanță section
+    const client = order?.clientId ? db.prepare('SELECT * FROM clients WHERE id = ?').get(order.clientId) : null;
+    generateInvoicePdf(inv, order, client, receipt)
+      .then((pdfPath) => {
+        db.prepare('UPDATE billing_invoices SET pdf_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(pdfPath, inv.id);
+      })
+      .catch((err) => console.error(`Invoice PDF regeneration failed for ${inv.id}:`, err));
+
+    res.status(201).json(receipt);
+  } catch (err) {
+    console.error('Error generating receipt:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/billing/local-invoices/:id/receipt/pdf - download receipt PDF
+router.get('/local-invoices/:id/receipt/pdf', (req, res) => {
+  try {
+    const inv = db.prepare('SELECT * FROM billing_invoices WHERE id = ?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+
+    const receipt = db.prepare('SELECT * FROM receipts WHERE invoice_id = ?').get(req.params.id);
+    if (!receipt) return res.status(404).json({ error: 'Receipt not found' });
+
+    if (!receipt.pdf_path || !fs.existsSync(receipt.pdf_path)) {
+      // Generate receipt PDF on-the-fly
+      const order = inv.order_id ? db.prepare('SELECT * FROM orders WHERE id = ?').get(inv.order_id) : null;
+      const client = order?.clientId ? db.prepare('SELECT * FROM clients WHERE id = ?').get(order.clientId) : null;
+      generateReceiptPdf(receipt, inv, client)
+        .then((pdfPath) => {
+          db.prepare('UPDATE receipts SET pdf_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(pdfPath, receipt.id);
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader('Content-Disposition', `attachment; filename="chitanta-${receipt.receipt_code || receipt.id}.pdf"`);
+          fs.createReadStream(pdfPath).pipe(res);
+        })
+        .catch((err) => {
+          console.error('Receipt PDF generation error:', err);
+          res.status(500).json({ error: 'PDF generation failed' });
+        });
+      return;
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="chitanta-${receipt.receipt_code || receipt.id}.pdf"`);
+    fs.createReadStream(receipt.pdf_path).pipe(res);
+  } catch (err) {
+    console.error('Error serving receipt PDF:', err);
     res.status(500).json({ error: err.message });
   }
 });
