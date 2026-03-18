@@ -25,13 +25,14 @@ let loadPromise = null;     // shared promise to avoid parallel fetches
  */
 const fetchAsBase64 = async (url) => {
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`Failed to fetch font: ${url} (${response.status})`);
+  if (!response.ok) throw new Error(`Failed to fetch font: ${url} (${response.status} ${response.statusText})`);
   const buffer = await response.arrayBuffer();
-  // Convert ArrayBuffer → binary string → base64
+  // Convert ArrayBuffer → base64 in chunks to avoid stack overflow on large font files
   const bytes = new Uint8Array(buffer);
+  const CHUNK = 8192;
   let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  for (let i = 0; i < bytes.byteLength; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
   }
   return btoa(binary);
 };
