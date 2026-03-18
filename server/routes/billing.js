@@ -297,9 +297,8 @@ const generateInvoicePdf = (invoice, order, client) => {
 
         // Render additionalInfo (e.g. preț/kg) below description for KG lines
         if (item.additionalInfo) {
-          doc.font('Helvetica-Oblique').fontSize(7)
+          doc.font('Helvetica').fontSize(8)
             .text(item.additionalInfo, col.desc, doc.y, { width: 175, align: 'left' });
-          doc.font('Helvetica').fontSize(8);
           doc.moveDown(0.3);
         }
       });
