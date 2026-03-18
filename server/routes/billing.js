@@ -55,7 +55,7 @@ const formatNumber = (n) => {
 // Each line includes: lineId (Nr. crt.), barcode (EAN/codBare), productCode (codArticolFurnizor),
 // description, unit, unitCount, price, total, vat.
 // When client.afiseazaKG is set and product.gramajKg > 0, an extra KG line is added after
-// each normal line with quantity in kg, zero value/TVA/total, and additionalInfo showing pret/kg.
+// each normal line with quantity in kg, zero value/TVA/total, and pret/kg appended to description.
 const mapOrderItems = (items, products, client) => {
   const result = [];
   let lineId = 1;
@@ -94,8 +94,7 @@ const mapOrderItems = (items, products, client) => {
       const kgPos = {
         lineId,
         barcode: product.codBare || null,
-        description: product.descriere || item.productId || 'Produs',
-        additionalInfo: `pret/kg: ${pretPerKg.toFixed(3)} RON/kg`,
+        description: `${product.descriere || item.productId || 'Produs'} - pret/kg: ${pretPerKg.toFixed(3)} RON/kg`,
         unit: 'kg',
         unitCount: cantitateKg.toFixed(3),
         price: '0.00',
@@ -294,13 +293,6 @@ const generateInvoicePdf = (invoice, order, client) => {
         doc.text(String(price), col.price, y, { width: 52,  align: 'right' });
         doc.text(String(total), col.total, y, { width: 68,  align: 'right' });
         doc.moveDown(0.4);
-
-        // Render additionalInfo (e.g. pret/kg) below description for KG lines
-        if (item.additionalInfo) {
-          doc.font('Helvetica').fontSize(8)
-            .text(item.additionalInfo, col.desc, doc.y, { width: 175, align: 'left' });
-          doc.moveDown(0.3);
-        }
       });
 
       doc.moveTo(50, doc.y).lineTo(540, doc.y).stroke();
@@ -421,8 +413,8 @@ const upsertInvoiceLines = (invoiceId, items, products, client) => {
         0,
         null,
         0,
-        product?.descriere || null,
-        `pret/kg: ${pretPerKg.toFixed(3)} RON/kg`,
+        `${product?.descriere || ''} - pret/kg: ${pretPerKg.toFixed(3)} RON/kg`,
+        null,
         product?.codArticolFurnizor || null,
         product?.codBare || null
       );
