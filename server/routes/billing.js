@@ -26,6 +26,10 @@ if (!fs.existsSync(INVOICE_STORAGE_DIR)) {
   fs.mkdirSync(INVOICE_STORAGE_DIR, { recursive: true });
 }
 
+// Font paths – DejaVu Sans supports full Unicode including Romanian diacritics (ț, ș, ă, â, î)
+const FONT_REGULAR = path.join(__dirname, '..', 'fonts', 'DejaVuSans.ttf');
+const FONT_BOLD    = path.join(__dirname, '..', 'fonts', 'DejaVuSans-Bold.ttf');
+
 // GraphQL helper using Node built-in fetch
 const gqlFetch = async (apiKey, query, variables = {}) => {
   const credentials = Buffer.from(`${apiKey}:`).toString('base64');
@@ -167,12 +171,16 @@ const generateInvoicePdf = (invoice, order, client) => {
 
     doc.pipe(stream);
 
+    // Register Unicode-capable fonts so Romanian diacritics (ț, ș, ă, â, î) render correctly
+    doc.registerFont('DejaVuSans',      FONT_REGULAR);
+    doc.registerFont('DejaVuSans-Bold', FONT_BOLD);
+
     // Header
-    doc.fontSize(20).font('Helvetica-Bold').text('FACTURĂ', { align: 'center' });
+    doc.fontSize(20).font('DejaVuSans-Bold').text('FACTURĂ', { align: 'center' });
     doc.moveDown(0.5);
 
     if (invoice.invoice_code) {
-      doc.fontSize(14).font('Helvetica').text(`Nr: ${invoice.invoice_code}`, { align: 'center' });
+      doc.fontSize(14).font('DejaVuSans').text(`Nr: ${invoice.invoice_code}`, { align: 'center' });
     }
     doc.fontSize(10).text(`Data: ${invoice.document_date || order?.date || '-'}`, { align: 'center' });
     doc.moveDown(0.5);
@@ -205,9 +213,9 @@ const generateInvoicePdf = (invoice, order, client) => {
     const sellerIBAN   = snapshot.bt_84_payee_iban                || company?.bt_84_payee_iban;
 
     if (sellerName || sellerCIF) {
-      doc.font('Helvetica-Bold').fontSize(9);
+      doc.font('DejaVuSans-Bold').fontSize(9);
       if (sellerName)   { doc.text(sellerName,                   colLeft, leftY, { width: leftColWidth }); leftY += 12; }
-      doc.font('Helvetica').fontSize(9);
+      doc.font('DejaVuSans').fontSize(9);
       if (sellerCIF)    { doc.text(`CIF: ${sellerCIF}`,          colLeft, leftY); leftY += 12; }
       if (sellerRegCom) { doc.text(`Reg. Com.: ${sellerRegCom}`, colLeft, leftY); leftY += 12; }
       if (sellerStreet) { doc.text(sellerStreet,                 colLeft, leftY, { width: leftColWidth }); leftY += 12; }
@@ -222,9 +230,9 @@ const generateInvoicePdf = (invoice, order, client) => {
     // RIGHT COLUMN – Buyer (Cumpărător) BT-44…BT-55; omitted if no buyer data
     const hasBuyerData = c.nume || c.cif || c.nrRegCom || c.strada;
     if (hasBuyerData) {
-      doc.font('Helvetica-Bold').fontSize(9);
+      doc.font('DejaVuSans-Bold').fontSize(9);
       doc.text(c.nume || invoice.external_client_id || '-', colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12;
-      doc.font('Helvetica').fontSize(9);
+      doc.font('DejaVuSans').fontSize(9);
       if (c.cif)      { doc.text(`CIF: ${c.cif}`,                             colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12; }
       if (c.nrRegCom) { doc.text(`Reg. Com.: ${c.nrRegCom}`,                  colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12; }
       if (c.strada)   { doc.text(c.strada,                                    colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12; }
@@ -238,7 +246,7 @@ const generateInvoicePdf = (invoice, order, client) => {
     // Delivery section – right column, under buyer data; same font/size as buyer; no section title
     const hasDelivery = c.deliveryName || c.deliveryGLN || c.deliveryAddress || c.deliveryCity || c.deliveryRegion;
     if (hasDelivery) {
-      doc.font('Helvetica').fontSize(9);
+      doc.font('DejaVuSans').fontSize(9);
       if (c.deliveryName)    { doc.text(`Denumire Loc Livrare: ${c.deliveryName}`,    colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12; }
       if (c.deliveryGLN)     { doc.text(`GLN Loc Livrare: ${c.deliveryGLN}`,          colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12; }
       if (c.deliveryAddress) { doc.text(`Adresa Livrare: ${c.deliveryAddress}`,       colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12; }
@@ -255,7 +263,7 @@ const generateInvoicePdf = (invoice, order, client) => {
     // Items table – columns: Nr. | Cod | Descriere | UM | Cant. | Preț | Total
     const items = snapshot.lines || snapshot.documentPositions || [];
     if (items.length > 0) {
-      doc.fontSize(11).font('Helvetica-Bold').text('Produse:');
+      doc.fontSize(11).font('DejaVuSans-Bold').text('Produse:');
       doc.moveDown(0.3);
 
       const tableTop = doc.y;
@@ -263,7 +271,7 @@ const generateInvoicePdf = (invoice, order, client) => {
       const col = { nr: 50, cod: 75, desc: 160, um: 340, qty: 370, price: 415, total: 470 };
 
       // Table header
-      doc.fontSize(8).font('Helvetica-Bold');
+      doc.fontSize(8).font('DejaVuSans-Bold');
       doc.text('Nr.',    col.nr,   tableTop, { width: 22,  align: 'right' });
       doc.text('Cod',    col.cod,  tableTop, { width: 82,  align: 'left'  });
       doc.text('Descriere', col.desc, tableTop, { width: 175, align: 'left' });
@@ -275,7 +283,7 @@ const generateInvoicePdf = (invoice, order, client) => {
       doc.moveTo(50, doc.y + 2).lineTo(540, doc.y + 2).stroke();
       doc.moveDown(0.4);
 
-      doc.font('Helvetica').fontSize(8);
+      doc.font('DejaVuSans').fontSize(8);
       items.forEach((item, idx) => {
         const y = doc.y;
         const nr    = item.lineId    != null ? String(item.lineId) : String(idx + 1);
@@ -297,7 +305,7 @@ const generateInvoicePdf = (invoice, order, client) => {
 
         // Render additionalInfo (e.g. preț/kg) below description for KG lines
         if (item.additionalInfo) {
-          doc.font('Helvetica').fontSize(8)
+          doc.font('DejaVuSans').fontSize(8)
             .text(item.additionalInfo, col.desc, doc.y, { width: 175, align: 'left' });
           doc.moveDown(0.3);
         }
@@ -319,9 +327,9 @@ const generateInvoicePdf = (invoice, order, client) => {
     let expY = sectionY;
     const hasAgentData = snapshot.agentName || snapshot.agentCiSerie || snapshot.agentCiNumar || snapshot.agentEliberatDe || snapshot.agentMijlocTransp;
     if (hasAgentData) {
-      doc.font('Helvetica-Bold').fontSize(9);
+      doc.font('DejaVuSans-Bold').fontSize(9);
       doc.text('Date privind expediția:', leftX, expY, { width: leftColW }); expY += 14;
-      doc.font('Helvetica').fontSize(9);
+      doc.font('DejaVuSans').fontSize(9);
       const row1Parts = [];
       if (snapshot.agentName) row1Parts.push(`Delegat: ${snapshot.agentName}`);
       if (snapshot.agentMijlocTransp) row1Parts.push(`Mijloc transport: ${snapshot.agentMijlocTransp}`);
@@ -333,10 +341,10 @@ const generateInvoicePdf = (invoice, order, client) => {
 
     // RIGHT column – totals
     let totY = sectionY;
-    doc.fontSize(10).font('Helvetica');
+    doc.fontSize(10).font('DejaVuSans');
     doc.text(`Total fără TVA: ${formatNumber(invoice.total)} RON`, midX, totY, { width: rightColW, align: 'right' }); totY += 14;
     doc.text(`TVA: ${formatNumber(invoice.total_vat)} RON`, midX, totY, { width: rightColW, align: 'right' }); totY += 14;
-    doc.fontSize(11).font('Helvetica-Bold');
+    doc.fontSize(11).font('DejaVuSans-Bold');
     doc.text(`TOTAL: ${formatNumber(invoice.total_with_vat)} RON`, midX, totY, { width: rightColW, align: 'right' }); totY += 16;
 
     doc.y = Math.max(expY, totY);
@@ -772,9 +780,11 @@ router.get('/local-invoices/:id/pdf', (req, res) => {
           res.send(buf);
         });
 
-        // Write minimal PDF
-        doc2.fontSize(20).font('Helvetica-Bold').text('FACTURĂ', { align: 'center' });
-        if (inv.invoice_code) doc2.fontSize(14).font('Helvetica').text(`Nr: ${inv.invoice_code}`, { align: 'center' });
+        // Write minimal PDF using Unicode-capable font
+        doc2.registerFont('DejaVuSans',      FONT_REGULAR);
+        doc2.registerFont('DejaVuSans-Bold', FONT_BOLD);
+        doc2.fontSize(20).font('DejaVuSans-Bold').text('FACTURĂ', { align: 'center' });
+        if (inv.invoice_code) doc2.fontSize(14).font('DejaVuSans').text(`Nr: ${inv.invoice_code}`, { align: 'center' });
         doc2.fontSize(10).text(`Data: ${inv.document_date || order?.date || '-'}`, { align: 'center' });
         doc2.end();
         return;

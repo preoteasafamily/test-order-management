@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { FileText, FileCode, Download, RefreshCw, X, List, Save, Plus, Trash2, Edit2, CheckSquare, Square, Printer } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { initPdfFonts, registerFontsOnDoc, PDF_FONT } from "../utils/pdfFonts";
 
 // Strip diacritics for safe filenames (slashes replaced with hyphens)
 const stripDiacritics = (str) =>
@@ -78,6 +79,9 @@ const buildHeaderRows = (company, snap, client) => {
 // Draw one invoice onto the current page of an existing jsPDF document.
 // The caller is responsible for calling doc.addPage() before this when needed.
 const drawInvoiceOnDoc = (doc, inv, company, client, agent, order) => {
+  // Register Unicode-capable font (idempotent – safe to call once per doc or per page)
+  registerFontsOnDoc(doc);
+  const font = PDF_FONT();
   const snap =
     inv.raw_snapshot && typeof inv.raw_snapshot === "object"
       ? inv.raw_snapshot
@@ -95,17 +99,17 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order) => {
   const pageWidth = doc.internal.pageSize.getWidth();
   let y = 40;
 
-  doc.setFontSize(16).setFont("helvetica", "bold");
+  doc.setFontSize(16).setFont(font, "bold");
   doc.text("FACTURA", pageWidth / 2, y, { align: "center" });
   y += 18;
 
   if (inv.invoice_code) {
-    doc.setFontSize(12).setFont("helvetica", "normal");
+    doc.setFontSize(12).setFont(font, "normal");
     doc.text(`Nr: ${inv.invoice_code}`, pageWidth / 2, y, { align: "center" });
     y += 14;
   }
 
-  doc.setFontSize(9).setFont("helvetica", "normal");
+  doc.setFontSize(9).setFont(font, "normal");
   doc.text(`Data: ${inv.document_date || "-"}`, pageWidth / 2, y, {
     align: "center",
   });
@@ -114,7 +118,7 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order) => {
   // Show order number if present
   const nrComandaSnap = snap.nrComanda || order?.nrComanda || null;
   if (nrComandaSnap) {
-    doc.setFontSize(9).setFont("helvetica", "normal");
+    doc.setFontSize(9).setFont(font, "normal");
     doc.text(`Nr. comanda: ${nrComandaSnap}`, pageWidth / 2, y, { align: "center" });
     y += 13;
   }
@@ -132,7 +136,7 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order) => {
   const rows = buildHeaderRows(company, snap, client);
   for (const row of rows) {
     doc
-      .setFont("helvetica", row.bold ? "bold" : "normal")
+      .setFont(font, row.bold ? "bold" : "normal")
       .setFontSize(9);
     if (row.seller) doc.text(row.seller, leftX, y, { maxWidth: halfWidth });
     if (row.buyer) {
@@ -141,7 +145,7 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order) => {
     }
     y += lineH;
   }
-  doc.setFont("helvetica", "normal");
+  doc.setFont(font, "normal");
 
   // Delivery section – right column, directly under buyer data; same font/size/style as buyer
   const dName    = snap.clientDeliveryName    || client?.delivery_name    || null;
@@ -151,7 +155,7 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order) => {
   const dRegion  = snap.clientDeliveryRegion  || client?.delivery_region  || null;
   const hasDelivery = dName || dGLN || dAddress || dCity || dRegion;
   if (hasDelivery) {
-    doc.setFontSize(9).setFont("helvetica", "normal");
+    doc.setFontSize(9).setFont(font, "normal");
     if (dName) {
       const ln = doc.splitTextToSize(`Denumire Loc Livrare: ${dName}`, halfWidth);
       doc.text(ln, rightMargin, rightY, { align: "right" }); rightY += ln.length * lineH;
@@ -197,8 +201,8 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order) => {
               parseFloat(item.price || 0)
         ).toFixed(2),
       ]),
-      styles: { fontSize: 8, textColor: 0 },
-      headStyles: { fillColor: [220, 220, 220], textColor: 0, fontStyle: "bold" },
+      styles: { fontSize: 8, textColor: 0, font },
+      headStyles: { fillColor: [220, 220, 220], textColor: 0, fontStyle: "bold", font },
       columnStyles: {
         0: { cellWidth: 25, halign: "right" },
         1: { cellWidth: 75 },
@@ -219,10 +223,10 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order) => {
   let expY = sectionY;
   const hasAgentData = agentName || agentCiSerie || agentCiNumar || agentEliberatDe || agentMijlocTransp;
   if (hasAgentData) {
-    doc.setFontSize(9).setFont("helvetica", "bold");
+    doc.setFontSize(9).setFont(font, "bold");
     doc.text("Date privind expeditia:", expX, expY);
     expY += 12;
-    doc.setFont("helvetica", "normal");
+    doc.setFont(font, "normal");
     // Compact row 1: Delegat + Mijloc transport on the same line
     const row1Parts = [];
     if (agentName) row1Parts.push(`Delegat: ${agentName}`);
@@ -236,7 +240,7 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order) => {
 
   // RIGHT column – totals
   let totY = sectionY;
-  doc.setFontSize(9).setFont("helvetica", "normal");
+  doc.setFontSize(9).setFont(font, "normal");
   doc.text(
     `Total fara TVA: ${Number(inv.total || 0).toFixed(2)} RON`,
     pageWidth - 40,
@@ -251,7 +255,7 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order) => {
     { align: "right" }
   );
   totY += 12;
-  doc.setFont("helvetica", "bold");
+  doc.setFont(font, "bold");
   doc.text(
     `TOTAL: ${Number(inv.total_with_vat || 0).toFixed(2)} RON`,
     pageWidth - 40,
@@ -532,6 +536,7 @@ const InvoicesV2Screen = ({ API_URL, orders, clients, agents, products = [], sho
 
   useEffect(() => {
     loadData();
+    initPdfFonts(); // Pre-load Unicode font for correct Romanian diacritic rendering
   }, []);
 
   const getClientForInvoice = (inv) => {

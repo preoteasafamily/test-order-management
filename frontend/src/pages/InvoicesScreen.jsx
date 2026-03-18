@@ -3,6 +3,7 @@ import { FileText, FileCode, Download, RefreshCw, Settings, Save, CheckSquare, S
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import JSZip from "jszip";
+import { initPdfFonts, registerFontsOnDoc, PDF_FONT } from "../utils/pdfFonts";
 
 // Strip diacritics for safe filenames
 const stripDiacritics = (str) =>
@@ -21,6 +22,9 @@ const stripDiacritics = (str) =>
 //          price -> Preț (BT-146), vat -> TVA% (BT-152), total -> Total (BT-131)
 const generateInvoicePDF = (inv, company, client, agent) => {
   const doc = new jsPDF({ format: "a4", unit: "pt" });
+  // Register Unicode-capable font so Romanian diacritics (ț, ș, ă, â, î) render correctly
+  registerFontsOnDoc(doc);
+  const font = PDF_FONT();
   const snapshot =
     inv.raw_snapshot && typeof inv.raw_snapshot === "object"
       ? inv.raw_snapshot
@@ -55,19 +59,19 @@ const generateInvoicePDF = (inv, company, client, agent) => {
 
   // Title
   doc.setFontSize(18);
-  doc.setFont("helvetica", "bold");
+  doc.setFont(font, "bold");
   doc.text("FACTURA", pageWidth / 2, y, { align: "center" });
   y += 22;
 
   if (inv.invoice_code) {
     doc.setFontSize(13);
-    doc.setFont("helvetica", "normal");
+    doc.setFont(font, "normal");
     doc.text(`Nr: ${inv.invoice_code}`, pageWidth / 2, y, { align: "center" });
     y += 16;
   }
 
   doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
+  doc.setFont(font, "normal");
   doc.text(`Data: ${inv.document_date || "-"}`, pageWidth / 2, y, { align: "center" });
   y += 18;
 
@@ -75,7 +79,7 @@ const generateInvoicePDF = (inv, company, client, agent) => {
   const nrComandaSnap = snapshot.nrComanda || null;
   if (nrComandaSnap) {
     doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
+    doc.setFont(font, "normal");
     doc.text(`Nr. comandă: ${nrComandaSnap}`, pageWidth / 2, y, { align: "center" });
     y += 14;
   }
@@ -103,9 +107,9 @@ const generateInvoicePDF = (inv, company, client, agent) => {
     const sellerBanca   = company.bt_85_payee_bank_name;
     const sellerIBAN    = company.bt_84_payee_iban;
     doc.setFontSize(9);
-    doc.setFont("helvetica", "bold");
+    doc.setFont(font, "bold");
     if (sellerName)    { const ln = doc.splitTextToSize(sellerName, leftColWidth); doc.text(ln, colLeft, leftY); leftY += ln.length * 12; }
-    doc.setFont("helvetica", "normal");
+    doc.setFont(font, "normal");
     if (sellerCIF)     { doc.text(`CIF: ${sellerCIF}`, colLeft, leftY); leftY += 12; }
     if (sellerRegCom)  { doc.text(`Reg. Com.: ${sellerRegCom}`, colLeft, leftY); leftY += 12; }
     if (sellerStreet)  { const ln = doc.splitTextToSize(sellerStreet, leftColWidth); doc.text(ln, colLeft, leftY); leftY += ln.length * 12; }
@@ -120,10 +124,10 @@ const generateInvoicePDF = (inv, company, client, agent) => {
   const hasBuyerData = cName !== "-" || cCIF || cNrRegCom || cStrada || cLocalitate;
   if (hasBuyerData) {
     doc.setFontSize(9);
-    doc.setFont("helvetica", "bold");
+    doc.setFont(font, "bold");
     const nameLines = doc.splitTextToSize(cName, rightColWidth);
     doc.text(nameLines, rightMargin, rightY, { align: "right" }); rightY += nameLines.length * 12;
-    doc.setFont("helvetica", "normal");
+    doc.setFont(font, "normal");
     if (cCIF)    { doc.text(`CIF: ${cCIF}`, rightMargin, rightY, { align: "right" }); rightY += 12; }
     if (cNrRegCom) { doc.text(`Reg. Com.: ${cNrRegCom}`, rightMargin, rightY, { align: "right" }); rightY += 12; }
     if (cStrada) {
@@ -141,7 +145,7 @@ const generateInvoicePDF = (inv, company, client, agent) => {
   const hasDelivery = dName || dGLN || dAddress || dCity || dRegion;
   if (hasDelivery) {
     doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
+    doc.setFont(font, "normal");
     if (dName) {
       const ln = doc.splitTextToSize(`Denumire Loc Livrare: ${dName}`, rightColWidth);
       doc.text(ln, rightMargin, rightY, { align: "right" }); rightY += ln.length * 12;
@@ -183,8 +187,8 @@ const generateInvoicePDF = (inv, company, client, agent) => {
         item.vat != null ? `${item.vat}%` : "-",
         Number(item.total || (parseFloat(item.unitCount || item.quantity || 0) * parseFloat(item.price || 0))).toFixed(2),
       ]),
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [245, 158, 11] },
+      styles: { fontSize: 8, font },
+      headStyles: { fillColor: [245, 158, 11], font },
       columnStyles: {
         0: { cellWidth: 25 },   // Nr.
         1: { cellWidth: 70 },   // Cod
@@ -208,10 +212,10 @@ const generateInvoicePDF = (inv, company, client, agent) => {
   const hasAgentData = agentName || agentCiSerie || agentCiNumar || agentEliberatDe || agentMijlocTransp;
   if (hasAgentData) {
     doc.setFontSize(9);
-    doc.setFont("helvetica", "bold");
+    doc.setFont(font, "bold");
     doc.text("Date privind expeditia:", expX, expY);
     expY += 12;
-    doc.setFont("helvetica", "normal");
+    doc.setFont(font, "normal");
     // Compact row 1: Delegat + Mijloc transport on the same line
     const row1Parts = [];
     if (agentName) row1Parts.push(`Delegat: ${agentName}`);
@@ -230,12 +234,12 @@ const generateInvoicePDF = (inv, company, client, agent) => {
 
   let totY = sectionY;
   doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
+  doc.setFont(font, "normal");
   doc.text(`Total fara TVA: ${totalFaraTva} RON`, pageWidth - 40, totY, { align: "right" });
   totY += 14;
   doc.text(`TVA: ${totalTva} RON`, pageWidth - 40, totY, { align: "right" });
   totY += 14;
-  doc.setFont("helvetica", "bold");
+  doc.setFont(font, "bold");
   doc.text(`Total de plata: ${totalCuTva} RON`, pageWidth - 40, totY, { align: "right" });
   totY += 14;
 
@@ -529,6 +533,7 @@ const InvoicesScreen = ({ API_URL, orders, clients, products = [], agents = [], 
     loadLocalInvoices();
     loadSettings();
     loadCompany();
+    initPdfFonts(); // Pre-load Unicode font for correct Romanian diacritic rendering
   }, []);
 
   const handleSaveSettings = async () => {
