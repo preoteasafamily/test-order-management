@@ -297,8 +297,9 @@ const generateInvoicePdf = (invoice, order, client) => {
 
         // Render additionalInfo (e.g. pret/kg) below description for KG lines
         if (item.additionalInfo) {
-          doc.font('Helvetica').fontSize(8)
-            .text(item.additionalInfo, col.desc, doc.y, { width: 175, align: 'left' });
+          const diacriticMap = { 'ț': 't', 'Ț': 'T', 'ș': 's', 'Ș': 'S', 'ă': 'a', 'Ă': 'A', 'â': 'a', 'Â': 'A', 'î': 'i', 'Î': 'I' };
+          const infoText = item.additionalInfo.replace(/[țȚșȘăĂâÂîÎ]/g, ch => diacriticMap[ch] || ch);
+          doc.text(infoText, col.desc, doc.y, { width: 175, align: 'left' });
           doc.moveDown(0.3);
         }
       });
