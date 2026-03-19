@@ -423,6 +423,35 @@ const upsertInvoiceLines = (invoiceId, items, products, client) => {
   });
 };
 
+// Generate and save a receipt for a cash invoice (no dueDate)
+// Returns the receipt record or null if generation fails / receipt already exists
+const generateLocalReceipt = (invoiceId, amount, date) => {
+  try {
+    const existing = db.prepare('SELECT * FROM billing_receipts WHERE invoice_id = ?').get(invoiceId);
+    if (existing) return existing;
+
+    const settings = getBillingSettings();
+    const receiptNumber = settings.receipt_next_number || 1;
+    const receiptSeries = settings.receipt_series || 'CN';
+    const receiptCode = `${receiptSeries}-${String(receiptNumber).padStart(4, '0')}`;
+
+    db.prepare(
+      'UPDATE billing_settings SET receipt_next_number = receipt_next_number + 1, updated_at = CURRENT_TIMESTAMP WHERE id = 1'
+    ).run();
+
+    const receiptId = `receipt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    db.prepare(
+      `INSERT INTO billing_receipts (id, invoice_id, receipt_code, receipt_number, receipt_date, amount)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(receiptId, invoiceId, receiptCode, receiptNumber, date, amount);
+
+    return db.prepare('SELECT * FROM billing_receipts WHERE id = ?').get(receiptId);
+  } catch (err) {
+    console.error('generateLocalReceipt error:', err);
+    return null;
+  }
+};
+
 // Generate (or regenerate) a local invoice for an order (synchronous, uses transaction)
 const generateLocalInvoice = (orderId) => {
   try {
@@ -518,6 +547,9 @@ const generateLocalInvoice = (orderId) => {
         agentMijlocTransp: agent?.mijloc_transport || null,
         // Order number (from client who requires it)
         nrComanda:         order.nrComanda          || null,
+        // Payment info (for receipt generation and header display)
+        paymentType:       order.paymentType        || 'immediate',
+        dueDate:           order.dueDate            || null,
         documentDate,
         lines,
         total: order.total,
@@ -617,6 +649,14 @@ const generateLocalInvoice = (orderId) => {
 
     // Populate billing_invoice_lines with BT fields from products
     upsertInvoiceLines(invoiceRow.id, items, products, client);
+
+    // Auto-generate receipt for cash (immediate) payments without a due date.
+    // Orders without an explicit paymentType default to 'immediate' (cash at delivery).
+    const isCash = (order.paymentType || 'immediate') === 'immediate';
+    const hasDueDate = !!order.dueDate;
+    if (isCash && !hasDueDate) {
+      generateLocalReceipt(invoiceRow.id, order.totalWithVAT || 0, documentDate);
+    }
 
     // Generate PDF asynchronously (don't block the response)
     generateInvoicePdf(invoiceRow, order, client)
@@ -724,12 +764,24 @@ router.post('/orders/:orderId/validate', (req, res) => {
 router.get('/local-invoices', (req, res) => {
   try {
     const rows = db
-      .prepare('SELECT * FROM billing_invoices ORDER BY created_at DESC')
+      .prepare(`
+        SELECT bi.*, br.receipt_code, br.receipt_number, br.receipt_date, br.amount AS receipt_amount, br.id AS receipt_id
+        FROM billing_invoices bi
+        LEFT JOIN billing_receipts br ON br.invoice_id = bi.id
+        ORDER BY bi.created_at DESC
+      `)
       .all();
     res.json(
       rows.map((r) => ({
         ...r,
         raw_snapshot: r.raw_snapshot ? JSON.parse(r.raw_snapshot) : null,
+        receipt: r.receipt_id ? {
+          id: r.receipt_id,
+          receipt_code: r.receipt_code,
+          receipt_number: r.receipt_number,
+          receipt_date: r.receipt_date,
+          amount: r.receipt_amount,
+        } : null,
       }))
     );
   } catch (err) {
@@ -779,6 +831,48 @@ router.get('/local-invoices/:id/pdf', (req, res) => {
     fs.createReadStream(inv.pdf_path).pipe(res);
   } catch (err) {
     console.error('Error serving local PDF:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/billing/local-invoices/:id/receipt - get receipt for an invoice
+router.get('/local-invoices/:id/receipt', invoiceLinesLimiter, (req, res) => {
+  try {
+    const receipt = db.prepare('SELECT * FROM billing_receipts WHERE invoice_id = ?').get(req.params.id);
+    if (!receipt) return res.status(404).json({ error: 'Receipt not found' });
+    res.json(receipt);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/billing/local-invoices/:id/generate-receipt - manually generate receipt for a cash invoice
+router.post('/local-invoices/:id/generate-receipt', invoiceLinesLimiter, (req, res) => {
+  try {
+    const inv = db.prepare('SELECT * FROM billing_invoices WHERE id = ?').get(req.params.id);
+    if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+
+    const snap = inv.raw_snapshot
+      ? (typeof inv.raw_snapshot === 'string' ? JSON.parse(inv.raw_snapshot) : inv.raw_snapshot)
+      : {};
+
+    // Allow generation only for immediate (cash) payments without a due date
+    const paymentType = snap.paymentType || 'immediate';
+    const dueDate = snap.dueDate || null;
+    if (paymentType !== 'immediate' || dueDate) {
+      return res.status(400).json({ error: 'Chitanta se genereaza doar pentru plata cash fara data scadenta' });
+    }
+
+    const existing = db.prepare('SELECT * FROM billing_receipts WHERE invoice_id = ?').get(inv.id);
+    if (existing) return res.json({ success: true, receipt: existing });
+
+    const date = inv.document_date || new Date().toISOString().split('T')[0];
+    const receipt = generateLocalReceipt(inv.id, inv.total_with_vat || 0, date);
+    if (!receipt) return res.status(500).json({ error: 'Receipt generation failed' });
+
+    res.json({ success: true, receipt });
+  } catch (err) {
+    console.error('Error generating receipt:', err);
     res.status(500).json({ error: err.message });
   }
 });

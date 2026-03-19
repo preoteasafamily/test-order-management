@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { FileText, FileCode, Download, RefreshCw, X, List, Save, Plus, Trash2, Edit2, CheckSquare, Square, Printer } from "lucide-react";
+import { FileText, FileCode, Download, RefreshCw, X, List, Save, Plus, Trash2, Edit2, CheckSquare, Square, Printer, Receipt } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -77,7 +77,8 @@ const buildHeaderRows = (company, snap, client) => {
 
 // Draw one invoice onto the current page of an existing jsPDF document.
 // The caller is responsible for calling doc.addPage() before this when needed.
-const drawInvoiceOnDoc = (doc, inv, company, client, agent, order) => {
+// receipt: optional receipt object { receipt_code, receipt_date, amount, invoice_code, clientName }
+const drawInvoiceOnDoc = (doc, inv, company, client, agent, order, receipt = null) => {
   const snap =
     inv.raw_snapshot && typeof inv.raw_snapshot === "object"
       ? inv.raw_snapshot
@@ -106,9 +107,15 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order) => {
   }
 
   doc.setFontSize(9).setFont("helvetica", "normal");
-  doc.text(`Data: ${inv.document_date || "-"}`, pageWidth / 2, y, {
-    align: "center",
-  });
+  const dueDate = snap.dueDate || null;
+  if (dueDate) {
+    const dateLineText = `Data: ${inv.document_date || "-"}    Scadent la: ${dueDate}`;
+    doc.text(dateLineText, pageWidth / 2, y, { align: "center" });
+  } else {
+    doc.text(`Data: ${inv.document_date || "-"}`, pageWidth / 2, y, {
+      align: "center",
+    });
+  }
   y += 16;
 
   // Show order number if present
@@ -257,12 +264,53 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order) => {
     { align: "right" }
   );
   totY += 12; // eslint-disable-line no-unused-vars
+
+  // Receipt (chitanta) section at bottom of invoice – only for cash payments
+  if (receipt && receipt.receipt_code) {
+    const pageHeight = doc.internal.pageSize.getHeight();
+    // Reserve 140pt at the bottom for the receipt block; ensure it appears below content
+    const RECEIPT_BLOCK_HEIGHT = 140;
+    const rcptY = Math.max(Math.max(expY, totY) + 24, pageHeight - RECEIPT_BLOCK_HEIGHT);
+    const rcptX = 40;
+    const rcptWidth = pageWidth - 80;
+
+    // Separator line
+    doc.setDrawColor(180).setLineWidth(0.5);
+    doc.line(rcptX, rcptY, rcptX + rcptWidth, rcptY);
+
+    let ry = rcptY + 14;
+    doc.setFontSize(13).setFont("helvetica", "bold");
+    doc.text("CHITANTA", pageWidth / 2, ry, { align: "center" });
+    ry += 14;
+
+    doc.setFontSize(9).setFont("helvetica", "normal");
+    doc.text(`Nr: ${receipt.receipt_code}`, pageWidth / 2, ry, { align: "center" });
+    ry += 12;
+    doc.text(`Data: ${receipt.receipt_date || inv.document_date || "-"}`, pageWidth / 2, ry, { align: "center" });
+    ry += 14;
+
+    const clientName = snap.clientName || client?.nume || "-";
+    doc.setFontSize(9).setFont("helvetica", "normal");
+    doc.text(`Am primit de la: ${clientName}`, rcptX, ry);
+    ry += 12;
+    doc.text(
+      `Suma: ${Number(receipt.amount ?? inv.total_with_vat ?? 0).toFixed(2)} RON`,
+      rcptX, ry
+    );
+    ry += 12;
+    doc.text(`Contravaloare: Factura ${inv.invoice_code || ""}`, rcptX, ry);
+    ry += 16;
+
+    doc.setFontSize(8).setFont("helvetica", "normal");
+    doc.text("Casier: ________________", rcptX, ry);
+    doc.text("Semnatura: ________________", pageWidth - 40, ry, { align: "right" });
+  }
 };
 
 // Generate PDF: two-column header synchronized row by row, no titles/separators
-const generatePDF = (inv, company, client, agent, order) => {
+const generatePDF = (inv, company, client, agent, order, receipt = null) => {
   const doc = new jsPDF({ format: "a4", unit: "pt" });
-  drawInvoiceOnDoc(doc, inv, company, client, agent, order);
+  drawInvoiceOnDoc(doc, inv, company, client, agent, order, receipt);
   return doc;
 };
 
@@ -497,6 +545,9 @@ const InvoicesV2Screen = ({ API_URL, orders, clients, agents, products = [], sho
   const [editingLine, setEditingLine] = useState(null);
   const [lineForm, setLineForm] = useState({});
 
+  // Receipt generation loading state
+  const [receiptLoading, setReceiptLoading] = useState(null); // invoice id or null
+
   // Pre-compute unique dates with invoice counts for the date selector (memoized for performance)
   const availableDates = useMemo(() => {
     const counts = {};
@@ -546,7 +597,7 @@ const InvoicesV2Screen = ({ API_URL, orders, clients, agents, products = [], sho
   const handlePDF = (inv) => {
     try {
       const { client, agent, order } = getClientForInvoice(inv);
-      generatePDF(inv, company, client, agent, order).save(
+      generatePDF(inv, company, client, agent, order, inv.receipt || null).save(
         `factura-${stripDiacritics(inv.invoice_code || inv.id)}.pdf`
       );
     } catch (err) {
@@ -567,6 +618,42 @@ const InvoicesV2Screen = ({ API_URL, orders, clients, agents, products = [], sho
       URL.revokeObjectURL(url);
     } catch (err) {
       showMessage(`Eroare UBL: ${err.message}`, "error");
+    }
+  };
+
+  // View or generate receipt (chitanta) for a cash invoice
+  const handleViewReceipt = async (inv) => {
+    setReceiptLoading(inv.id);
+    try {
+      let receipt = inv.receipt || null;
+
+      // Generate if missing
+      if (!receipt) {
+        const res = await fetch(`${API_URL}/api/billing/local-invoices/${inv.id}/generate-receipt`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          showMessage(err.error || "Eroare la generarea chitantei", "error");
+          return;
+        }
+        const data = await res.json();
+        receipt = data.receipt;
+        // Update local invoice list to reflect new receipt
+        setInvoices((prev) =>
+          prev.map((i) => (i.id === inv.id ? { ...i, receipt } : i))
+        );
+      }
+
+      // Generate and download receipt PDF
+      const { client, agent, order } = getClientForInvoice(inv);
+      const doc = generatePDF(inv, company, client, agent, order, receipt);
+      doc.save(`chitanta-${stripDiacritics(receipt.receipt_code || inv.id)}.pdf`);
+    } catch (err) {
+      showMessage(`Eroare chitanta: ${err.message}`, "error");
+    } finally {
+      setReceiptLoading(null);
     }
   };
 
@@ -628,7 +715,7 @@ const InvoicesV2Screen = ({ API_URL, orders, clients, agents, products = [], sho
             if (i > 0) doc.addPage();
             const inv = selected[i];
             const { client, agent, order } = getClientForInvoice(inv);
-            drawInvoiceOnDoc(doc, inv, company, client, agent, order);
+            drawInvoiceOnDoc(doc, inv, company, client, agent, order, inv.receipt || null);
           }
           setBatchProgress({ current: end, total: selected.length });
           resolve(end);
@@ -1214,6 +1301,9 @@ const InvoicesV2Screen = ({ API_URL, orders, clients, agents, products = [], sho
                   UBL
                 </th>
                 <th className="border border-gray-300 px-3 py-2 text-center">
+                  Chitanta
+                </th>
+                <th className="border border-gray-300 px-3 py-2 text-center">
                   Detalii
                 </th>
               </tr>
@@ -1293,6 +1383,31 @@ const InvoicesV2Screen = ({ API_URL, orders, clients, agents, products = [], sho
                           <FileCode className="w-4 h-4 text-green-600" />
                         </button>
                       </td>
+                      <td className="border border-gray-300 px-2 py-2 text-center">
+                        {(() => {
+                          const paymentType = snap.paymentType || "immediate";
+                          const dueDateSnap = snap.dueDate || null;
+                          const isCash = paymentType === "immediate" && !dueDateSnap;
+                          if (!isCash) return <span className="text-gray-300 text-xs">—</span>;
+                          const hasReceipt = !!inv.receipt;
+                          const isLoading = receiptLoading === inv.id;
+                          return (
+                            <button
+                              onClick={() => handleViewReceipt(inv)}
+                              disabled={isLoading}
+                              title={hasReceipt ? "Vizualizare chitanta" : "Genereaza chitanta"}
+                              className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-all ${
+                                hasReceipt
+                                  ? "bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300"
+                                  : "bg-gray-100 text-gray-600 hover:bg-amber-50 hover:text-amber-700 border border-gray-300 hover:border-amber-300"
+                              } disabled:opacity-50`}
+                            >
+                              <Receipt className="w-3.5 h-3.5" />
+                              {isLoading ? "..." : hasReceipt ? inv.receipt.receipt_code : "CN"}
+                            </button>
+                          );
+                        })()}
+                      </td>
                       <td className="border border-gray-300 px-3 py-2 text-center">
                         <button
                           onClick={() => toggleDetail(inv)}
@@ -1312,7 +1427,7 @@ const InvoicesV2Screen = ({ API_URL, orders, clients, agents, products = [], sho
                     {isSelected && (
                       <tr>
                         <td
-                          colSpan={9}
+                          colSpan={10}
                           className="border border-gray-300 bg-gray-50 px-4 py-4"
                         >
                           {/* Two-column header: seller left, buyer right — synchronized row by row */}
@@ -1424,6 +1539,25 @@ const InvoicesV2Screen = ({ API_URL, orders, clients, agents, products = [], sho
                               {Number(inv.total_with_vat || 0).toFixed(2)} RON
                             </div>
                           </div>
+
+                          {/* Due date notice */}
+                          {snap.dueDate && (
+                            <div className="mt-3 text-sm text-gray-600">
+                              Scadent la: <span className="font-semibold">{snap.dueDate}</span>
+                            </div>
+                          )}
+
+                          {/* Receipt info */}
+                          {inv.receipt && (
+                            <div className="mt-3 flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                              <Receipt className="w-4 h-4 flex-shrink-0" />
+                              <span>
+                                Chitanta: <strong>{inv.receipt.receipt_code}</strong>
+                                {" — "}{inv.receipt.receipt_date}
+                                {" — "}{Number(inv.receipt.amount || 0).toFixed(2)} RON
+                              </span>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     )}
