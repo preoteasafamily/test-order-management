@@ -262,8 +262,10 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order, receipt = nul
               parseFloat(item.price || 0)
         ).toFixed(2),
       ]),
-      styles: { fontSize: 8, textColor: 0 },
-      headStyles: { fillColor: [220, 220, 220], textColor: 0, fontStyle: "bold" },
+      styles: { fontSize: 8, textColor: 0, lineColor: [80, 80, 80], lineWidth: 0.3 },
+      headStyles: { fillColor: [220, 220, 220], textColor: 0, fontStyle: "bold", lineColor: [80, 80, 80], lineWidth: 0.5 },
+      tableLineColor: [80, 80, 80],
+      tableLineWidth: 0.8,
       columnStyles: {
         0: { cellWidth: 25, halign: "right" },
         1: { cellWidth: 75 },
@@ -327,16 +329,10 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order, receipt = nul
 
   // Receipt (chitanta) section at bottom of invoice – only for cash payments
   if (receipt && receipt.receipt_code) {
-    const pageHeight = doc.internal.pageSize.getHeight();
     // Place receipt immediately after invoice content (not forced to page bottom)
     const rcptY = Math.max(expY, totY) + 24;
     const rcptX = 40;
     const rcptWidth = pageWidth - 80;
-
-    // Outer border for the receipt block
-    const TOTAL_HEIGHT = pageHeight - rcptY - 12;
-    doc.setDrawColor(80).setLineWidth(0.8);
-    doc.rect(rcptX, rcptY, rcptWidth, TOTAL_HEIGHT);
 
     // Title bar background
     doc.setFillColor(240, 240, 240);
@@ -449,6 +445,11 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order, receipt = nul
     doc.setFont("helvetica", "normal");
     doc.text(`Reprezentând contravaloare factura ${inv.invoice_code || ""} din data ${invoiceDate}`, rcptX + 6, ry);
     doc.text("Casier, ________________", pageWidth - rcptX - 6, ry, { align: "right" });
+
+    // Outer border drawn last so it wraps exactly the actual receipt content
+    const rcptActualHeight = ry + 10 - rcptY;
+    doc.setDrawColor(80).setLineWidth(0.8);
+    doc.rect(rcptX, rcptY, rcptWidth, rcptActualHeight);
   }
 };
 
