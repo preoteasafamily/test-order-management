@@ -21,6 +21,7 @@ import {
   ExternalLink,
   ShieldCheck,
   BookOpen,
+  Copy,
 } from "lucide-react";
 
 // ─── Status config ────────────────────────────────────────────────────────────
@@ -99,6 +100,10 @@ const SettingsPanel = ({ API_URL, onClose, onSaved }) => {
   const [authorizing, setAuthorizing] = useState(false);
   const [msg, setMsg] = useState(null);
   const [hasRefreshToken, setHasRefreshToken] = useState(false);
+  const [copiedUri, setCopiedUri] = useState(false);
+
+  // Compute the recommended redirect URI from API_URL (avoids hardcoding port 5000)
+  const recommendedRedirectUri = `${API_URL}/api/efactura/oauth/callback`;
 
   useEffect(() => {
     fetch(`${API_URL}/api/efactura/settings`)
@@ -216,6 +221,30 @@ const SettingsPanel = ({ API_URL, onClose, onSaved }) => {
                 <strong>🔐 Autorizare OAuth2 automată</strong> – Introduceți credențialele aplicației înregistrate în portalul ANAF, apoi apăsați „Autorizare ANAF" pentru a obține token-ul automat prin fluxul OAuth2 oficial.
               </div>
 
+              {/* Redirect URI display box – must match ANAF portal exactly */}
+              <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-sm">
+                <p className="font-semibold text-amber-900 mb-1">⚠ Redirect URI obligatoriu în portalul ANAF</p>
+                <p className="text-amber-800 text-xs mb-2">
+                  Copiați exact această adresă și introduceți-o ca <strong>Redirect URI</strong> (Callback URL) la înregistrarea aplicației pe <a href="https://logincert.anaf.ro" target="_blank" rel="noopener noreferrer" className="underline">logincert.anaf.ro</a>. Orice diferență (spații, slash final, protocol greșit) produce eroarea <code className="bg-amber-100 px-1 rounded">access_denied</code>.
+                </p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 bg-white border border-amber-300 rounded px-2 py-1.5 text-xs font-mono break-all text-gray-800">
+                    {recommendedRedirectUri}
+                  </code>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(recommendedRedirectUri).then(() => {
+                        setCopiedUri(true);
+                        setTimeout(() => setCopiedUri(false), 2000);
+                      });
+                    }}
+                    className="flex-shrink-0 flex items-center gap-1 px-2 py-1.5 border border-amber-300 bg-white rounded text-xs text-amber-700 hover:bg-amber-50">
+                    {copiedUri ? <CheckCircle className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copiedUri ? "Copiat!" : "Copiază"}
+                  </button>
+                </div>
+              </div>
+
               {/* Token status */}
               {form.token && (
                 <div className={`rounded-lg p-3 text-sm border ${
@@ -260,15 +289,23 @@ const SettingsPanel = ({ API_URL, onClose, onSaved }) => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Redirect URI *</label>
-                <input
-                  className="w-full border rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
-                  value={form.redirectUri}
-                  onChange={e => setForm(f => ({ ...f, redirectUri: e.target.value }))}
-                  placeholder="ex: http://localhost:5000/api/efactura/oauth/callback"
-                />
+                <div className="flex gap-2">
+                  <input
+                    className="flex-1 border rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                    value={form.redirectUri}
+                    onChange={e => setForm(f => ({ ...f, redirectUri: e.target.value }))}
+                    placeholder={recommendedRedirectUri}
+                  />
+                  {!form.redirectUri && (
+                    <button
+                      onClick={() => setForm(f => ({ ...f, redirectUri: recommendedRedirectUri }))}
+                      className="flex-shrink-0 px-2 py-1.5 border rounded-lg text-xs text-gray-600 hover:bg-gray-50 whitespace-nowrap">
+                      Completează auto
+                    </button>
+                  )}
+                </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  Trebuie să corespundă exact cu redirect_uri înregistrată în portalul ANAF.
-                  Exemplu: <code className="bg-gray-100 px-1 rounded">{window.location.origin.replace(/:\d+$/, ":5000")}/api/efactura/oauth/callback</code>
+                  Trebuie să corespundă exact (caracter cu caracter) cu redirect_uri înregistrată în portalul ANAF.
                 </p>
               </div>
 
@@ -355,10 +392,10 @@ const SettingsPanel = ({ API_URL, onClose, onSaved }) => {
                 <li>
                   <strong>Înregistrare aplicație în portalul ANAF</strong>
                   <ul className="mt-1 space-y-1 list-disc pl-4 text-gray-600">
-                    <li>Accesați <a href="https://logincert.anaf.ro" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">https://logincert.anaf.ro</a> și autentificați-vă cu certificatul digital calificat (token USB sau smart card).</li>
+                    <li>Accesați <a href="https://logincert.anaf.ro" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline inline-flex items-center gap-0.5">https://logincert.anaf.ro<ExternalLink className="w-3 h-3" /></a> și autentificați-vă cu certificatul digital calificat (token USB sau smart card).</li>
                     <li>Mergeți la secțiunea <strong>„Aplicații înregistrate"</strong> și creați o aplicație nouă.</li>
-                    <li>Completați numele aplicației, descrierea și <strong>Redirect URI</strong> (ex: <code className="bg-gray-100 px-1 rounded">http://localhost:5000/api/efactura/oauth/callback</code> pentru mediul local sau URL-ul serverului vostru în producție).</li>
-                    <li>Bifați scope-urile necesare: <strong>offline_access</strong> (pentru refresh token).</li>
+                    <li>La câmpul <strong>Redirect URI</strong> (Callback URL), introduceți <strong>exact</strong> adresa afișată în tab-ul „OAuth2 ANAF" (buton <em>Copiază</em>). Orice diferență (slash final, protocol, port) produce eroarea <code className="bg-gray-100 px-0.5 rounded">access_denied</code>.</li>
+                    <li>Bifați scope-ul <strong>offline_access</strong> (necesar pentru refresh token).</li>
                     <li>Salvați și notați <strong>Client ID</strong> și <strong>Client Secret</strong> generate.</li>
                   </ul>
                 </li>
@@ -368,7 +405,7 @@ const SettingsPanel = ({ API_URL, onClose, onSaved }) => {
                   <ul className="mt-1 space-y-1 list-disc pl-4 text-gray-600">
                     <li>Deschideți tab-ul <strong>„OAuth2 ANAF"</strong> din această fereastră.</li>
                     <li>Introduceți <strong>Client ID</strong> și <strong>Client Secret</strong> obținute la pasul anterior.</li>
-                    <li>Setați <strong>Redirect URI</strong> identic cu cel introdus în portalul ANAF.</li>
+                    <li>Setați <strong>Redirect URI</strong> identic (caracter cu caracter) cu cel introdus în portalul ANAF. Folosiți butonul <em>„Completează auto"</em> pentru a prelua automat adresa corectă.</li>
                     <li>Mergeți la tab-ul <strong>„General"</strong> și setați CIF-ul furnizorului și mediul (TEST sau PRODUCȚIE).</li>
                     <li>Apăsați <strong>„Salvează"</strong>.</li>
                   </ul>
@@ -379,7 +416,7 @@ const SettingsPanel = ({ API_URL, onClose, onSaved }) => {
                   <ul className="mt-1 space-y-1 list-disc pl-4 text-gray-600">
                     <li>Apăsați butonul <strong>„Autorizare ANAF"</strong> din tab-ul OAuth2.</li>
                     <li>Se va deschide o fereastră nouă cu pagina de autentificare ANAF.</li>
-                    <li>Autentificați-vă cu <strong>certificatul digital calificat</strong>.</li>
+                    <li>Autentificați-vă cu <strong>certificatul digital calificat</strong> asociat CIF-ului înregistrat.</li>
                     <li>Confirmați acordul pentru aplicație când vi se solicită.</li>
                     <li>Aplicația va prelua automat token-ul și refresh token-ul; fereastra se poate închide după redirecționare.</li>
                   </ul>
@@ -404,6 +441,16 @@ const SettingsPanel = ({ API_URL, onClose, onSaved }) => {
                   </ul>
                 </li>
               </ol>
+
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-800 text-xs space-y-1">
+                <p className="font-semibold">❌ Depanare eroare „access_denied"</p>
+                <ul className="list-disc pl-4 space-y-1">
+                  <li><strong>Redirect URI nepotrivit</strong> – Verificați că adresa din câmpul „Redirect URI" al aplicației coincide <em>exact</em> (inclusiv protocol, port și cale) cu cea înregistrată pe portalul ANAF. Folosiți butonul „Copiază" din tab-ul OAuth2.</li>
+                  <li><strong>Aplicație neaprobată / CIF greșit</strong> – Asigurați-vă că v-ați autentificat pe portalul ANAF cu certificatul digital aferent CIF-ului înregistrat în câmpul „General".</li>
+                  <li><strong>Scope lipsă</strong> – Verificați că ați bifat <strong>offline_access</strong> la înregistrarea aplicației.</li>
+                  <li><strong>Client ID / Client Secret greșit</strong> – Copiat cu spații sau trunchiat; reintroduceți credențialele direct din portalul ANAF.</li>
+                </ul>
+              </div>
 
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-yellow-800 text-xs">
                 <strong>Notă importantă:</strong> Mediul de TEST ANAF folosește aceeași infrastructură OAuth2 ca și producția, dar facturile trimise nu sunt considerate documente fiscale oficiale. Testați cu facturi fictive înainte de a activa mediul de producție.

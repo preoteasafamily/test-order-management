@@ -817,6 +817,7 @@ const migrateSpvSettingsForOAuth2 = () => {
       { name: 'client_secret', def: "TEXT DEFAULT ''" },
       { name: 'redirect_uri',  def: "TEXT DEFAULT ''" },
       { name: 'refresh_token', def: "TEXT DEFAULT ''" },
+      { name: 'oauth_state',   def: "TEXT DEFAULT ''" },
     ];
     for (const col of toAdd) {
       if (!cols.includes(col.name)) {
