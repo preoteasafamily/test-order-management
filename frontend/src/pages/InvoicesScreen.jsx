@@ -13,7 +13,8 @@ const stripDiacritics = (str) =>
     .replace(/\s+/g, "_");
 
 // Generate a jsPDF invoice document
-// Header: two-column layout – Seller (left, no title) | Buyer (right, no title)
+// Header: three-column layout – Seller (left, no title) | FACTURA title/info (center) | Buyer (right, no title)
+// All columns start at the same vertical position to maximize usable page space.
 // Right column is omitted gracefully when buyer data is absent. No branding on invoice.
 // Table columns: Nr. crt. | Cod (EAN/barcode, BT-157) | Descriere | UM | Cant. | Preț | TVA% | Total
 // Mapping: lineId -> Nr. crt. (BT-126), barcode -> Cod (BT-157),
@@ -51,45 +52,45 @@ const generateInvoicePDF = (inv, company, client, agent) => {
   const agentMijlocTransp = snapshot.agentMijlocTransp || agent?.mijloc_transport || null;
 
   const pageWidth = doc.internal.pageSize.getWidth();
-  let y = 40;
+  const startY = 40;
 
-  // Title
-  doc.setFontSize(18);
-  doc.setFont("helvetica", "bold");
-  doc.text("FACTURA", pageWidth / 2, y, { align: "center" });
-  y += 22;
-
-  if (inv.invoice_code) {
-    doc.setFontSize(13);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Nr: ${inv.invoice_code}`, pageWidth / 2, y, { align: "center" });
-    y += 16;
-  }
-
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-  doc.text(`Data: ${inv.document_date || "-"}`, pageWidth / 2, y, { align: "center" });
-  y += 18;
-
-  // Show order number if present
-  const nrComandaSnap = snapshot.nrComanda || null;
-  if (nrComandaSnap) {
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Nr. comandă: ${nrComandaSnap}`, pageWidth / 2, y, { align: "center" });
-    y += 14;
-  }
-
-  // Two-column header: Seller (Vânzător) left | Buyer (Cumpărător) right-aligned
-  // Seller is left-aligned; Buyer text is right-aligned to the right margin.
-  // If buyer data is missing the right column is omitted and layout is unaffected.
+  // Three-column compact header: Seller (left) | FACTURA info (center) | Buyer (right)
+  // All three columns start at the same vertical position to eliminate empty space above.
   const colLeft       = 40;
   const rightMargin   = pageWidth - 40;
+  const centerX       = pageWidth / 2;
   const colRight      = Math.floor(pageWidth / 2) + 10;
   const leftColWidth  = colRight - colLeft - 10;
   const rightColWidth = rightMargin - colRight;
-  let leftY = y;
-  let rightY = y;
+
+  // Show order number if present
+  const nrComandaSnap = snapshot.nrComanda || null;
+
+  // CENTER column: Title + invoice number + date + order number, starting at startY
+  let centerY = startY;
+  doc.setFontSize(18).setFont("helvetica", "bold");
+  doc.text("FACTURA", centerX, centerY, { align: "center" });
+  centerY += 22;
+
+  if (inv.invoice_code) {
+    doc.setFontSize(13).setFont("helvetica", "normal");
+    doc.text(`Nr: ${inv.invoice_code}`, centerX, centerY, { align: "center" });
+    centerY += 16;
+  }
+
+  doc.setFontSize(10).setFont("helvetica", "normal");
+  doc.text(`Data: ${inv.document_date || "-"}`, centerX, centerY, { align: "center" });
+  centerY += 18;
+
+  if (nrComandaSnap) {
+    doc.setFontSize(9).setFont("helvetica", "normal");
+    doc.text(`Nr. comandă: ${nrComandaSnap}`, centerX, centerY, { align: "center" });
+    centerY += 14;
+  }
+
+  // LEFT and RIGHT columns start at the same startY as the center column
+  let leftY  = startY;
+  let rightY = startY;
 
   // LEFT COLUMN – Seller (Vânzător); no section title per invoice requirements
   if (company) {
@@ -163,7 +164,7 @@ const generateInvoicePDF = (inv, company, client, agent) => {
     }
   }
 
-  y = Math.max(leftY, rightY) + 14;
+  let y = Math.max(leftY, centerY, rightY) + 14;
 
   // Items table – columns: Nr. crt. | Cod | Descriere | UM | Cant. | Preț | TVA% | Total
   const lines = snapshot.lines || snapshot.documentPositions || [];

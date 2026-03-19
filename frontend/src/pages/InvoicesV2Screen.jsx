@@ -154,48 +154,50 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order, receipt = nul
   const agentMijlocTransp = snap.agentMijlocTransp || agent?.mijloc_transport || null;
 
   const pageWidth = doc.internal.pageSize.getWidth();
-  let y = 40;
+  const startY = 40;
 
-  doc.setFontSize(16).setFont("helvetica", "bold");
-  doc.text("FACTURA", pageWidth / 2, y, { align: "center" });
-  y += 18;
-
-  if (inv.invoice_code) {
-    doc.setFontSize(12).setFont("helvetica", "normal");
-    doc.text(`Nr: ${inv.invoice_code}`, pageWidth / 2, y, { align: "center" });
-    y += 14;
-  }
-
-  doc.setFontSize(9).setFont("helvetica", "normal");
-  const dueDate = snap.dueDate || null;
-  if (dueDate) {
-    const dateLineText = `Data: ${inv.document_date || "-"}    Scadent la: ${dueDate}`;
-    doc.text(dateLineText, pageWidth / 2, y, { align: "center" });
-  } else {
-    doc.text(`Data: ${inv.document_date || "-"}`, pageWidth / 2, y, {
-      align: "center",
-    });
-  }
-  y += 16;
-
-  // Show order number if present
-  const nrComandaSnap = snap.nrComanda || order?.nrComanda || null;
-  if (nrComandaSnap) {
-    doc.setFontSize(9).setFont("helvetica", "normal");
-    doc.text(`Nr. comanda: ${nrComandaSnap}`, pageWidth / 2, y, { align: "center" });
-    y += 13;
-  }
-
-  // Row-synchronized header: seller left, buyer right-aligned
+  // Three-column compact header: Seller (left) | FACTURA info (center) | Buyer (right)
+  // All three columns start at the same vertical position to eliminate empty space above.
   const leftX      = 40;
   const rightMargin = pageWidth - 40;
+  const centerX    = pageWidth / 2;
   const lineH      = 13;
   const halfWidth  = Math.floor(pageWidth / 2) - 50;
 
-  // rightY tracks the buyer column's current vertical position separately,
-  // so that the delivery section is placed immediately under the last buyer row
-  // (not under the last seller row, which may extend further down).
-  let rightY = y;
+  // Resolve center column content
+  const dueDate = snap.dueDate || null;
+  const nrComandaSnap = snap.nrComanda || order?.nrComanda || null;
+
+  // CENTER column: Title + invoice info, starting at startY (same row as side columns)
+  let centerY = startY;
+  doc.setFontSize(16).setFont("helvetica", "bold");
+  doc.text("FACTURA", centerX, centerY, { align: "center" });
+  centerY += 18;
+
+  if (inv.invoice_code) {
+    doc.setFontSize(12).setFont("helvetica", "normal");
+    doc.text(`Nr: ${inv.invoice_code}`, centerX, centerY, { align: "center" });
+    centerY += 14;
+  }
+
+  doc.setFontSize(9).setFont("helvetica", "normal");
+  if (dueDate) {
+    doc.text(`Data: ${inv.document_date || "-"}    Scadent la: ${dueDate}`, centerX, centerY, { align: "center" });
+  } else {
+    doc.text(`Data: ${inv.document_date || "-"}`, centerX, centerY, { align: "center" });
+  }
+  centerY += lineH;
+
+  if (nrComandaSnap) {
+    doc.setFontSize(9).setFont("helvetica", "normal");
+    doc.text(`Nr. comanda: ${nrComandaSnap}`, centerX, centerY, { align: "center" });
+    centerY += lineH;
+  }
+
+  // LEFT/RIGHT columns: seller and buyer rows, starting at startY (same row as title)
+  let y = startY;
+  // rightY tracks buyer column position so delivery section follows immediately under last buyer row
+  let rightY = startY;
   const rows = buildHeaderRows(company, snap, client);
   for (const row of rows) {
     doc
@@ -241,7 +243,7 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order, receipt = nul
   }
 
   // Table starts below whichever column is taller
-  y = Math.max(y, rightY) + lineH;
+  y = Math.max(y, centerY, rightY) + lineH;
 
   // Products table: Nr. | Cod (barcode/EAN) | Descriere | UM | Cant. | Pret | Total
   const lines = snap.lines || snap.documentPositions || [];

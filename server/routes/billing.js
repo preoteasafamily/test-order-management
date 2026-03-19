@@ -130,7 +130,8 @@ const getCompanySettings = () => {
 };
 
 // Generate PDF for invoice and save to disk
-// Header: two-column layout – Seller (left, no title) | Buyer (right-aligned, no title)
+// Header: three-column layout – Seller (left, no title) | FACTURĂ title/info (center) | Buyer (right-aligned, no title)
+// All columns start at the same vertical position to maximize usable page space.
 // Seller data read from app_config (company, BT-27…BT-43, BT-84 IBAN, BT-85 Banca); Buyer from invoice snapshot.
 // Address is split across two lines: street on line 1, city+county on line 2.
 // Right column is omitted gracefully when buyer data is absent.
@@ -166,29 +167,32 @@ const generateInvoicePdf = (invoice, order, client) => {
 
     doc.pipe(stream);
 
-    // Header
-    doc.fontSize(20).font('Helvetica-Bold').text('FACTURĂ', { align: 'center' });
-    doc.moveDown(0.5);
-
-    if (invoice.invoice_code) {
-      doc.fontSize(14).font('Helvetica').text(`Nr: ${invoice.invoice_code}`, { align: 'center' });
-    }
-    doc.fontSize(10).text(`Data: ${invoice.document_date || order?.date || '-'}`, { align: 'center' });
-    doc.moveDown(0.5);
-
-    // Two-column header: Seller (left, no title) | Buyer (right-aligned, no title)
-    // Seller data comes from invoice snapshot (BT-xx stored at creation time), with fallback
-    // to live app_config. If buyer data is absent the right column is omitted.
+    // Three-column compact header: Seller (left) | FACTURA info (center) | Buyer (right)
+    // All three columns start at the same vertical position to eliminate empty space above.
     const company = getCompanySettings();
     const pageWidth = doc.page.width;
     const colLeft      = 50;
     const rightMargin  = pageWidth - 50;
+    const centerX      = pageWidth / 2;
     const colRight     = Math.floor(pageWidth / 2) + 10;
     const leftColWidth = colRight - colLeft - 10;
     const rightColWidth = rightMargin - colRight;
-    const headerStartY = doc.y;
-    let leftY  = headerStartY;
-    let rightY = headerStartY;
+    const startY = 50; // top margin
+
+    // CENTER column: Title + invoice number + date, starting at startY
+    let centerY = startY;
+    doc.fontSize(20).font('Helvetica-Bold').text('FACTURĂ', centerX - 50, centerY, { width: 100, align: 'center' });
+    centerY += 26;
+
+    if (invoice.invoice_code) {
+      doc.fontSize(14).font('Helvetica').text(`Nr: ${invoice.invoice_code}`, centerX - 80, centerY, { width: 160, align: 'center' });
+      centerY += 18;
+    }
+    doc.fontSize(10).text(`Data: ${invoice.document_date || order?.date || '-'}`, centerX - 80, centerY, { width: 160, align: 'center' });
+    centerY += 14;
+
+    let leftY  = startY;
+    let rightY = startY;
 
     // LEFT COLUMN – Seller (Vânzător): prefer snapshot BT-xx (historical), fallback to live app_config
     const sellerName   = snapshot.bt_27_seller_name              || company?.bt_27_seller_name;
@@ -245,8 +249,8 @@ const generateInvoicePdf = (invoice, order, client) => {
       if (c.deliveryRegion)  { doc.text(`Judet: ${c.deliveryRegion}`,                 colRight, rightY, { width: rightColWidth, align: 'right' }); rightY += 12; }
     }
 
-    // Advance cursor past both columns; reset x to left margin for subsequent flowing text
-    doc.y = Math.max(leftY, rightY) + 14;
+    // Advance cursor past all three columns; reset x to left margin for subsequent flowing text
+    doc.y = Math.max(leftY, centerY, rightY) + 14;
     doc.x = colLeft;
 
     doc.moveDown(0.5);
