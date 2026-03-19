@@ -12,6 +12,66 @@ const stripDiacritics = (str) =>
     .replace(/[^\w\s.-]/g, "")
     .replace(/\s+/g, "_");
 
+// Convert a number to Romanian words for receipt amounts (e.g. 123.45 -> "una suta douazeci si trei lei si patruzeci si cinci bani")
+const numberToRomanianWords = (num) => {
+  const n = Math.round(Math.abs(num) * 100);
+  const lei = Math.floor(n / 100);
+  const bani = n % 100;
+
+  const ones = ["", "unu", "doi", "trei", "patru", "cinci", "sase", "sapte", "opt", "noua"];
+  const onesF = ["", "una", "doua", "trei", "patru", "cinci", "sase", "sapte", "opt", "noua"];
+  const teens = ["zece", "unsprezece", "doisprezece", "treisprezece", "paisprezece",
+    "cincisprezece", "saisprezece", "saptesprezece", "optsprezece", "nouasprezece"];
+  const tens = ["", "zece", "douazeci", "treizeci", "patruzeci", "cincizeci",
+    "saizeci", "saptezeci", "optzeci", "nouazeci"];
+  const hundreds = ["", "una suta", "doua sute", "trei sute", "patru sute", "cinci sute",
+    "sase sute", "sapte sute", "opt sute", "noua sute"];
+
+  const threeDigits = (v, feminine) => {
+    if (v === 0) return "";
+    let s = "";
+    if (v >= 100) { s += hundreds[Math.floor(v / 100)] + " "; v %= 100; }
+    if (v >= 10 && v <= 19) { s += teens[v - 10]; return s.trim(); }
+    if (v >= 20) { s += tens[Math.floor(v / 10)]; v %= 10; if (v > 0) s += " si "; }
+    if (v > 0) s += (feminine ? onesF[v] : ones[v]);
+    return s.trim();
+  };
+
+  const millionsWord = (v) => {
+    if (v === 1) return "un milion";
+    if (v === 2) return "doua milioane";
+    return threeDigits(v, false) + " milioane";
+  };
+  const thousandsWord = (v) => {
+    if (v === 1) return "o mie";
+    if (v === 2) return "doua mii";
+    return threeDigits(v, false) + " mii";
+  };
+
+  const toWords = (v, feminine) => {
+    if (v === 0) return "zero";
+    let parts = [];
+    if (v >= 1000000) {
+      parts.push(millionsWord(Math.floor(v / 1000000)));
+      v %= 1000000;
+    }
+    if (v >= 1000) {
+      parts.push(thousandsWord(Math.floor(v / 1000)));
+      v %= 1000;
+    }
+    const rest = threeDigits(v, feminine);
+    if (rest) parts.push(rest);
+    return parts.join(" ");
+  };
+
+  const leiWords = toWords(lei, false);
+  const baniWords = bani > 0 ? toWords(bani, false) : null;
+  let result = `${leiWords} lei`;
+  if (baniWords) result += ` si ${baniWords} bani`;
+  if (num < 0) result = "minus " + result;
+  return result;
+};
+
 // Build a synchronized row list: each entry is { seller, buyer, bold }
 // Rows where both seller and buyer are empty are skipped at render time.
 const buildHeaderRows = (company, snap, client) => {
@@ -268,42 +328,129 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order, receipt = nul
   // Receipt (chitanta) section at bottom of invoice – only for cash payments
   if (receipt && receipt.receipt_code) {
     const pageHeight = doc.internal.pageSize.getHeight();
-    // Reserve 140pt at the bottom for the receipt block; ensure it appears below content
-    const RECEIPT_BLOCK_HEIGHT = 140;
+    // Reserve 230pt at the bottom for the expanded receipt block
+    const RECEIPT_BLOCK_HEIGHT = 230;
     const rcptY = Math.max(Math.max(expY, totY) + 24, pageHeight - RECEIPT_BLOCK_HEIGHT);
     const rcptX = 40;
     const rcptWidth = pageWidth - 80;
 
-    // Separator line
-    doc.setDrawColor(180).setLineWidth(0.5);
-    doc.line(rcptX, rcptY, rcptX + rcptWidth, rcptY);
+    // Outer border for the receipt block
+    const TOTAL_HEIGHT = pageHeight - rcptY - 12;
+    doc.setDrawColor(80).setLineWidth(0.8);
+    doc.rect(rcptX, rcptY, rcptWidth, TOTAL_HEIGHT);
 
-    let ry = rcptY + 14;
-    doc.setFontSize(13).setFont("helvetica", "bold");
+    // Title bar background
+    doc.setFillColor(240, 240, 240);
+    doc.rect(rcptX, rcptY, rcptWidth, 18, "F");
+    doc.setDrawColor(80).setLineWidth(0.5);
+    doc.line(rcptX, rcptY + 18, rcptX + rcptWidth, rcptY + 18);
+
+    // Title
+    let ry = rcptY + 12;
+    doc.setFontSize(10).setFont("helvetica", "bold");
     doc.text("CHITANTA", pageWidth / 2, ry, { align: "center" });
     ry += 14;
 
-    doc.setFontSize(9).setFont("helvetica", "normal");
-    doc.text(`Nr: ${receipt.receipt_code}`, pageWidth / 2, ry, { align: "center" });
-    ry += 12;
-    doc.text(`Data: ${receipt.receipt_date || inv.document_date || "-"}`, pageWidth / 2, ry, { align: "center" });
-    ry += 14;
-
-    const clientName = snap.clientName || client?.nume || "-";
-    doc.setFontSize(9).setFont("helvetica", "normal");
-    doc.text(`Am primit de la: ${clientName}`, rcptX, ry);
-    ry += 12;
-    doc.text(
-      `Suma: ${Number(receipt.amount ?? inv.total_with_vat ?? 0).toFixed(2)} RON`,
-      rcptX, ry
-    );
-    ry += 12;
-    doc.text(`Contravaloare: Factura ${inv.invoice_code || ""}`, rcptX, ry);
-    ry += 16;
-
+    // Receipt number and date on the same line
+    const receiptDate = receipt.receipt_date || inv.document_date || "-";
+    const invoiceDate = inv.document_date || "-";
     doc.setFontSize(8).setFont("helvetica", "normal");
-    doc.text("Casier: ________________", rcptX, ry);
-    doc.text("Semnatura: ________________", pageWidth - 40, ry, { align: "right" });
+    doc.text(
+      `Nr: ${receipt.receipt_code}   |   Data chitantei: ${receiptDate}   |   Factura nr: ${inv.invoice_code || "-"} din ${invoiceDate}`,
+      pageWidth / 2, ry, { align: "center" }
+    );
+    ry += 10;
+
+    // Horizontal separator under header info
+    doc.setDrawColor(180).setLineWidth(0.3);
+    doc.line(rcptX + 4, ry, rcptX + rcptWidth - 4, ry);
+    ry += 8;
+
+    // Two-column layout: Seller (left) | Buyer (right)
+    const colMid = rcptX + rcptWidth / 2;
+    const colLeftX = rcptX + 6;
+    const colRightX = colMid + 6;
+    const colWidth = rcptWidth / 2 - 10;
+    const lineH = 9;
+
+    // Seller data
+    const sellerName = company?.bt_27_seller_name || "";
+    const sellerCIF = company?.bt_31_32_seller_vat_identifier || company?.bt_29_seller_identifier || "";
+    const sellerRC = company?.bt_30_seller_legal_registration || "";
+    const sellerAddr = [company?.bt_35_seller_address, company?.bt_37_seller_city, company?.bt_39_seller_region].filter(Boolean).join(", ");
+    const sellerBank = company?.bt_85_payee_bank_name || "";
+    const sellerIBAN = company?.bt_84_payee_iban || "";
+
+    // Buyer data
+    const buyerName = snap.clientName || client?.nume || "-";
+    const buyerCIF = snap.clientCIF || client?.cif || "";
+    const buyerRC = snap.clientNrRegCom || client?.nrRegCom || "";
+    const buyerAddr = [snap.clientStrada || client?.strada, snap.clientLocalitate || client?.localitate, snap.clientJudet || client?.judet].filter(Boolean).join(", ");
+
+    const startRowY = ry;
+    let leftY = startRowY;
+    let rightY = startRowY;
+
+    // Column headers
+    doc.setFontSize(7.5).setFont("helvetica", "bold");
+    doc.text("VANZATOR:", colLeftX, leftY); leftY += lineH;
+    doc.text("CUMPARATOR:", colRightX, rightY); rightY += lineH;
+
+    doc.setFont("helvetica", "normal").setFontSize(7.5);
+    const drawRow = (label, val, x, y) => {
+      if (!val) return y;
+      const txt = doc.splitTextToSize(`${label}${val}`, colWidth);
+      doc.text(txt, x, y);
+      return y + txt.length * lineH;
+    };
+
+    leftY = drawRow("", sellerName, colLeftX, leftY);
+    if (sellerCIF) leftY = drawRow("CIF: ", sellerCIF, colLeftX, leftY);
+    if (sellerRC) leftY = drawRow("Reg.Com.: ", sellerRC, colLeftX, leftY);
+    if (sellerAddr) leftY = drawRow("Adresa: ", sellerAddr, colLeftX, leftY);
+    if (sellerBank) leftY = drawRow("Banca: ", sellerBank, colLeftX, leftY);
+    if (sellerIBAN) leftY = drawRow("IBAN: ", sellerIBAN, colLeftX, leftY);
+
+    rightY = drawRow("", buyerName, colRightX, rightY);
+    if (buyerCIF) rightY = drawRow("CIF: ", buyerCIF, colRightX, rightY);
+    if (buyerRC) rightY = drawRow("Reg.Com.: ", buyerRC, colRightX, rightY);
+    if (buyerAddr) rightY = drawRow("Adresa: ", buyerAddr, colRightX, rightY);
+
+    // Vertical separator between columns
+    const colSepH = Math.max(leftY, rightY) - startRowY + 4;
+    doc.setDrawColor(180).setLineWidth(0.3);
+    doc.line(colMid, startRowY - 4, colMid, startRowY - 4 + colSepH);
+
+    ry = Math.max(leftY, rightY) + 6;
+
+    // Horizontal separator before amount
+    doc.setDrawColor(180).setLineWidth(0.3);
+    doc.line(rcptX + 4, ry, rcptX + rcptWidth - 4, ry);
+    ry += 8;
+
+    // Amount line
+    const amount = Number(receipt.amount ?? inv.total_with_vat ?? 0);
+    const amountWords = numberToRomanianWords(amount);
+    doc.setFontSize(8).setFont("helvetica", "normal");
+    doc.text(`Am primit de la: ${buyerName}`, rcptX + 6, ry);
+    ry += 10;
+    doc.setFont("helvetica", "bold");
+    doc.text(`Suma: ${amount.toFixed(2)} RON`, rcptX + 6, ry);
+    doc.setFont("helvetica", "normal");
+    // Subtract 60 to leave space for the "Suma:" label on the left
+    const wordsLine = doc.splitTextToSize(`(${amountWords})`, rcptWidth - 60);
+    doc.text(wordsLine, rcptX + 6, ry + 9);
+    ry += 9 + wordsLine.length * 9 + 4;
+
+    doc.setFont("helvetica", "normal");
+    doc.text(`Contravaloare: Factura nr. ${inv.invoice_code || ""} din ${invoiceDate}`, rcptX + 6, ry);
+    ry += 12;
+
+    // Cashier signature – bottom right only
+    doc.setFontSize(8).setFont("helvetica", "normal");
+    doc.text("Casier,", pageWidth - 40, ry, { align: "right" });
+    ry += 10;
+    doc.text("________________", pageWidth - 40, ry, { align: "right" });
   }
 };
 
