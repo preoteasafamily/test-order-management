@@ -27,8 +27,27 @@ const App = () => {
   const API_URL =
     import.meta.env.VITE_API_URL || "https://192.168.100.136:5000";
 
-  // Auth state
-  const [currentUser, setCurrentUser] = useState(null);
+  // Auth state - restore from sessionStorage on mount (persists across refresh, lost on tab close/logout)
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const token = sessionStorage.getItem("token");
+      const user = sessionStorage.getItem("user");
+      if (!token || !user) {
+        // Both must be present for a valid session
+        sessionStorage.removeItem("token");
+        sessionStorage.removeItem("user");
+        sessionStorage.removeItem("userName");
+        return null;
+      }
+      return JSON.parse(user);
+    } catch (error) {
+      console.error("Failed to restore session from sessionStorage:", error);
+      sessionStorage.removeItem("token");
+      sessionStorage.removeItem("user");
+      sessionStorage.removeItem("userName");
+      return null;
+    }
+  });
   const [activeSection, setActiveSection] = useState("dashboard");
   const [editMode, setEditMode] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -251,7 +270,7 @@ const App = () => {
         return true;
       } else if (key === "company") {
         // Save company settings to API (requires admin auth)
-        const token = localStorage.getItem("token");
+        const token = sessionStorage.getItem("token");
         const response = await fetch(`${API_URL}/api/config/company`, {
           method: "PUT",
           headers: {
@@ -1036,9 +1055,9 @@ const App = () => {
 
         if (response.ok && data.user) {
           setCurrentUser(data.user);
-          localStorage.setItem("token", data.token);
-          localStorage.setItem("user", JSON.stringify(data.user));
-          localStorage.setItem("userName", credentials.username);
+          sessionStorage.setItem("token", data.token);
+          sessionStorage.setItem("user", JSON.stringify(data.user));
+          sessionStorage.setItem("userName", credentials.username);
           setActiveSection("dashboard");
 
           // ✅ INIȚIAZĂ TRACKING PENTRU AGENT
@@ -1066,9 +1085,9 @@ const App = () => {
         window.cleanupGPSTracking();
       }
       setCurrentUser(null);
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-      localStorage.removeItem("userName");
+      sessionStorage.removeItem("token");
+      sessionStorage.removeItem("user");
+      sessionStorage.removeItem("userName");
     };
 
     return (
