@@ -636,6 +636,20 @@ const createTables = () => {
     db.exec("ALTER TABLE billing_settings ADD COLUMN receipt_next_number INTEGER DEFAULT 1");
   }
 
+  // Billing Receipts table (chitante generate pentru plata cash)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS billing_receipts (
+      id TEXT PRIMARY KEY,
+      invoice_id TEXT NOT NULL UNIQUE,
+      receipt_code TEXT,
+      receipt_number INTEGER,
+      receipt_date TEXT,
+      amount REAL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (invoice_id) REFERENCES billing_invoices(id) ON DELETE CASCADE
+    )
+  `);
+
   // App config table (key-value store for company settings and other config)
   db.exec(`
     CREATE TABLE IF NOT EXISTS app_config (
