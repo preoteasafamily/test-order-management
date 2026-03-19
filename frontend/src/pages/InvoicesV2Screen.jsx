@@ -243,11 +243,27 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order, receipt = nul
   // Table starts below whichever column is taller
   y = Math.max(y, rightY) + lineH;
 
+  // Invoice products+totals section: bordered block matching receipt visual style
+  const invBdrX = 40;
+  const invBdrW = pageWidth - 80;
+  const invBdrTopY = y;
+  const INV_HDR_H = 14;
+  // Title bar background
+  doc.setFillColor(240, 240, 240);
+  doc.rect(invBdrX, invBdrTopY, invBdrW, INV_HDR_H, "F");
+  doc.setDrawColor(80).setLineWidth(0.5);
+  doc.line(invBdrX, invBdrTopY + INV_HDR_H, invBdrX + invBdrW, invBdrTopY + INV_HDR_H);
+  // Section label
+  doc.setFontSize(9).setFont("helvetica", "bold");
+  doc.text("PRODUSE", invBdrX + 6, invBdrTopY + 10);
+  y += INV_HDR_H;
+
   // Products table: Nr. | Cod (barcode/EAN) | Descriere | UM | Cant. | Pret | Total
   const lines = snap.lines || snap.documentPositions || [];
   if (lines.length > 0) {
     autoTable(doc, {
       startY: y,
+      margin: { left: 40, right: 40 },
       head: [["Nr.", "Cod", "Descriere", "UM", "Cant.", "Pret", "Total"]],
       body: lines.map((item, idx) => [
         item.lineId != null ? item.lineId : idx + 1,
@@ -325,18 +341,20 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order, receipt = nul
   );
   totY += 12; // eslint-disable-line no-unused-vars
 
+  // Draw outer border around the entire products+totals section (after content height is known)
+  const invSectionEndY = Math.max(expY, totY) + 6;
+  doc.setDrawColor(80).setLineWidth(0.8);
+  doc.rect(invBdrX, invBdrTopY, invBdrW, invSectionEndY - invBdrTopY);
+
   // Receipt (chitanta) section at bottom of invoice – only for cash payments
   if (receipt && receipt.receipt_code) {
-    const pageHeight = doc.internal.pageSize.getHeight();
     // Place receipt immediately after invoice content (not forced to page bottom)
     const rcptY = Math.max(expY, totY) + 24;
     const rcptX = 40;
     const rcptWidth = pageWidth - 80;
 
-    // Outer border for the receipt block
-    const TOTAL_HEIGHT = pageHeight - rcptY - 12;
-    doc.setDrawColor(80).setLineWidth(0.8);
-    doc.rect(rcptX, rcptY, rcptWidth, TOTAL_HEIGHT);
+    // Outer border for the receipt block – drawn after content so height matches last row
+    // (see bottom of this block for the actual rect draw)
 
     // Title bar background
     doc.setFillColor(240, 240, 240);
@@ -449,6 +467,11 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order, receipt = nul
     doc.setFont("helvetica", "normal");
     doc.text(`Reprezentând contravaloare factura ${inv.invoice_code || ""} din data ${invoiceDate}`, rcptX + 6, ry);
     doc.text("Casier, ________________", pageWidth - rcptX - 6, ry, { align: "right" });
+
+    // Draw outer receipt border sized to actual content (ends right after last row)
+    const rcptEndY = ry + 10;
+    doc.setDrawColor(80).setLineWidth(0.8);
+    doc.rect(rcptX, rcptY, rcptWidth, rcptEndY - rcptY);
   }
 };
 
