@@ -27,8 +27,20 @@ const App = () => {
   const API_URL =
     import.meta.env.VITE_API_URL || "https://192.168.100.136:5000";
 
-  // Auth state
-  const [currentUser, setCurrentUser] = useState(null);
+  // Auth state - restore from localStorage on page load
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const savedUser = localStorage.getItem("user");
+      const savedToken = localStorage.getItem("token");
+      if (savedUser && savedToken) {
+        return JSON.parse(savedUser);
+      }
+    } catch (e) {
+      localStorage.removeItem("user");
+      localStorage.removeItem("token");
+    }
+    return null;
+  });
   const [activeSection, setActiveSection] = useState("dashboard");
   const [editMode, setEditMode] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -1013,6 +1025,17 @@ const App = () => {
       }
     };
   };
+
+  // Restore GPS tracking for agents on page refresh (runs once on mount only)
+  useEffect(() => {
+    if (currentUser && currentUser.role === "agent") {
+      const cleanup = startGPSTracking(currentUser.id, currentUser.username);
+      if (cleanup) {
+        window.cleanupGPSTracking = cleanup;
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ✅ FIXED: Login component
   const LoginScreen = () => {
