@@ -328,9 +328,8 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order, receipt = nul
   // Receipt (chitanta) section at bottom of invoice – only for cash payments
   if (receipt && receipt.receipt_code) {
     const pageHeight = doc.internal.pageSize.getHeight();
-    // Reserve 230pt at the bottom for the expanded receipt block
-    const RECEIPT_BLOCK_HEIGHT = 230;
-    const rcptY = Math.max(Math.max(expY, totY) + 24, pageHeight - RECEIPT_BLOCK_HEIGHT);
+    // Place receipt immediately after invoice content (not forced to page bottom)
+    const rcptY = Math.max(expY, totY) + 24;
     const rcptX = 40;
     const rcptWidth = pageWidth - 80;
 
@@ -391,10 +390,9 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order, receipt = nul
     let leftY = startRowY;
     let rightY = startRowY;
 
-    // Column headers
+    // Column headers – only show VANZATOR title; buyer data shown without a separate title
     doc.setFontSize(7.5).setFont("helvetica", "bold");
     doc.text("VANZATOR:", colLeftX, leftY); leftY += lineH;
-    doc.text("CUMPARATOR:", colRightX, rightY); rightY += lineH;
 
     doc.setFont("helvetica", "normal").setFontSize(7.5);
     const drawRow = (label, val, x, y) => {
@@ -428,12 +426,17 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order, receipt = nul
     doc.line(rcptX + 4, ry, rcptX + rcptWidth - 4, ry);
     ry += 8;
 
-    // Amount line
+    // Amount line – name + CUI + Reg.Com. on one line, address on next
     const amount = Number(receipt.amount ?? inv.total_with_vat ?? 0);
     const amountWords = numberToRomanianWords(amount);
     doc.setFontSize(8).setFont("helvetica", "normal");
-    doc.text(`Am primit de la: ${buyerName}`, rcptX + 6, ry);
+    const buyerIdLine = [buyerName, buyerCIF ? `CIF: ${buyerCIF}` : null, buyerRC ? `Reg.Com.: ${buyerRC}` : null].filter(Boolean).join(", ");
+    doc.text(`Am primit de la: ${buyerIdLine}`, rcptX + 6, ry);
     ry += 10;
+    if (buyerAddr) {
+      doc.text(`Adresa: ${buyerAddr}`, rcptX + 6, ry);
+      ry += 10;
+    }
     doc.setFont("helvetica", "bold");
     doc.text(`Suma: ${amount.toFixed(2)} RON`, rcptX + 6, ry);
     doc.setFont("helvetica", "normal");
@@ -442,15 +445,10 @@ const drawInvoiceOnDoc = (doc, inv, company, client, agent, order, receipt = nul
     doc.text(wordsLine, rcptX + 6, ry + 9);
     ry += 9 + wordsLine.length * 9 + 4;
 
+    // "Reprezentând..." text left-aligned, cashier signature right-aligned on the same line
     doc.setFont("helvetica", "normal");
-    doc.text(`Contravaloare: Factura nr. ${inv.invoice_code || ""} din ${invoiceDate}`, rcptX + 6, ry);
-    ry += 12;
-
-    // Cashier signature – bottom right only
-    doc.setFontSize(8).setFont("helvetica", "normal");
-    doc.text("Casier,", pageWidth - 40, ry, { align: "right" });
-    ry += 10;
-    doc.text("________________", pageWidth - 40, ry, { align: "right" });
+    doc.text(`Reprezentând contravaloare factura ${inv.invoice_code || ""} din data ${invoiceDate}`, rcptX + 6, ry);
+    doc.text("Casier, ________________", pageWidth - rcptX - 6, ry, { align: "right" });
   }
 };
 
