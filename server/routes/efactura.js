@@ -12,6 +12,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../database');
 const rateLimit = require('express-rate-limit');
+const crypto = require('crypto');
 
 // Rate limiter for e-Factura SPV endpoints (ANAF calls are expensive)
 const efacturaLimiter = rateLimit({
@@ -269,12 +270,20 @@ router.get('/oauth/authorize', (req, res) => {
       return res.status(400).json({ error: 'redirect_uri lipsă. Configurați redirect_uri în setări.' });
     }
 
+    // Generate a cryptographically random state for CSRF protection.
+    // ANAF OAuth2 requires the state parameter to be present.
+    const state = crypto.randomBytes(32).toString('hex');
+    db.prepare(
+      `UPDATE spv_settings SET oauth_state = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`
+    ).run(state);
+
     const params = new URLSearchParams({
       response_type:      'code',
       client_id:          settings.client_id,
       redirect_uri:       settings.redirect_uri,
       token_content_type: 'jwt',
       scope:              'offline_access',
+      state,
     });
 
     const authUrl = `${ANAF_AUTH_URL}?${params.toString()}`;
@@ -287,10 +296,11 @@ router.get('/oauth/authorize', (req, res) => {
 // GET /api/efactura/oauth/callback
 // ANAF redirects here after the user authenticates; exchanges code for tokens
 router.get('/oauth/callback', async (req, res) => {
-  const { code, error: oauthError, error_description } = req.query;
+  const { code, state, error: oauthError, error_description } = req.query;
 
   if (oauthError) {
     const msg = error_description || oauthError;
+    console.error('ANAF OAuth2 callback error:', oauthError, error_description);
     return res.redirect(`/?oauth_error=${encodeURIComponent(msg)}#efactura-spv`);
   }
 
@@ -298,8 +308,16 @@ router.get('/oauth/callback', async (req, res) => {
     return res.redirect('/?oauth_error=Cod+de+autorizare+lipsă#efactura-spv');
   }
 
+  // Validate state parameter to prevent CSRF attacks
   try {
     const settings = getSpvSettings();
+    if (!state || !settings.oauth_state || state !== settings.oauth_state) {
+      console.error('ANAF OAuth2 state mismatch – possible CSRF:', { received: state, expected: settings.oauth_state });
+      return res.redirect('/?oauth_error=Eroare+de+securitate%3A+state+invalid.+Reîncercați+autorizarea.#efactura-spv');
+    }
+
+    // Clear the used state immediately
+    db.prepare(`UPDATE spv_settings SET oauth_state = '' WHERE id = 1`).run();
 
     const body = new URLSearchParams({
       grant_type:    'authorization_code',
@@ -309,16 +327,23 @@ router.get('/oauth/callback', async (req, res) => {
       client_secret: settings.client_secret,
     });
 
+    // ANAF requires Basic Auth header (base64 client_id:client_secret) plus body params
+    const basicAuth = Buffer.from(`${settings.client_id}:${settings.client_secret}`).toString('base64');
+
     const tokenRes = await fetch(ANAF_TOKEN_URL, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body:    body.toString(),
+      headers: {
+        'Content-Type':  'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${basicAuth}`,
+      },
+      body: body.toString(),
     });
 
     const tokenData = await tokenRes.json().catch(() => ({}));
 
     if (!tokenRes.ok) {
       const errMsg = tokenData.error_description || tokenData.error || JSON.stringify(tokenData);
+      console.error('ANAF token exchange failed:', tokenRes.status, tokenData);
       return res.redirect(`/?oauth_error=${encodeURIComponent(errMsg)}#efactura-spv`);
     }
 
@@ -361,9 +386,15 @@ router.post('/oauth/refresh', async (req, res) => {
       client_secret: settings.client_secret,
     });
 
+    // ANAF requires Basic Auth header (base64 client_id:client_secret) plus body params
+    const basicAuth = Buffer.from(`${settings.client_id}:${settings.client_secret}`).toString('base64');
+
     const tokenRes = await fetch(ANAF_TOKEN_URL, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: {
+        'Content-Type':  'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${basicAuth}`,
+      },
       body:    body.toString(),
     });
 
