@@ -431,6 +431,164 @@ router.post('/oauth/refresh', async (req, res) => {
   }
 });
 
+// ─── Credential diagnostics ──────────────────────────────────────────────────
+
+// GET /api/efactura/oauth/test-credentials
+// Non-destructive diagnostic that validates OAuth2 credentials without starting
+// a full authorization flow.  Returns a structured report that the UI displays
+// as a checklist so the user can see exactly what is and is not working.
+//
+// Strategy:
+//  1. Format check  – are all three required values present?
+//  2. Server check  – can we reach the ANAF authorization server at all?
+//  3. Client check  – POST to the token endpoint with a deliberately-invalid
+//                     authorization code.  ANAF returns:
+//                       • "invalid_client"  → Client ID / Secret are wrong
+//                       • "invalid_grant"   → client is recognized, bad code
+//                                             (expected – credentials are VALID)
+//                       • other errors      → credentials may be fine but
+//                                             something else is misconfigured
+router.get('/oauth/test-credentials', async (req, res) => {
+  const TIMEOUT_MS = 8000;
+
+  const result = {
+    format:      { ok: false, message: '' },
+    reachable:   { ok: false, message: '' },
+    credentials: { ok: false, message: '' },
+    redirectUri: { ok: false, message: '' },
+    summary:     '',
+  };
+
+  // ── 1. Format validation ───────────────────────────────────────────────────
+  const settings = getSpvSettings();
+  const { client_id, client_secret, redirect_uri } = settings;
+
+  if (!client_id && !client_secret && !redirect_uri) {
+    result.format.message = 'Nicio credențială nu este configurată. Introduceți Client ID, Client Secret și Redirect URI.';
+    result.summary = 'Credențialele OAuth2 nu sunt configurate.';
+    return res.json(result);
+  }
+  if (!client_id) {
+    result.format.message = 'Client ID lipsă.';
+    result.summary = 'Configurați Client ID în setări.';
+    return res.json(result);
+  }
+  if (!client_secret) {
+    result.format.message = 'Client Secret lipsă.';
+    result.summary = 'Configurați Client Secret în setări.';
+    return res.json(result);
+  }
+  if (!redirect_uri) {
+    result.format.message = 'Redirect URI lipsă.';
+    result.summary = 'Configurați Redirect URI în setări.';
+    return res.json(result);
+  }
+
+  result.format.ok = true;
+  result.format.message = `Client ID (${client_id.slice(0, 8)}…), Client Secret și Redirect URI sunt prezente.`;
+
+  // Redirect URI format check
+  try {
+    const u = new URL(redirect_uri);
+    if (u.protocol !== 'https:') {
+      result.redirectUri.message = `Redirect URI folosește protocolul "${u.protocol}" – ANAF necesită HTTPS.`;
+    } else {
+      result.redirectUri.ok = true;
+      result.redirectUri.message = `Redirect URI folosește HTTPS (${redirect_uri}).`;
+    }
+  } catch {
+    result.redirectUri.message = `Redirect URI are un format invalid: "${redirect_uri}".`;
+  }
+
+  // ── 2. Server reachability ─────────────────────────────────────────────────
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    const headRes = await fetch(ANAF_AUTH_URL, {
+      method:  'HEAD',
+      signal:  ctrl.signal,
+      redirect: 'manual',
+    }).finally(() => clearTimeout(timer));
+    // Any HTTP response (including redirects) means the server is up.
+    result.reachable.ok = true;
+    result.reachable.message = `Serverul ANAF OAuth2 este accesibil (HTTP ${headRes.status}).`;
+  } catch (fetchErr) {
+    const isTimeout = fetchErr.name === 'AbortError';
+    result.reachable.message = isTimeout
+      ? `Serverul ANAF OAuth2 nu a răspuns în ${TIMEOUT_MS / 1000}s (timeout). Verificați conexiunea la internet sau firewall-ul.`
+      : `Serverul ANAF OAuth2 nu este accesibil: ${fetchErr.message}`;
+    result.summary = 'Nu se poate contacta serverul ANAF. Verificați rețeaua și firewall-ul.';
+    return res.json(result);
+  }
+
+  // ── 3. Client ID / Secret probe ────────────────────────────────────────────
+  // POST with an intentionally-invalid code.  The response tells us whether the
+  // client credentials themselves are recognized by ANAF.
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+
+    const body = new URLSearchParams({
+      grant_type:   'authorization_code',
+      code:         'diagnostic_test_invalid_code',
+      redirect_uri,
+      client_id,
+      client_secret,
+    });
+    const basicAuth = Buffer.from(`${client_id}:${client_secret}`).toString('base64');
+
+    const tokenRes = await fetch(ANAF_TOKEN_URL, {
+      method:  'POST',
+      headers: {
+        'Content-Type':  'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${basicAuth}`,
+      },
+      body:   body.toString(),
+      signal: ctrl.signal,
+    }).finally(() => clearTimeout(timer));
+
+    const data = await tokenRes.json().catch(() => ({}));
+    const errCode = (data.error || '').toLowerCase();
+    const errDesc = data.error_description || data.error || JSON.stringify(data);
+
+    if (errCode === 'invalid_client' || errCode === 'unauthorized_client') {
+      // ANAF explicitly rejected our client credentials
+      result.credentials.ok = false;
+      result.credentials.message = `Client ID sau Client Secret invalid – ANAF a răspuns cu "${errCode}": ${errDesc}`;
+      result.summary = 'Credențialele OAuth2 nu sunt recunoscute de ANAF. Verificați Client ID și Client Secret.';
+    } else if (
+      errCode === 'invalid_grant' ||
+      errCode === 'invalid_request' ||
+      errCode === 'unsupported_grant_type' ||
+      tokenRes.status === 400 ||
+      tokenRes.status === 401
+    ) {
+      // ANAF recognized the client but rejected the (deliberately-invalid) code –
+      // this is exactly what we expect and means credentials are valid.
+      result.credentials.ok = true;
+      result.credentials.message = `Client ID și Client Secret sunt recunoscute de ANAF (răspuns așteptat: "${errCode}").`;
+      result.summary = 'Credențialele OAuth2 sunt valide și serverul ANAF este accesibil. Puteți continua cu autorizarea.';
+    } else if (tokenRes.ok) {
+      // Unlikely but handled: server returned 2xx with our dummy code.
+      result.credentials.ok = true;
+      result.credentials.message = 'Credențiale acceptate (răspuns 2xx neașteptat).';
+      result.summary = 'Credențialele OAuth2 par valide.';
+    } else {
+      result.credentials.ok = false;
+      result.credentials.message = `Răspuns neașteptat de la ANAF (HTTP ${tokenRes.status}): ${errDesc}`;
+      result.summary = `Răspuns neașteptat de la ANAF: ${errDesc}`;
+    }
+  } catch (fetchErr) {
+    const isTimeout = fetchErr.name === 'AbortError';
+    result.credentials.message = isTimeout
+      ? 'Endpoint-ul token ANAF nu a răspuns la timp (timeout).'
+      : `Eroare la conectare endpoint token: ${fetchErr.message}`;
+    result.summary = 'Nu se poate contacta endpoint-ul token ANAF.';
+  }
+
+  return res.json(result);
+});
+
 // ─── Invoices list for SPV ────────────────────────────────────────────────────
 
 // GET /api/efactura/invoices?from=YYYY-MM-DD&to=YYYY-MM-DD

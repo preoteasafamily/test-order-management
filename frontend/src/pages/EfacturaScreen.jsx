@@ -98,6 +98,8 @@ const SettingsPanel = ({ API_URL, onClose, onSaved }) => {
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [authorizing, setAuthorizing] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState(null);
   const [msg, setMsg] = useState(null);
   const [hasRefreshToken, setHasRefreshToken] = useState(false);
   const [copiedUri, setCopiedUri] = useState(false);
@@ -160,6 +162,27 @@ const SettingsPanel = ({ API_URL, onClose, onSaved }) => {
     finally { setAuthorizing(false); }
   };
 
+  const testCredentials = async () => {
+    setTesting(true);
+    setTestResult(null);
+    setMsg(null);
+    // Save credentials first so the server uses the latest values from the form
+    try {
+      await fetch(`${API_URL}/api/efactura/settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const r = await fetch(`${API_URL}/api/efactura/oauth/test-credentials`);
+      const data = await r.json();
+      setTestResult(data);
+    } catch (e) {
+      setTestResult({ summary: `Eroare: ${e.message}` });
+    } finally {
+      setTesting(false);
+    }
+  };
+
   const refreshToken = async () => {
     setRefreshing(true);
     setMsg(null);
@@ -205,7 +228,7 @@ const SettingsPanel = ({ API_URL, onClose, onSaved }) => {
           ].map(({ id, label, icon: Icon }) => (
             <button
               key={id}
-              onClick={() => setSettingsTab(id)}
+              onClick={() => { setSettingsTab(id); setTestResult(null); setMsg(null); }}
               className={`flex items-center gap-1.5 px-3 py-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
                 settingsTab === id
                   ? "border-amber-500 text-amber-700"
@@ -329,7 +352,52 @@ const SettingsPanel = ({ API_URL, onClose, onSaved }) => {
                     Reîmprospătare token
                   </button>
                 )}
+                <button
+                  onClick={testCredentials}
+                  disabled={testing || !form.clientId || !form.clientSecret || !form.redirectUri}
+                  className="flex items-center gap-2 px-4 py-2 border border-purple-300 text-purple-700 rounded-lg text-sm hover:bg-purple-50 disabled:opacity-50">
+                  {testing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                  Testează credențiale
+                </button>
               </div>
+
+              {/* ── Credential test result panel ─────────────────────────────── */}
+              {testResult && (
+                <div className="border rounded-lg overflow-hidden text-sm">
+                  <div className={`px-4 py-2.5 font-semibold flex items-center gap-2 ${
+                    testResult.credentials?.ok
+                      ? "bg-green-50 border-b border-green-200 text-green-800"
+                      : "bg-red-50 border-b border-red-200 text-red-800"
+                  }`}>
+                    {testResult.credentials?.ok
+                      ? <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+                      : <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />}
+                    {testResult.summary || "Rezultat diagnostic credențiale ANAF"}
+                  </div>
+                  <ul className="divide-y">
+                    {[
+                      { key: "format",      label: "Format credențiale" },
+                      { key: "reachable",   label: "Server ANAF accesibil" },
+                      { key: "redirectUri", label: "Redirect URI (format HTTPS)" },
+                      { key: "credentials", label: "Client ID / Client Secret valide" },
+                    ].map(({ key, label }) => {
+                      const item = testResult[key];
+                      if (!item) return null;
+                      return (
+                        <li key={key} className="flex items-start gap-3 px-4 py-2.5 bg-white">
+                          {item.ok
+                            ? <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                            : <XCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />}
+                          <div>
+                            <p className="font-medium text-gray-700">{label}</p>
+                            {item.message && <p className="text-xs text-gray-500 mt-0.5">{item.message}</p>}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
             </>
           )}
 
