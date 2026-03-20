@@ -36,6 +36,12 @@ const ANAF_TOKEN_URL  = 'https://logincert.anaf.ro/anaf-oauth2/v1/token';
 const UPLOAD_RATE_LIMIT_DELAY_MS = 300;
 const STATUS_RATE_LIMIT_DELAY_MS = 200;
 
+// Frontend URL used for OAuth callback redirects.
+// In development, this should be set to the Vite dev server URL (e.g. https://192.168.100.136:5173).
+// In production (when Express serves the built frontend), leave empty so relative redirects are used.
+// When empty, `${FRONTEND_URL}/?...` becomes `/?...` (relative URL), which is correct for production.
+const FRONTEND_URL = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
+
 // Helper: get SPV settings from DB
 const getSpvSettings = () => {
   return db.prepare('SELECT * FROM spv_settings WHERE id = 1').get() || {};
@@ -301,11 +307,11 @@ router.get('/oauth/callback', async (req, res) => {
   if (oauthError) {
     const msg = error_description || oauthError;
     console.error('ANAF OAuth2 callback error:', oauthError, error_description);
-    return res.redirect(`/?oauth_error=${encodeURIComponent(msg)}#efactura-spv`);
+    return res.redirect(`${FRONTEND_URL}/?oauth_error=${encodeURIComponent(msg)}#efactura-spv`);
   }
 
   if (!code) {
-    return res.redirect('/?oauth_error=Cod+de+autorizare+lipsă#efactura-spv');
+    return res.redirect(`${FRONTEND_URL}/?oauth_error=Cod+de+autorizare+lipsă#efactura-spv`);
   }
 
   // Validate state parameter to prevent CSRF attacks
@@ -313,7 +319,7 @@ router.get('/oauth/callback', async (req, res) => {
     const settings = getSpvSettings();
     if (!state || !settings.oauth_state || state !== settings.oauth_state) {
       console.error('ANAF OAuth2 state mismatch – possible CSRF:', { received: state, expected: settings.oauth_state });
-      return res.redirect('/?oauth_error=Eroare+de+securitate%3A+state+invalid.+Reîncercați+autorizarea.#efactura-spv');
+      return res.redirect(`${FRONTEND_URL}/?oauth_error=Eroare+de+securitate%3A+state+invalid.+Reîncercați+autorizarea.#efactura-spv`);
     }
 
     // Clear the used state immediately
@@ -344,7 +350,7 @@ router.get('/oauth/callback', async (req, res) => {
     if (!tokenRes.ok) {
       const errMsg = tokenData.error_description || tokenData.error || JSON.stringify(tokenData);
       console.error('ANAF token exchange failed:', tokenRes.status, tokenData);
-      return res.redirect(`/?oauth_error=${encodeURIComponent(errMsg)}#efactura-spv`);
+      return res.redirect(`${FRONTEND_URL}/?oauth_error=${encodeURIComponent(errMsg)}#efactura-spv`);
     }
 
     const expiresAt = tokenData.expires_in
@@ -359,10 +365,10 @@ router.get('/oauth/callback', async (req, res) => {
       expiresAt,
     );
 
-    res.redirect('/?oauth_success=1#efactura-spv');
+    res.redirect(`${FRONTEND_URL}/?oauth_success=1#efactura-spv`);
   } catch (err) {
     console.error('OAuth2 callback error:', err);
-    res.redirect(`/?oauth_error=${encodeURIComponent(err.message)}#efactura-spv`);
+    res.redirect(`${FRONTEND_URL}/?oauth_error=${encodeURIComponent(err.message)}#efactura-spv`);
   }
 });
 

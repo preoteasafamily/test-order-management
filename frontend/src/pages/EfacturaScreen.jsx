@@ -102,8 +102,11 @@ const SettingsPanel = ({ API_URL, onClose, onSaved }) => {
   const [hasRefreshToken, setHasRefreshToken] = useState(false);
   const [copiedUri, setCopiedUri] = useState(false);
 
-  // Compute the recommended redirect URI from API_URL (avoids hardcoding port 5000)
-  const recommendedRedirectUri = `${API_URL}/api/efactura/oauth/callback`;
+  // Use the frontend origin (window.location.origin) so that the redirect URI goes through
+  // the Vite proxy and the OAuth callback is forwarded to the backend correctly.
+  // This ensures the URL shown to register in ANAF matches the actual frontend server
+  // (e.g. https://192.168.100.136:5173) rather than the backend API port (5000).
+  const recommendedRedirectUri = `${window.location.origin}/api/efactura/oauth/callback`;
 
   useEffect(() => {
     fetch(`${API_URL}/api/efactura/settings`)
