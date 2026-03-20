@@ -101,6 +101,8 @@ const SettingsPanel = ({ API_URL, onClose, onSaved }) => {
   const [msg, setMsg] = useState(null);
   const [hasRefreshToken, setHasRefreshToken] = useState(false);
   const [copiedUri, setCopiedUri] = useState(false);
+  const [diagnostic, setDiagnostic] = useState(null);
+  const [diagLoading, setDiagLoading] = useState(false);
 
   // Use the frontend origin (window.location.origin) so that the redirect URI goes through
   // the Vite proxy and the OAuth callback is forwarded to the backend correctly.
@@ -178,6 +180,20 @@ const SettingsPanel = ({ API_URL, onClose, onSaved }) => {
       }
     } catch (e) { setMsg({ type: "error", text: e.message }); }
     finally { setRefreshing(false); }
+  };
+
+  const runDiagnostic = async () => {
+    setDiagLoading(true);
+    setDiagnostic(null);
+    try {
+      const r = await fetch(`${API_URL}/api/efactura/oauth/diagnostic`);
+      const data = await r.json();
+      setDiagnostic(data);
+    } catch (e) {
+      setDiagnostic({ error: e.message });
+    } finally {
+      setDiagLoading(false);
+    }
   };
 
   const tokenExpired = form.tokenExpiresAt && new Date(form.tokenExpiresAt) < new Date();
@@ -329,7 +345,61 @@ const SettingsPanel = ({ API_URL, onClose, onSaved }) => {
                     Reîmprospătare token
                   </button>
                 )}
+                <button
+                  onClick={runDiagnostic}
+                  disabled={diagLoading}
+                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-600 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50">
+                  {diagLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <AlertTriangle className="w-4 h-4" />}
+                  Diagnosticare configurație
+                </button>
               </div>
+
+              {/* Diagnostic result panel */}
+              {diagnostic && !diagnostic.error && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs space-y-2">
+                  <p className="font-semibold text-gray-700 text-sm">🔍 Rezultat diagnosticare OAuth2</p>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                    {[
+                      { label: "Client ID configurat", ok: diagnostic.hasClientId },
+                      { label: "Client Secret configurat", ok: diagnostic.hasClientSecret },
+                      { label: "Redirect URI configurat", ok: diagnostic.hasRedirectUri },
+                      { label: "CIF furnizor configurat", ok: diagnostic.hasCif },
+                      { label: "Token activ", ok: diagnostic.hasToken && diagnostic.tokenExpired === false },
+                      { label: "Refresh token prezent", ok: diagnostic.hasRefreshToken },
+                    ].map(({ label, ok }) => (
+                      <div key={label} className="flex items-center gap-1.5">
+                        {ok
+                          ? <CheckCircle className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
+                          : <XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />}
+                        <span className={ok ? "text-gray-700" : "text-red-700 font-medium"}>{label}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {diagnostic.redirectUri && (
+                    <div className="pt-1">
+                      <span className="text-gray-500">Redirect URI salvat: </span>
+                      <code className="bg-white border rounded px-1 break-all">{diagnostic.redirectUri}</code>
+                    </div>
+                  )}
+                  {diagnostic.redirectUriIssues && diagnostic.redirectUriIssues.length > 0 && (
+                    <div className="bg-orange-50 border border-orange-200 rounded p-2 space-y-0.5">
+                      <p className="font-semibold text-orange-800">⚠ Atenție – probleme detectate la Redirect URI:</p>
+                      {diagnostic.redirectUriIssues.map((issue, i) => (
+                        <p key={i} className="text-orange-700">• {issue}</p>
+                      ))}
+                    </div>
+                  )}
+                  {diagnostic.tokenExpired === true && (
+                    <p className="text-red-700 font-medium">⚠ Token expirat – utilizați „Reîmprospătare token" sau reautorizați.</p>
+                  )}
+                  <p className="text-gray-400 pt-1">Verificat la: {diagnostic.checkedAt ? new Date(diagnostic.checkedAt).toLocaleString("ro-RO") : "—"}</p>
+                </div>
+              )}
+              {diagnostic && diagnostic.error && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700">
+                  Eroare diagnosticare: {diagnostic.error}
+                </div>
+              )}
             </>
           )}
 
@@ -445,14 +515,83 @@ const SettingsPanel = ({ API_URL, onClose, onSaved }) => {
                 </li>
               </ol>
 
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-800 text-xs space-y-1">
-                <p className="font-semibold">❌ Depanare eroare „access_denied"</p>
-                <ul className="list-disc pl-4 space-y-1">
-                  <li><strong>Redirect URI nepotrivit</strong> – Verificați că adresa din câmpul „Redirect URI" al aplicației coincide <em>exact</em> (inclusiv protocol, port și cale) cu cea înregistrată pe portalul ANAF. Folosiți butonul „Copiază" din tab-ul OAuth2.</li>
-                  <li><strong>Aplicație neaprobată / CIF greșit</strong> – Asigurați-vă că v-ați autentificat pe portalul ANAF cu certificatul digital aferent CIF-ului înregistrat în câmpul „General".</li>
-                  <li><strong>Scope lipsă</strong> – Verificați că ați bifat <strong>offline_access</strong> la înregistrarea aplicației.</li>
-                  <li><strong>Client ID / Client Secret greșit</strong> – Copiat cu spații sau trunchiat; reintroduceți credențialele direct din portalul ANAF.</li>
-                </ul>
+              {/* ── Extended access_denied troubleshooting ── */}
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-800 text-xs space-y-2">
+                <p className="font-semibold text-sm">❌ Depanare eroare „access_denied" – cauze și remedieri</p>
+                <p className="text-red-700">Eroarea apare când serverul ANAF refuză autorizarea. Redirect URI corect este <strong>condiție necesară, dar nu și suficientă</strong>. Verificați sistematic fiecare cauză de mai jos:</p>
+
+                <div className="space-y-3 mt-1">
+                  <div>
+                    <p className="font-semibold">1. Redirect URI (Callback URL) nepotrivit</p>
+                    <ul className="list-disc pl-4 space-y-0.5 text-red-700">
+                      <li>Adresa din câmpul „Redirect URI" al aplicației trebuie să coincidă <em>caracter cu caracter</em> cu cea înregistrată pe portalul ANAF.</li>
+                      <li>Verificați: protocol (https://), adresa IP sau domeniu, portul, calea. Orice diferență produce <code className="bg-red-100 px-0.5 rounded">access_denied</code>.</li>
+                      <li>Folosiți butonul „Copiază" din tab-ul OAuth2 pentru a prelua adresa exactă, fără risc de erori de tastare.</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <p className="font-semibold">2. Drepturi / rol e-Factura lipsă în SPV</p>
+                    <ul className="list-disc pl-4 space-y-0.5 text-red-700">
+                      <li>Certificatul digital folosit la autentificare trebuie să aibă rolul <strong>„e-Factura"</strong> (sau „Administrare e-Factura") asociat în SPV pentru CIF-ul respectiv.</li>
+                      <li>Verificați în portalul ANAF la <strong>SPV → Administrare drepturi</strong> că utilizatorul/certificatul digital are acest rol activ.</li>
+                      <li>Dacă rolul lipsește, solicitați asocierea lui înainte de reîncercarea autorizării.</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <p className="font-semibold">3. Certificat digital neacceptat sau expirat în SPV</p>
+                    <ul className="list-disc pl-4 space-y-0.5 text-red-700">
+                      <li>Certificatul digital calificat (token USB / smart card) trebuie să fie <strong>activ și neexpirat</strong>, emis de o autoritate de certificare recunoscută în România (certSIGN, DigiSign, Trans Sped etc.).</li>
+                      <li>Accesați portalul ANAF și verificați că autentificarea cu certificatul reușește <em>înainte</em> de a testa fluxul OAuth2.</li>
+                      <li>Dacă certificatul a expirat sau nu este recunoscut, contactați autoritatea emitentă pentru reînnoire.</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <p className="font-semibold">4. Endpoint HTTPS cu certificat self-signed (neacceptat de ANAF)</p>
+                    <ul className="list-disc pl-4 space-y-0.5 text-red-700">
+                      <li>Serverul ANAF de autorizare (<code className="bg-red-100 px-0.5 rounded">logincert.anaf.ro</code>) va încerca să acceseze redirect_uri pentru validare. Un certificat SSL <strong>self-signed sau expirat</strong> poate cauza refuzul autorizării.</li>
+                      <li>Folosiți un certificat SSL valid emis de o autoritate de certificare publică (Let's Encrypt, DigiCert etc.) pe domeniul sau IP-ul public al serverului.</li>
+                      <li>Dacă este imposibil (server intern), utilizați un tunel public (ex: ngrok) doar pentru testare, sau un reverse proxy cu certificat valid.</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <p className="font-semibold">5. Adresă IP privată / rețea inaccesibilă din internet</p>
+                    <ul className="list-disc pl-4 space-y-0.5 text-red-700">
+                      <li>Dacă redirect_uri conține o adresă IP privată (ex: <code className="bg-red-100 px-0.5 rounded">192.168.x.x</code>, <code className="bg-red-100 px-0.5 rounded">10.x.x.x</code>, <code className="bg-red-100 px-0.5 rounded">localhost</code>), serverul ANAF nu poate accesa acea adresă din internet.</li>
+                      <li>Totuși, redirecționarea OAuth2 este efectuată de <em>browser-ul utilizatorului</em>, nu de serverul ANAF — deci adresa privată poate funcționa dacă browserul are acces la ea (ex: rețea locală).</li>
+                      <li>Dacă serverul ANAF refuză explicit adrese private, mutați aplicația pe un domeniu public sau folosiți ngrok/tunnel pentru testare.</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <p className="font-semibold">6. Parametri request incorecți (scope, grant_type, response_type)</p>
+                    <ul className="list-disc pl-4 space-y-0.5 text-red-700">
+                      <li>Aplicația trimite automat: <code className="bg-red-100 px-0.5 rounded">response_type=code</code>, <code className="bg-red-100 px-0.5 rounded">scope=offline_access</code>, <code className="bg-red-100 px-0.5 rounded">token_content_type=jwt</code> — conformi cu documentația ANAF.</li>
+                      <li>La înregistrarea aplicației în portal ANAF, bifați explicit <strong>offline_access</strong> ca scope permis; dacă nu este bifat, serverul va refuza cu <code className="bg-red-100 px-0.5 rounded">access_denied</code>.</li>
+                      <li>Verificați că aplicația înregistrată în ANAF are <strong>grant type</strong> setat pe <strong>Authorization Code</strong>.</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <p className="font-semibold">7. Pas de consimțământ lipsă sau aplicație neaprobată</p>
+                    <ul className="list-disc pl-4 space-y-0.5 text-red-700">
+                      <li>La prima autorizare, ANAF afișează un ecran de consimțământ (acord) care trebuie <strong>acceptat explicit</strong>. Dacă este respins sau fereastra este închisă, apare <code className="bg-red-100 px-0.5 rounded">access_denied</code>.</li>
+                      <li>Revocarea unui acord anterior în portalul ANAF (SPV → Aplicații autorizate) necesită un nou flux de autorizare complet.</li>
+                      <li>Asigurați-vă că aplicația este în starea <strong>„Activă"</strong> în portalul ANAF (nu „Suspendată" sau „Ștearsă").</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <p className="font-semibold">8. Client ID / Client Secret greșit sau expirat</p>
+                    <ul className="list-disc pl-4 space-y-0.5 text-red-700">
+                      <li>Reintroduceți credențialele direct din portalul ANAF, fără spații sau caractere ascunse.</li>
+                      <li>Dacă Client Secret a fost regenerat în portal, actualizați-l și în aplicație.</li>
+                    </ul>
+                  </div>
+                </div>
               </div>
 
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-yellow-800 text-xs">
@@ -475,6 +614,14 @@ const SettingsPanel = ({ API_URL, onClose, onSaved }) => {
                   className="flex items-center gap-1.5 text-blue-600 hover:underline text-xs">
                   <ExternalLink className="w-3.5 h-3.5" />
                   Documentație API e-Factura ANAF
+                </a>
+                <a
+                  href="https://logincert.anaf.ro"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-blue-600 hover:underline text-xs">
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Portal ANAF SPV (logincert.anaf.ro)
                 </a>
               </div>
             </div>

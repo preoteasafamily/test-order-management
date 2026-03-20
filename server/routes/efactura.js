@@ -299,14 +299,67 @@ router.get('/oauth/authorize', (req, res) => {
   }
 });
 
+// GET /api/efactura/oauth/diagnostic
+// Returns current OAuth2 configuration health for troubleshooting
+router.get('/oauth/diagnostic', (req, res) => {
+  try {
+    const settings = getSpvSettings();
+    const now = new Date();
+    const tokenExpiresAt = settings.token_expires_at ? new Date(settings.token_expires_at) : null;
+
+    const redirectUri = settings.redirect_uri || '';
+    const redirectUriIssues = [];
+    if (!redirectUri) {
+      redirectUriIssues.push('redirect_uri lipsă');
+    } else {
+      if (!redirectUri.startsWith('https://')) {
+        redirectUriIssues.push('redirect_uri nu folosește HTTPS – ANAF impune HTTPS');
+      }
+      // Detect private/LAN IP addresses which ANAF may refuse
+      const privateIpPattern = /https?:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.|127\.|localhost)/i;
+      if (privateIpPattern.test(redirectUri)) {
+        redirectUriIssues.push('redirect_uri conține adresă IP privată sau localhost – ANAF poate refuza dacă serverul de autorizare nu poate accesa această adresă');
+      }
+    }
+
+    res.json({
+      hasClientId:      !!settings.client_id,
+      hasClientSecret:  !!settings.client_secret,
+      hasRedirectUri:   !!settings.redirect_uri,
+      redirectUri:      redirectUri,
+      redirectUriIssues,
+      environment:      settings.environment || 'test',
+      hasCif:           !!settings.cif,
+      hasToken:         !!settings.oauth_token,
+      hasRefreshToken:  !!settings.refresh_token,
+      tokenExpired:     tokenExpiresAt ? tokenExpiresAt < now : null,
+      tokenExpiresAt:   settings.token_expires_at || null,
+      checkedAt:        now.toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/efactura/oauth/callback
 // ANAF redirects here after the user authenticates; exchanges code for tokens
 router.get('/oauth/callback', async (req, res) => {
   const { code, state, error: oauthError, error_description } = req.query;
 
   if (oauthError) {
-    const msg = error_description || oauthError;
-    console.error('ANAF OAuth2 callback error:', oauthError, error_description);
+    const settings = getSpvSettings();
+    // Build a descriptive message; ANAF often omits error_description for access_denied
+    let msg = error_description || oauthError;
+    if (oauthError === 'access_denied' && !error_description) {
+      msg = 'access_denied – Autorizarea a fost refuzată de serverul ANAF. Cauze posibile: certificatul digital nu are rolul e-Factura în SPV, aplicația nu este aprobată pentru CIF-ul respectiv, sau redirect_uri nu coincide exact cu cel înregistrat.';
+    }
+    console.error('ANAF OAuth2 callback error:', {
+      error: oauthError,
+      error_description,
+      redirect_uri_used: settings.redirect_uri,
+      client_id: settings.client_id,
+      timestamp: new Date().toISOString(),
+    });
     return res.redirect(`${FRONTEND_URL}/?oauth_error=${encodeURIComponent(msg)}#efactura-spv`);
   }
 
