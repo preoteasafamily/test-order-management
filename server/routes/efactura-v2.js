@@ -171,6 +171,14 @@ const resolveRedirectUri = (settings) => {
   return '';
 };
 
+/**
+ * Calculează intervalul de așteptare pentru retry cu backoff exponențial.
+ * @param {number} baseMs   – Intervalul de bază în milisecunde
+ * @param {number} attempt  – Numărul tentativei curente (1-based)
+ * @returns {number} Milisecunde de așteptat
+ */
+const calcBackoff = (baseMs, attempt) => baseMs * Math.pow(2, attempt - 1);
+
 // ─── Middleware verificare token ───────────────────────────────────────────────
 
 /**
@@ -653,12 +661,14 @@ router.get('/oauth/callback', async (req, res) => {
 
     // ── Pas 4: Schimb authorization_code → access_token ──
     //
-    // ANAF impune:
+    // ANAF impune (conform documentației și testelor Postman):
     //   - Content-Type: application/x-www-form-urlencoded (NU application/json)
-    //   - Parametrii grant_type, code, redirect_uri, client_id, client_secret în body
+    //   - Toți parametrii OBLIGATORII în body: grant_type, code, redirect_uri,
+    //     client_id, client_secret  (fără parametri suplimentari/redundanți)
     //   - Header Authorization: Basic base64(client_id:client_secret)
+    //   - Accept: application/json
     //
-    // Codul de autorizare este UNIC și expiră rapid – nu poate fi refolosit.
+    // Codul de autorizare este UNIC și expiră rapid (~60s) – nu poate fi refolosit.
     const tokenBody = new URLSearchParams({
       grant_type:    'authorization_code',
       code,                          // Codul unic primit de la ANAF
@@ -672,53 +682,136 @@ router.get('/oauth/callback', async (req, res) => {
       `${settings.client_id}:${settings.client_secret}`
     ).toString('base64');
 
-    console.log('[SPV-V2] Schimb token la ANAF:', {
-      url: ANAF_TOKEN_URL,
-      redirectUri,
-      codeLength: code.length,
-      timestamp: new Date().toISOString(),
+    // ── TROUBLESHOOTING: Log explicit al body-ului trimis la ANAF ──
+    // (client_secret este redactat pentru securitate, dar toți ceilalți parametri
+    //  sunt afișați complet pentru a permite diagnosticarea HTTP 500 de la ANAF)
+    console.log('[SPV-V2] Schimb token la ANAF – parametri body:', {
+      url:          ANAF_TOKEN_URL,
+      grant_type:   'authorization_code',
+      code_prefix:  code.substring(0, 8) + '…',   // Primele 8 caractere din cod (diagnostic)
+      code_length:  code.length,
+      redirect_uri: redirectUri,
+      client_id:    settings.client_id,
+      client_secret_set: !!settings.client_secret, // Confirmă prezența, nu valoarea
+      auth_header:  'Basic [REDACTED]',
+      body_raw:     tokenBody.toString().replace(/client_secret=[^&]*/,
+                      'client_secret=[REDACTED]'),  // Body complet cu secretul redactat
+      timestamp:    new Date().toISOString(),
     });
 
+    // ── Retry logic pentru erori 5xx de la serverul ANAF ──
+    // ANAF poate returna HTTP 500 tranzitoriu. Reîncercăm de max. 3 ori
+    // cu backoff exponențial (1s, 2s, 4s) DOAR pentru erori 5xx,
+    // NU pentru 4xx (care sunt erori definitive de parametri/autorizare).
+    const TOKEN_EXCHANGE_MAX_RETRIES = 3;
+    const TOKEN_EXCHANGE_RETRY_BASE_MS = 1000; // 1 secundă
+
     let tokenRes;
-    try {
-      tokenRes = await fetch(ANAF_TOKEN_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type':  'application/x-www-form-urlencoded', // Obligatoriu pentru ANAF
-          'Authorization': `Basic ${basicAuth}`,
-          'Accept':        'application/json',
-        },
-        body: tokenBody.toString(),
-      });
-    } catch (fetchErr) {
-      const errMsg = `Eroare conexiune la serverul ANAF: ${fetchErr.message}`;
-      logAction('oauth_token_exchange_connection_error', null, false, errMsg);
-      return res.redirect(`${FRONTEND_URL}/?oauth_error=${encodeURIComponent(errMsg)}&module=spv-v2#efactura-spv`);
+    let rawBody = '';
+    let tokenData = {};
+    let lastFetchErr = null;
+
+    for (let attempt = 1; attempt <= TOKEN_EXCHANGE_MAX_RETRIES; attempt++) {
+      // Reset per-attempt state (estas variabiles sunt folosite și după buclă)
+      rawBody = '';
+      tokenData = {};
+      lastFetchErr = null;
+
+      try {
+        // ── POST către ANAF /token ──
+        tokenRes = await fetch(ANAF_TOKEN_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type':  'application/x-www-form-urlencoded', // Obligatoriu ANAF
+            'Authorization': `Basic ${basicAuth}`,
+            'Accept':        'application/json',
+          },
+          body: tokenBody.toString(),
+        });
+
+        // Capturăm întâi textul brut pentru a-l putea loga integral
+        // (ANAF poate returna HTML/XML la erori 5xx, nu doar JSON)
+        rawBody = await tokenRes.text();
+
+        // Răspuns complet pentru troubleshooting (logăm la orice status nenominal)
+        if (!tokenRes.ok) {
+          // Colectăm toate headerele răspunsului pentru diagnosticare
+          const responseHeaders = {};
+          tokenRes.headers.forEach((value, name) => { responseHeaders[name] = value; });
+
+          console.error(`[SPV-V2] Token exchange tentativa ${attempt}/${TOKEN_EXCHANGE_MAX_RETRIES} – răspuns ANAF:`, {
+            status:          tokenRes.status,
+            statusText:      tokenRes.statusText,
+            headers:         responseHeaders,
+            body_raw:        rawBody.substring(0, 2000), // Primii 2000 chars (evităm flood log)
+            redirect_uri:    redirectUri,
+            client_id:       settings.client_id,
+            timestamp:       new Date().toISOString(),
+          });
+        }
+
+        // Parsare JSON din textul capturat
+        try {
+          tokenData = rawBody ? JSON.parse(rawBody) : {};
+        } catch (_) {
+          tokenData = {};
+        }
+
+        // Retry doar pe 5xx (erori server ANAF), nu pe 4xx (erori client)
+        // ANAF returnează frecvent 500 tranzitorii sub 1-2s, iar codul de
+        // autorizare expiră în ~60s, deci avem fereastră suficientă pentru
+        // 2 reîncercări rapide (1s + 2s) înainte de expirarea codului.
+        if (tokenRes.status >= 500 && attempt < TOKEN_EXCHANGE_MAX_RETRIES) {
+          const delayMs = calcBackoff(TOKEN_EXCHANGE_RETRY_BASE_MS, attempt);
+          console.warn(`[SPV-V2] ANAF server error ${tokenRes.status} – retry ${attempt}/${TOKEN_EXCHANGE_MAX_RETRIES} după ${delayMs}ms`);
+          logAction('oauth_token_exchange_retry', {
+            attempt,
+            status: tokenRes.status,
+            delayMs,
+          }, false, `ANAF 5xx – retry ${attempt}`);
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+
+        break; // Ieșim din buclă dacă avem răspuns non-5xx sau am epuizat retry-urile
+      } catch (fetchErr) {
+        lastFetchErr = fetchErr;
+        if (attempt < TOKEN_EXCHANGE_MAX_RETRIES) {
+          const delayMs = calcBackoff(TOKEN_EXCHANGE_RETRY_BASE_MS, attempt);
+          console.warn(`[SPV-V2] Eroare rețea tentativa ${attempt}/${TOKEN_EXCHANGE_MAX_RETRIES} – retry după ${delayMs}ms:`, fetchErr.message);
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+      }
     }
 
-    // Parsare răspuns (ANAF poate returna JSON sau text la erori)
-    let tokenData = {};
-    try {
-      tokenData = await tokenRes.json();
-    } catch (_) {
-      tokenData = {};
+    // Dacă toate tentativele au eșuat cu eroare de rețea
+    if (lastFetchErr && !tokenRes) {
+      const errMsg = `Eroare conexiune la serverul ANAF după ${TOKEN_EXCHANGE_MAX_RETRIES} tentative: ${lastFetchErr.message}`;
+      logAction('oauth_token_exchange_connection_error', null, false, errMsg);
+      return res.redirect(`${FRONTEND_URL}/?oauth_error=${encodeURIComponent(errMsg)}&module=spv-v2#efactura-spv`);
     }
 
     // ── Verificare răspuns non-200 de la ANAF ──
     if (!tokenRes.ok) {
       const errMsg = tokenData.error_description
         || tokenData.error
-        || `Eroare ${tokenRes.status} de la serverul ANAF`;
+        || `Eroare HTTP ${tokenRes.status} de la serverul ANAF`;
 
-      console.error('[SPV-V2] Token exchange failed:', {
-        status: tokenRes.status,
-        response: tokenData,
-        timestamp: new Date().toISOString(),
+      // Log final consolidat după epuizarea retry-urilor
+      console.error('[SPV-V2] Token exchange eșuat definitiv:', {
+        status:      tokenRes.status,
+        statusText:  tokenRes.statusText,
+        tokenData,
+        raw_body:    rawBody.substring(0, 500),
+        redirect_uri: redirectUri,
+        timestamp:   new Date().toISOString(),
       });
       logAction('oauth_token_exchange_failed', {
-        status: tokenRes.status,
-        error: tokenData.error,
+        status:      tokenRes.status,
+        error:       tokenData.error,
         description: tokenData.error_description,
+        raw_snippet: rawBody.substring(0, 200),
       }, false, errMsg);
       return res.redirect(`${FRONTEND_URL}/?oauth_error=${encodeURIComponent(errMsg)}&module=spv-v2#efactura-spv`);
     }
@@ -806,28 +899,100 @@ router.post('/oauth/refresh', async (req, res) => {
       `${settings.client_id}:${settings.client_secret}`
     ).toString('base64');
 
+    // ── TROUBLESHOOTING: Log explicit al body-ului trimis la ANAF ──
+    console.log('[SPV-V2] Reînnoire token la ANAF – parametri body:', {
+      url:               ANAF_TOKEN_URL,
+      grant_type:        'refresh_token',
+      refresh_token_set: !!settings.refresh_token,
+      client_id:         settings.client_id,
+      client_secret_set: !!settings.client_secret,
+      body_raw:          tokenBody.toString().replace(/client_secret=[^&]*/,
+                           'client_secret=[REDACTED]').replace(/refresh_token=[^&]*/,
+                           'refresh_token=[REDACTED]'),
+      timestamp:         new Date().toISOString(),
+    });
+
+    // ── Retry logic pentru erori 5xx de la serverul ANAF ──
+    const REFRESH_MAX_RETRIES = 3;
+    const REFRESH_RETRY_BASE_MS = 1000;
+
     let tokenRes;
-    try {
-      tokenRes = await fetch(ANAF_TOKEN_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type':  'application/x-www-form-urlencoded',
-          'Authorization': `Basic ${basicAuth}`,
-          'Accept':        'application/json',
-        },
-        body: tokenBody.toString(),
-      });
-    } catch (fetchErr) {
-      logAction('oauth_refresh_connection_error', null, false, fetchErr.message);
-      return res.status(502).json({ error: `Eroare conexiune ANAF: ${fetchErr.message}` });
+    let rawBody = '';
+    let tokenData = {};
+    let lastFetchErr = null;
+
+    for (let attempt = 1; attempt <= REFRESH_MAX_RETRIES; attempt++) {
+      // Reset per-attempt state (aceste variabile sunt folosite și după buclă)
+      rawBody = '';
+      tokenData = {};
+      lastFetchErr = null;
+
+      try {
+        tokenRes = await fetch(ANAF_TOKEN_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type':  'application/x-www-form-urlencoded',
+            'Authorization': `Basic ${basicAuth}`,
+            'Accept':        'application/json',
+          },
+          body: tokenBody.toString(),
+        });
+
+        rawBody = await tokenRes.text();
+
+        if (!tokenRes.ok) {
+          const responseHeaders = {};
+          tokenRes.headers.forEach((value, name) => { responseHeaders[name] = value; });
+          console.error(`[SPV-V2] Refresh token tentativa ${attempt}/${REFRESH_MAX_RETRIES} – răspuns ANAF:`, {
+            status:     tokenRes.status,
+            statusText: tokenRes.statusText,
+            headers:    responseHeaders,
+            body_raw:   rawBody.substring(0, 2000),
+            timestamp:  new Date().toISOString(),
+          });
+        }
+
+        try { tokenData = rawBody ? JSON.parse(rawBody) : {}; } catch (_) { tokenData = {}; }
+
+        if (tokenRes.status >= 500 && attempt < REFRESH_MAX_RETRIES) {
+          const delayMs = calcBackoff(REFRESH_RETRY_BASE_MS, attempt);
+          console.warn(`[SPV-V2] ANAF server error ${tokenRes.status} la refresh – retry ${attempt}/${REFRESH_MAX_RETRIES} după ${delayMs}ms`);
+          logAction('oauth_refresh_retry', { attempt, status: tokenRes.status, delayMs }, false, `ANAF 5xx – retry ${attempt}`);
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+
+        break;
+      } catch (fetchErr) {
+        lastFetchErr = fetchErr;
+        if (attempt < REFRESH_MAX_RETRIES) {
+          const delayMs = calcBackoff(REFRESH_RETRY_BASE_MS, attempt);
+          console.warn(`[SPV-V2] Eroare rețea refresh tentativa ${attempt}/${REFRESH_MAX_RETRIES} – retry după ${delayMs}ms:`, fetchErr.message);
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+      }
     }
 
-    let tokenData = {};
-    try { tokenData = await tokenRes.json(); } catch (_) {}
+    if (lastFetchErr && !tokenRes) {
+      logAction('oauth_refresh_connection_error', null, false, lastFetchErr.message);
+      return res.status(502).json({ error: `Eroare conexiune ANAF după ${REFRESH_MAX_RETRIES} tentative: ${lastFetchErr.message}` });
+    }
 
     if (!tokenRes.ok) {
-      const errMsg = tokenData.error_description || tokenData.error || `Eroare ${tokenRes.status}`;
-      logAction('oauth_refresh_failed', tokenData, false, errMsg);
+      const errMsg = tokenData.error_description || tokenData.error || `Eroare HTTP ${tokenRes.status} de la serverul ANAF`;
+      console.error('[SPV-V2] Refresh token eșuat definitiv:', {
+        status:    tokenRes.status,
+        tokenData,
+        raw_body:  rawBody.substring(0, 500),
+        timestamp: new Date().toISOString(),
+      });
+      logAction('oauth_refresh_failed', {
+        status: tokenRes.status,
+        error: tokenData.error,
+        description: tokenData.error_description,
+        raw_snippet: rawBody.substring(0, 200),
+      }, false, errMsg);
       return res.status(tokenRes.status).json({ error: errMsg, anafResponse: tokenData });
     }
 
