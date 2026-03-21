@@ -172,14 +172,104 @@ const resolveRedirectUri = (settings) => {
 };
 
 /**
+ * Analizează un redirect_uri și returnează lista de probleme detectate.
+ * Verifică: HTTPS obligatoriu, IP privat, trailing slash.
+ *
+ * @param {string} uri – redirect_uri de verificat
+ * @returns {string[]} Lista de avertismente/probleme detectate
+ */
+const auditRedirectUri = (uri) => {
+  if (!uri) return ['redirect_uri este gol – nu poate fi folosit'];
+  const issues = [];
+  if (!uri.startsWith('https://')) {
+    issues.push(
+      `⚠️ redirect_uri folosește "${uri.startsWith('http://') ? 'HTTP' : 'protocol necunoscut'}" în loc de HTTPS. ` +
+      'ANAF impune HTTPS pentru redirect_uri înregistrată în portal.'
+    );
+  }
+  const privateIpPattern = /https?:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.|127\.|localhost)/i;
+  if (privateIpPattern.test(uri)) {
+    issues.push(
+      '⚠️ redirect_uri conține IP privat sau localhost. ' +
+      'ANAF nu poate accesa adrese private din internet. ' +
+      'Configurați IP-ul extern (public) în câmpul public_callback_url sau redirect_uri din setări.'
+    );
+  }
+  if (uri.endsWith('/')) {
+    issues.push(
+      '⚠️ redirect_uri are trailing slash (/) la final. ' +
+      'Dacă în portalul ANAF redirect_uri este înregistrată FĂRĂ slash final, ' +
+      'aceasta va genera access_denied. Eliminați slash-ul final sau asigurați-vă că și în ANAF există.'
+    );
+  }
+  return issues;
+};
+
+/**
+ * Compară două redirect_uri și returnează lista de neconcordanțe detectate.
+ * Verifică: schema (http/https), host, port, cale (path), trailing slash.
+ *
+ * @param {string} uriA – primul URI (de obicei cel salvat/configurat)
+ * @param {string} uriB – al doilea URI (de obicei cel rezolvat/curent)
+ * @returns {string[]} Lista de neconcordanțe
+ */
+const compareRedirectUris = (uriA, uriB) => {
+  if (!uriA || !uriB) return [];
+  if (uriA === uriB) return [];
+  const mismatches = [];
+  try {
+    const a = new URL(uriA);
+    const b = new URL(uriB);
+    if (a.protocol !== b.protocol) {
+      mismatches.push(
+        `⚠️ MISMATCH schema: "${a.protocol}" vs "${b.protocol}" – ` +
+        'ANAF verifică schema exact (http:// vs https://). Aceasta va genera access_denied!'
+      );
+    }
+    if (a.hostname !== b.hostname) {
+      mismatches.push(
+        `⚠️ MISMATCH host: "${a.hostname}" vs "${b.hostname}" – ` +
+        'Hostname-ul din redirect_uri nu coincide! Aceasta va genera access_denied la ANAF.'
+      );
+    }
+    if (a.port !== b.port) {
+      mismatches.push(
+        `⚠️ MISMATCH port: "${a.port || '(implicit)'}" vs "${b.port || '(implicit)'}" – ` +
+        'Portul din redirect_uri nu coincide! Verificați că portul din setări coincide cu cel din ANAF.'
+      );
+    }
+    if (a.pathname !== b.pathname) {
+      mismatches.push(
+        `⚠️ MISMATCH cale (path): "${a.pathname}" vs "${b.pathname}" – ` +
+        'Calea URL din redirect_uri nu coincide! Aceasta va genera access_denied la ANAF.'
+      );
+    }
+    // Trailing slash diferit în pathname
+    const aPath = a.pathname.replace(/\/$/, '');
+    const bPath = b.pathname.replace(/\/$/, '');
+    if (aPath === bPath && a.pathname !== b.pathname) {
+      mismatches.push(
+        '⚠️ MISMATCH trailing slash: un URI are "/" la final, celălalt nu. ' +
+        'ANAF face comparație caracter cu caracter. Asigurați-vă că ambele (setare și portal ANAF) ' +
+        'au exact același format (cu sau fără slash final).'
+      );
+    }
+  } catch (_) {
+    mismatches.push(
+      `⚠️ Unul sau ambele redirect_uri nu sunt URL-uri valide: "${uriA}" vs "${uriB}". ` +
+      'Verificați că URI-urile includ protocolul (https://) și sunt formate corect.'
+    );
+  }
+  return mismatches;
+};
+
+/**
  * Calculează intervalul de așteptare pentru retry cu backoff exponențial.
  * @param {number} baseMs   – Intervalul de bază în milisecunde
  * @param {number} attempt  – Numărul tentativei curente (1-based)
  * @returns {number} Milisecunde de așteptat
  */
 const calcBackoff = (baseMs, attempt) => baseMs * Math.pow(2, attempt - 1);
-
-// ─── Middleware verificare token ───────────────────────────────────────────────
 
 /**
  * Middleware care verifică prezența și expirarea token-ului OAuth2.
@@ -522,12 +612,21 @@ router.get('/oauth/authorize', (req, res) => {
       console.warn('[SPV-V2] ANAF nu poate accesa adrese private. Configurați IP-ul extern în setări.');
     }
 
+    // ── Audit complet redirect_uri înainte de trimiterea la ANAF ──
+    const redirectUriIssues = auditRedirectUri(redirectUri);
+    if (redirectUriIssues.length > 0) {
+      console.warn('[SPV-V2] *** AVERTISMENTE redirect_uri (pot genera access_denied) ***');
+      redirectUriIssues.forEach((issue) => console.warn('[SPV-V2]  ', issue));
+    } else {
+      console.log('[SPV-V2] redirect_uri audit: OK (fără probleme detectate)');
+    }
+
     // Generare state criptografic pentru protecție CSRF
     // ANAF impune prezența parametrului state
     const state = crypto.randomBytes(32).toString('hex');
     db.prepare(
-      `UPDATE spv_v2_settings SET oauth_state = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`
-    ).run(state);
+      `UPDATE spv_v2_settings SET oauth_state = ?, oauth_redirect_uri_used = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`
+    ).run(state, redirectUri);
 
     // Construire URL autorizare cu parametrii corecți
     const params = new URLSearchParams({
@@ -544,14 +643,24 @@ router.get('/oauth/authorize', (req, res) => {
     logAction('oauth_authorize_initiated', {
       redirectUri,
       environment: settings.environment,
+      redirectUriIssues,
       timestamp: new Date().toISOString(),
     });
 
     console.log('[SPV-V2] OAuth2 authorize URL generat:', authUrl);
+    console.log('[SPV-V2] Parametri authorize:', {
+      response_type: 'code',
+      client_id:     settings.client_id,
+      redirect_uri:  redirectUri,
+      token_content_type: 'jwt',
+      scope:         'offline_access',
+      state_length:  state.length,
+    });
     res.json({
       authUrl,
       state,        // Returnăm state pentru debug; clientul nu trebuie să îl stocheze
       redirectUri,  // Afișăm ce redirect_uri s-a folosit
+      redirectUriIssues, // Avertismente despre redirect_uri (pot genera access_denied)
     });
   } catch (err) {
     logAction('oauth_authorize_failed', null, false, err.message);
@@ -603,21 +712,39 @@ router.get('/oauth/callback', async (req, res) => {
         'Autorizarea a fost refuzată de ANAF.',
         'Cauze posibile:',
         '• Certificatul digital nu are rolul e-Factura activat în SPV',
-        '• Aplicația nu este aprobată pentru CIF-ul respectiv',
-        '• redirect_uri nu coincide EXACT cu cel înregistrat la ANAF',
-        '• IP-ul serverului nu este înregistrat ca IP extern la ANAF',
+        '• Aplicația nu este aprobată/activată în portalul ANAF OAuth2',
+        '• redirect_uri nu coincide EXACT (caracter cu caracter) cu cel înregistrat la ANAF',
+        '• IP-ul extern al serverului nu este accesibil de pe internet',
+        '• Aplicația OAuth2 nu este asociată cu CIF-ul utilizat',
       ].join(' ');
     }
 
-    console.error('[SPV-V2] OAuth2 callback error:', {
-      error: oauthError,
-      error_description,
-      redirect_uri_used: settings.redirect_uri,
-      client_id: settings.client_id,
-      timestamp: new Date().toISOString(),
-    });
+    const savedRedirectUri = settings.oauth_redirect_uri_used || '';
+    const currentRedirectUri = resolveRedirectUri(settings);
+    const redirectMismatches = savedRedirectUri
+      ? compareRedirectUris(savedRedirectUri, currentRedirectUri)
+      : auditRedirectUri(currentRedirectUri);
 
-    logAction('oauth_callback_error', { error: oauthError, description: msg }, false, msg);
+    console.error('[SPV-V2] *** OAuth2 callback access_denied de la ANAF ***', {
+      error:              oauthError,
+      error_description,
+      redirect_uri_used_at_authorize: savedRedirectUri || '(neinițializat)',
+      redirect_uri_in_settings:       currentRedirectUri,
+      redirect_uri_mismatches:        redirectMismatches,
+      client_id:          settings.client_id,
+      environment:        settings.environment,
+      timestamp:          new Date().toISOString(),
+      debug_hint: [
+        'Verificați că redirect_uri din setări coincide EXACT cu cel din portalul ANAF.',
+        'Accesați GET /api/efactura-v2/oauth/diagnostic pentru detalii complete.',
+      ].join(' '),
+    });
+    if (redirectMismatches.length > 0) {
+      console.error('[SPV-V2] *** NECONCORDANȚE redirect_uri detectate ***');
+      redirectMismatches.forEach((m) => console.error('[SPV-V2]  ', m));
+    }
+
+    logAction('oauth_callback_error', { error: oauthError, description: msg, redirectMismatches }, false, msg);
     return res.redirect(`${FRONTEND_URL}/?oauth_error=${encodeURIComponent(msg)}&module=spv-v2#efactura-spv`);
   }
 
@@ -651,6 +778,31 @@ router.get('/oauth/callback', async (req, res) => {
       const errMsg = 'redirect_uri lipsă în configurare. Nu se poate finaliza schimbul de token.';
       logAction('oauth_callback_no_redirect_uri', null, false, errMsg);
       return res.redirect(`${FRONTEND_URL}/?oauth_error=${encodeURIComponent(errMsg)}&module=spv-v2#efactura-spv`);
+    }
+
+    // ── Verificare mismatch redirect_uri între authorize și callback ──
+    // ANAF impune că redirect_uri din token exchange să fie IDENTIC cu cel din authorize.
+    const savedRedirectUri = settings.oauth_redirect_uri_used || '';
+    if (savedRedirectUri && savedRedirectUri !== redirectUri) {
+      const mismatches = compareRedirectUris(savedRedirectUri, redirectUri);
+      console.error(
+        '[SPV-V2] *** AVERTISMENT CRITIC: redirect_uri diferă între authorize și callback! ***',
+        {
+          la_authorize:  savedRedirectUri,
+          la_callback:   redirectUri,
+          mismatches,
+          timestamp:     new Date().toISOString(),
+        }
+      );
+      logAction('oauth_callback_redirect_uri_mismatch', { savedRedirectUri, redirectUri, mismatches }, false,
+        'redirect_uri diferă între authorize și callback – posibilă cauză access_denied ANAF');
+    }
+
+    // Audit complet redirect_uri folosit în token exchange
+    const redirectUriIssues = auditRedirectUri(redirectUri);
+    if (redirectUriIssues.length > 0) {
+      console.warn('[SPV-V2] *** AVERTISMENTE redirect_uri la token exchange (pot genera erori ANAF) ***');
+      redirectUriIssues.forEach((issue) => console.warn('[SPV-V2]  ', issue));
     }
 
     if (!settings.client_id || !settings.client_secret) {
@@ -1036,21 +1188,13 @@ router.get('/oauth/diagnostic', (req, res) => {
     const redirectUri = resolveRedirectUri(settings);
 
     // Verificare probleme comune cu redirect_uri
-    const redirectIssues = [];
-    if (!redirectUri) {
-      redirectIssues.push('redirect_uri lipsă – configurați-l în setări');
-    } else {
-      if (!redirectUri.startsWith('https://')) {
-        redirectIssues.push('redirect_uri nu folosește HTTPS – ANAF impune HTTPS pentru redirect_uri înregistrată');
-      }
-      const privateIpPattern = /https?:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.|127\.|localhost)/i;
-      if (privateIpPattern.test(redirectUri)) {
-        redirectIssues.push(
-          'redirect_uri conține IP privat sau localhost – ANAF nu poate accesa această adresă. ' +
-          'Configurați IP-ul extern (public) în câmpul public_callback_url din setări.'
-        );
-      }
-    }
+    const redirectIssues = auditRedirectUri(redirectUri);
+
+    // Compară redirect_uri curentă cu cea folosită la ultima autorizare (dacă există)
+    const savedRedirectUri = settings.oauth_redirect_uri_used || '';
+    const redirectMismatches = savedRedirectUri
+      ? compareRedirectUris(savedRedirectUri, redirectUri)
+      : [];
 
     res.json({
       module:           'E-factura SPV-V2',
@@ -1066,6 +1210,8 @@ router.get('/oauth/diagnostic', (req, res) => {
           ? 'settings.public_callback_url + /api/efactura-v2/oauth/callback'
           : 'none',
       redirectUriIssues: redirectIssues,
+      redirectUriUsedAtLastAuthorize: savedRedirectUri || null,
+      redirectUriMismatchWithLastAuthorize: redirectMismatches,
       hasToken:         !!settings.oauth_token,
       hasRefreshToken:  !!settings.refresh_token,
       tokenExpired:     tokenExpiresAt ? tokenExpiresAt < now : null,
@@ -1078,12 +1224,14 @@ router.get('/oauth/diagnostic', (req, res) => {
       checkedAt:        now.toISOString(),
       hints: [
         redirectIssues.length > 0 ? '⚠️ Probleme detectate cu redirect_uri (vezi redirectUriIssues)' : null,
+        redirectMismatches.length > 0 ? '⚠️ Neconcordanță redirect_uri față de ultima autorizare (vezi redirectUriMismatchWithLastAuthorize)' : null,
         !settings.client_id     ? '⚠️ client_id lipsă – necesar pentru OAuth2' : null,
         !settings.client_secret ? '⚠️ client_secret lipsă – necesar pentru OAuth2' : null,
-        !settings.cif           ? '⚠️ CIF lipsă – necesar pentru upload factури' : null,
+        !settings.cif           ? '⚠️ CIF lipsă – necesar pentru upload facturi' : null,
         tokenExpiresAt && tokenExpiresAt < now ? '⚠️ Token expirat – folosiți /oauth/refresh' : null,
         settings.refresh_token && tokenExpiresAt && tokenExpiresAt < now
           ? '✅ refresh_token disponibil – puteți reînnoi automat' : null,
+        !savedRedirectUri ? 'ℹ️ Nu a fost inițiată nicio autorizare OAuth2 încă (redirect_uri_used gol)' : null,
       ].filter(Boolean),
     });
   } catch (err) {

@@ -264,13 +264,74 @@ grant_type=authorization_code
 
 ### `access_denied` la autorizare
 
-**Cauze posibile:**
-- Certificatul digital nu are rolul e-Factura activat în SPV
-- `redirect_uri` nu coincide exact cu cel înregistrat la ANAF
-- IP-ul serverului nu este accesibil de pe internet (ANAF verifică că poate atinge redirect_uri)
-- Aplicația nu este aprobată pentru CIF-ul respectiv
+Aceasta este cea mai frecventă problemă la integrarea ANAF OAuth2. ANAF **nu oferă descriere suplimentară** pentru `access_denied`, deci diagnosticarea necesită verificarea sistematică a tuturor cauzelor posibile.
 
-**Verificare:** `GET /api/efactura-v2/oauth/diagnostic` – verificați `redirectUriIssues`
+**Checklist complet de diagnosticare:**
+
+```
+□ 1. redirect_uri înregistrată în portalul ANAF coincide 100% cu cea din aplicație?
+       → Verificați caracter cu caracter: protocol, host, port, cale, trailing slash
+       → Accesați: GET /api/efactura-v2/oauth/diagnostic → verificați câmpurile redirectUriIssues și redirectUriMismatchWithLastAuthorize
+
+□ 2. Aplicația OAuth2 este activată/aprobată în portalul ANAF?
+       → Pași: https://logincert.anaf.ro → Aplicații OAuth2 → verificați statusul aplicației
+       → Dacă statusul e "în așteptare" sau "suspendată" → contactați ANAF pentru activare
+
+□ 3. CIF-ul utilizat la autentificare are rolul e-Factura activat în SPV?
+       → Pași: https://www.anaf.ro/anaf/internet/SPV/ → Administrare drepturi → rol e-Factura
+
+□ 4. CIF-ul din setările aplicației coincide cu CIF-ul din certificatul digital?
+       → Verificați câmpul CIF din setările SPV-V2
+
+□ 5. Certificatul digital este valid (neexpirat) și emis de o autoritate recunoscută de ANAF?
+
+□ 6. IP-ul serverului (din redirect_uri) este accesibil de pe internet?
+       → Testați: curl -k https://IP_EXTERN:PORT/api/health
+```
+
+**Erori frecvente în redirect_uri (generează access_denied):**
+
+| Problemă | Exemplu greșit | Exemplu corect |
+|----------|---------------|----------------|
+| Trailing slash diferit | `https://1.2.3.4:5000/api/efactura-v2/oauth/callback/` | `https://1.2.3.4:5000/api/efactura-v2/oauth/callback` |
+| HTTP în loc de HTTPS | `http://1.2.3.4:5000/api/efactura-v2/oauth/callback` | `https://1.2.3.4:5000/api/efactura-v2/oauth/callback` |
+| Port diferit | `https://1.2.3.4:5001/...` (în setări) vs port 5000 înregistrat la ANAF | Asigurați-vă că portul coincide exact |
+| IP intern în loc de extern | `https://192.168.1.10:5000/...` | `https://85.120.50.10:5000/...` |
+| Cale diferită | `/api/efactura-v2/callback` | `/api/efactura-v2/oauth/callback` |
+
+**Pași de confirmare în portalul ANAF (obligatoriu la prima utilizare):**
+
+1. Accesați https://logincert.anaf.ro cu certificatul digital
+2. Mergeți la **Aplicații OAuth2** → selectați aplicația dvs.
+3. Verificați că statusul este **"Activă"** (nu "în așteptare" sau "suspendată")
+4. Verificați că **redirect_uri înregistrată** coincide **exact** cu cea din setările aplicației
+5. Dacă aplicația nu este activă, contactați ANAF la helpdesk sau prin SPV pentru deblocare
+6. După activare, reluați complet fluxul OAuth2 (nu reutilizați coduri vechi)
+
+> ⚠️ **IMPORTANT**: ANAF poate cere confirmarea manuală a aplicației OAuth2 din partea unui
+> administrator. Verificați inbox-ul SPV și email-ul asociat contului pentru notificări de la ANAF.
+
+**Verificare diagnostică rapidă:**
+
+```bash
+# Verificați configurarea curentă și detectați probleme automat
+curl -s http://localhost:5000/api/efactura-v2/oauth/diagnostic | jq .
+
+# Câmpurile importante de verificat:
+#   redirectUriIssues              – probleme detectate cu redirect_uri curentă
+#   redirectUriMismatchWithLastAuthorize – diferențe față de ultima autorizare
+#   redirectUriUsedAtLastAuthorize – exact ce redirect_uri a fost trimis la ANAF
+#   hints                          – sugestii generate automat
+```
+
+**Citire log-uri server (după o tentativă eșuată):**
+
+```bash
+# Căutați în log-uri blocul de diagnosticare pentru access_denied:
+# [SPV-V2] *** OAuth2 callback access_denied de la ANAF ***
+# Acesta conține redirect_uri_used_at_authorize și redirect_uri_in_settings
+# pentru comparare directă.
+```
 
 ### `ERR_CERT_AUTHORITY_INVALID` în browser
 
@@ -295,3 +356,18 @@ Dacă refresh_token lipsește sau a expirat și el, trebuie reluată autorizarea
 
 Apare când se accesează callback-ul direct sau după refresh de pagină.
 Reluați fluxul de la `GET /api/efactura-v2/oauth/authorize`.
+
+### Eroare la pornire server: `better-sqlite3` native module
+
+Dacă serverul nu pornește cu eroarea:
+```
+Error: .../better-sqlite3.node: cannot open shared object file
+```
+
+Reconstruiți modulul nativ pentru versiunea curentă de Node.js:
+```bash
+cd server
+npm run rebuild
+npm start
+```
+
