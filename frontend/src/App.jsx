@@ -21,6 +21,7 @@ import AgentMapScreen from "./pages/AgentMapScreen";
 import InvoicesScreen from "./pages/InvoicesScreen";
 import InvoicesV2Screen from "./pages/InvoicesV2Screen";
 import EfacturaScreen from "./pages/EfacturaScreen";
+import EfacturaV2Screen from "./pages/EfacturaV2Screen";
 
 const App = () => {
   // API Configuration
@@ -1401,6 +1402,14 @@ const App = () => {
       case "efactura-spv":
         return (
           <EfacturaScreen
+            API_URL={API_URL}
+            showMessage={showMessage}
+          />
+        );
+      case "efactura-spv-v2":
+        /* Modul E-Factura SPV-V2: integrare ANAF cu suport IP extern / port-forwarding */
+        return (
+          <EfacturaV2Screen
             API_URL={API_URL}
             showMessage={showMessage}
           />
