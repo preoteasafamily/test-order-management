@@ -13,7 +13,8 @@ import {
   Database,
   MapPin,
   Receipt,
-  Send
+  Send,
+  Globe
 } from 'lucide-react';
 
 const Navigation = ({ currentUser, activeSection, setActiveSection, mobileMenuOpen, setMobileMenuOpen }) => {
@@ -113,6 +114,13 @@ const Navigation = ({ currentUser, activeSection, setActiveSection, mobileMenuOp
       id: "efactura-spv",
       label: "e-Factura SPV",
       icon: Send,
+      roles: ["admin", "birou"],
+    },
+    {
+      /* Modulul E-Factura SPV-V2: suport IP extern / port-forwarding, OAuth2 separat */
+      id: "efactura-spv-v2",
+      label: "e-Factura SPV-V2",
+      icon: Globe,
       roles: ["admin", "birou"],
     },
   ];
