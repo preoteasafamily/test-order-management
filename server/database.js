@@ -695,6 +695,15 @@ const createTables = () => {
   `);
   db.exec(`INSERT OR IGNORE INTO spv_v2_settings (id) VALUES (1)`);
 
+  // Migration: add oauth_redirect_uri_used column if it does not exist yet.
+  // Tracks the exact redirect_uri sent to ANAF during /oauth/authorize so we can
+  // verify at callback time and warn if there is any mismatch.
+  try {
+    db.exec(`ALTER TABLE spv_v2_settings ADD COLUMN oauth_redirect_uri_used TEXT DEFAULT ''`);
+  } catch (_) {
+    // Column already exists – safe to ignore
+  }
+
   // ── E-factura SPV-V2 action log table ────────────────────────────────────
   db.exec(`
     CREATE TABLE IF NOT EXISTS spv_v2_action_log (
