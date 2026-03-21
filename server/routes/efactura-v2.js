@@ -41,6 +41,8 @@
 const express = require('express');
 const router  = express.Router();
 const crypto  = require('crypto');
+const https   = require('https');
+const fs      = require('fs');
 const db      = require('../database');
 const rateLimit = require('express-rate-limit');
 
@@ -81,6 +83,134 @@ const efacturaLimiter = rateLimit({
 });
 
 router.use(efacturaLimiter);
+
+// ─── Mutual TLS (mTLS) – Certificat digital calificat ANAF ───────────────────
+//
+// Serverul ANAF logincert.anaf.ro impune prezentarea certificatului digital
+// calificat (Mutual TLS) la apelurile POST /token și POST /token (refresh).
+// Fără certificat client, ANAF returnează HTTP 500 "Internal server error".
+//
+// Configurare prin variabile de mediu în server/.env:
+//   ANAF_CERT_PATH       – calea absolută spre fișierul certificat (PEM)
+//   ANAF_KEY_PATH        – calea absolută spre fișierul cheie privată (PEM)
+//   ANAF_CERT_PASSPHRASE – (opțional) parola pentru cheia privată criptată
+
+let _mtlsAgent = null;
+let _mtlsWarningShown = false;
+
+/**
+ * Returnează un https.Agent configurat cu certificatul digital calificat ANAF.
+ * Crearea agentului este lazy (la primul apel) și cacheată.
+ *
+ * Dacă variabilele de mediu ANAF_CERT_PATH / ANAF_KEY_PATH lipsesc sau
+ * fișierele nu pot fi citite, returnează null și afișează un avertisment clar.
+ *
+ * @returns {https.Agent|null}
+ */
+const getMtlsAgent = () => {
+  if (_mtlsAgent) return _mtlsAgent;
+
+  const certPath   = process.env.ANAF_CERT_PATH;
+  const keyPath    = process.env.ANAF_KEY_PATH;
+  const passphrase = process.env.ANAF_CERT_PASSPHRASE;
+
+  if (!certPath || !keyPath) {
+    if (!_mtlsWarningShown) {
+      console.warn(
+        '[SPV-V2] ⚠️  MUTUAL TLS NECONFIGURAT – variabilele ANAF_CERT_PATH și ANAF_KEY_PATH lipsesc din server/.env.\n' +
+        '          Serverul ANAF (logincert.anaf.ro) impune prezentarea certificatului digital calificat\n' +
+        '          la apelul POST /token. Fără mTLS, ANAF va returna HTTP 500 "Internal server error".\n' +
+        '          Adăugați în server/.env:\n' +
+        '            ANAF_CERT_PATH=/cale/absoluta/certificat.pem\n' +
+        '            ANAF_KEY_PATH=/cale/absoluta/cheie_privata.pem\n' +
+        '            ANAF_CERT_PASSPHRASE=parola_optionala\n' +
+        '          Vezi secțiunea "Mutual TLS" din README-EFACTURA-V2.md pentru instrucțiuni complete.'
+      );
+      _mtlsWarningShown = true;
+    }
+    return null;
+  }
+
+  try {
+    const agentOptions = {
+      cert: fs.readFileSync(certPath),
+      key:  fs.readFileSync(keyPath),
+    };
+    if (passphrase) agentOptions.passphrase = passphrase;
+
+    _mtlsAgent = new https.Agent(agentOptions);
+    console.log('[SPV-V2] ✅ Certificat digital mTLS încărcat cu succes pentru autentificarea la ANAF.');
+    return _mtlsAgent;
+  } catch (err) {
+    console.error(
+      `[SPV-V2] ❌ Eroare la încărcarea certificatelor mTLS pentru ANAF: ${err.message}\n` +
+      `          Verificați că fișierele există și sunt accesibile:\n` +
+      `            ANAF_CERT_PATH=${certPath}\n` +
+      `            ANAF_KEY_PATH=${keyPath}`
+    );
+    return null;
+  }
+};
+
+/**
+ * Efectuează un request HTTPS POST cu suport Mutual TLS (certificat client).
+ * Înlocuiește `fetch` pentru endpoint-urile ANAF ce impun autentificarea
+ * cu certificat digital calificat (ex: logincert.anaf.ro/anaf-oauth2/v1/token).
+ *
+ * Returnează un obiect cu aceeași interfață ca răspunsul `fetch`:
+ *   { status, statusText, ok, headers, text() }
+ *
+ * @param {string} url     – URL-ul complet al endpoint-ului
+ * @param {object} options – { method, headers, body }
+ * @returns {Promise<object>}
+ */
+const fetchMtls = (url, options = {}) => {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const mtlsAgent = getMtlsAgent();
+
+    const reqOptions = {
+      hostname: parsed.hostname,
+      port:     parsed.port || 443,
+      path:     parsed.pathname + (parsed.search || ''),
+      method:   options.method || 'GET',
+      headers:  options.headers || {},
+      // Attach the mTLS agent when available; omit when null so Node uses the default agent
+      ...(mtlsAgent ? { agent: mtlsAgent } : {}),
+    };
+
+    const req = https.request(reqOptions, (res) => {
+      let rawData = '';
+      res.on('data', (chunk) => { rawData += chunk; });
+      res.on('end', () => {
+        resolve({
+          status:     res.statusCode,
+          statusText: res.statusMessage || '',
+          ok:         res.statusCode >= 200 && res.statusCode < 300,
+          headers:    {
+            forEach: (fn) => {
+              Object.entries(res.headers).forEach(([name, value]) => fn(value, name));
+            },
+            get: (name) => res.headers[name.toLowerCase()],
+          },
+          text: () => Promise.resolve(rawData),
+          json: () => {
+            try {
+              return Promise.resolve(JSON.parse(rawData));
+            } catch (e) {
+              return Promise.reject(new SyntaxError(`Failed to parse ANAF response as JSON: ${e.message}. Raw body: ${rawData.substring(0, 200)}`));
+            }
+          },
+        });
+      });
+    });
+
+    req.on('error', reject);
+
+    if (options.body) req.write(options.body);
+    req.end();
+  });
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -846,10 +976,18 @@ router.get('/oauth/callback', async (req, res) => {
       client_id:    settings.client_id,
       client_secret_set: !!settings.client_secret, // Confirmă prezența, nu valoarea
       auth_header:  'Basic [REDACTED]',
+      mtls_enabled: !!getMtlsAgent(),              // Confirmă dacă mTLS este configurat
       body_raw:     tokenBody.toString().replace(/client_secret=[^&]*/,
                       'client_secret=[REDACTED]'),  // Body complet cu secretul redactat
       timestamp:    new Date().toISOString(),
     });
+
+    if (!getMtlsAgent()) {
+      console.warn(
+        '[SPV-V2] ⚠️  Token exchange fără certificat mTLS – ANAF poate returna HTTP 500.\n' +
+        '          Configurați ANAF_CERT_PATH și ANAF_KEY_PATH în server/.env.'
+      );
+    }
 
     // ── Retry logic pentru erori 5xx de la serverul ANAF ──
     // ANAF poate returna HTTP 500 tranzitoriu. Reîncercăm de max. 3 ori
@@ -870,8 +1008,8 @@ router.get('/oauth/callback', async (req, res) => {
       lastFetchErr = null;
 
       try {
-        // ── POST către ANAF /token ──
-        tokenRes = await fetch(ANAF_TOKEN_URL, {
+        // ── POST către ANAF /token cu Mutual TLS (certificat digital calificat) ──
+        tokenRes = await fetchMtls(ANAF_TOKEN_URL, {
           method: 'POST',
           headers: {
             'Content-Type':  'application/x-www-form-urlencoded', // Obligatoriu ANAF
@@ -1058,11 +1196,19 @@ router.post('/oauth/refresh', async (req, res) => {
       refresh_token_set: !!settings.refresh_token,
       client_id:         settings.client_id,
       client_secret_set: !!settings.client_secret,
+      mtls_enabled:      !!getMtlsAgent(),
       body_raw:          tokenBody.toString().replace(/client_secret=[^&]*/,
                            'client_secret=[REDACTED]').replace(/refresh_token=[^&]*/,
                            'refresh_token=[REDACTED]'),
       timestamp:         new Date().toISOString(),
     });
+
+    if (!getMtlsAgent()) {
+      console.warn(
+        '[SPV-V2] ⚠️  Refresh token fără certificat mTLS – ANAF poate returna HTTP 500.\n' +
+        '          Configurați ANAF_CERT_PATH și ANAF_KEY_PATH în server/.env.'
+      );
+    }
 
     // ── Retry logic pentru erori 5xx de la serverul ANAF ──
     const REFRESH_MAX_RETRIES = 3;
@@ -1080,7 +1226,7 @@ router.post('/oauth/refresh', async (req, res) => {
       lastFetchErr = null;
 
       try {
-        tokenRes = await fetch(ANAF_TOKEN_URL, {
+        tokenRes = await fetchMtls(ANAF_TOKEN_URL, {
           method: 'POST',
           headers: {
             'Content-Type':  'application/x-www-form-urlencoded',

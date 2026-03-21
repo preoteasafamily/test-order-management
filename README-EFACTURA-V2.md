@@ -14,6 +14,7 @@ Modul complet separat de E-factura SPV original, implementat pentru integrare cu
 6. [Endpoint-uri API](#endpoints-api)
 7. [Variabile de mediu](#variabile-de-mediu)
 8. [Depanare probleme frecvente](#depanare)
+9. [Mutual TLS – Certificat digital ANAF](#mutual-tls)
 
 ---
 
@@ -200,6 +201,7 @@ Acum se pot face apeluri autentificate la ANAF (upload, status, etc.)
 POST https://logincert.anaf.ro/anaf-oauth2/v1/token
 Content-Type: application/x-www-form-urlencoded
 Authorization: Basic base64(client_id:client_secret)
+[Mutual TLS: backend prezintă certificat digital calificat în conexiunea HTTPS]
 
 grant_type=authorization_code
 &code=<cod_unic_de_o_singura_folosinta>
@@ -210,6 +212,10 @@ grant_type=authorization_code
 
 > ⚠️ **Codul de autorizare este valid O SINGURĂ DATĂ** și expiră în ~60 secunde.
 > Nu îl refaceți/refolosiți la erori de rețea.
+
+> ⚠️ **Mutual TLS obligatoriu**: Backend-ul trebuie să prezinte certificatul digital calificat
+> la conexiunea HTTPS cu `logincert.anaf.ro`. Configurați `ANAF_CERT_PATH` și `ANAF_KEY_PATH`
+> în `server/.env`. Fără mTLS, ANAF returnează `HTTP 500 Internal server error`.
 
 ---
 
@@ -257,6 +263,9 @@ grant_type=authorization_code
 | `FRONTEND_URL` | URL frontend (pentru redirect OAuth2) | `https://85.120.50.10:5173` |
 | `TRUST_PROXY` | Activare trust proxy (NAT/port-forwarding) | `1` |
 | `PORT` | Port server | `5000` |
+| `ANAF_CERT_PATH` | Cale absolută spre fișierul certificat PEM (mTLS) | `/etc/anaf-certs/cert.pem` |
+| `ANAF_KEY_PATH` | Cale absolută spre fișierul cheie privată PEM (mTLS) | `/etc/anaf-certs/key.pem` |
+| `ANAF_CERT_PASSPHRASE` | Parola cheii private (dacă e criptată) – opțional | `parola_secreta` |
 
 ---
 
@@ -356,6 +365,136 @@ Dacă refresh_token lipsește sau a expirat și el, trebuie reluată autorizarea
 
 Apare când se accesează callback-ul direct sau după refresh de pagină.
 Reluați fluxul de la `GET /api/efactura-v2/oauth/authorize`.
+
+### HTTP 500 la schimb token ANAF (`/token`)
+
+**Aceasta este cea mai frecventă cauză de eșec după ce autorizarea (login cu certificat) a reușit.**
+
+Serverul ANAF (`logincert.anaf.ro`) impune **Mutual TLS** – backend-ul trebuie să prezinte certificatul digital calificat la fiecare request POST `/token`. Fără acest certificat, ANAF returnează `500 Internal Server Error` indiferent de corectitudinea celorlalți parametri.
+
+**Checklist de rezolvare:**
+
+```
+□ 1. Verificați log-ul serverului imediat după tentativa de token exchange:
+       [SPV-V2] ⚠️  MUTUAL TLS NECONFIGURAT ...
+     Dacă apare acest mesaj, mTLS nu este configurat → continuați cu pașii de mai jos.
+
+□ 2. Verificați că variabilele ANAF_CERT_PATH și ANAF_KEY_PATH sunt setate în server/.env:
+       ANAF_CERT_PATH=/cale/absoluta/certificat.pem
+       ANAF_KEY_PATH=/cale/absoluta/cheie_privata.pem
+
+□ 3. Verificați că fișierele .pem există și sunt citibile de procesul Node.js:
+       ls -la /cale/catre/certificat.pem /cale/catre/cheie_privata.pem
+
+□ 4. Verificați că log-ul serverului afișează mesajul de succes la pornire:
+       [SPV-V2] ✅ Certificat digital mTLS încărcat cu succes pentru autentificarea la ANAF.
+
+□ 5. Dacă log-ul afișează eroare la citirea fișierelor, verificați permisiunile:
+       chmod 600 /cale/catre/cheie_privata.pem
+       chmod 644 /cale/catre/certificat.pem
+       chown <user-node> /cale/catre/*.pem
+```
+
+Vedeți secțiunea completă **[Mutual TLS](#mutual-tls)** pentru instrucțiuni detaliate.
+
+---
+
+## Configurare Mutual TLS (certificat digital ANAF) {#mutual-tls}
+
+### De ce este necesar Mutual TLS?
+
+Serverul ANAF (`logincert.anaf.ro`) folosește **Mutual TLS (mTLS)** pentru autentificarea aplicațiilor la endpoint-ul `/token`. Aceasta înseamnă că:
+
+- Browserul prezintă certificatul digital calificat al utilizatorului la pasul de login (gestionat automat de browser + token USB)
+- **Backend-ul trebuie să prezinte același certificat** la apelul POST `/token` (schimb code → access_token)
+
+Fără certificat la nivel de conexiune HTTPS a backend-ului, ANAF returnează `HTTP 500 Internal server error`.
+
+### Obținerea fișierelor PEM din certificatul digital
+
+#### Din fișier .p12 (PKCS#12):
+
+```bash
+# Exportați certificatul (public)
+openssl pkcs12 -in certificat.p12 -clcerts -nokeys -out /etc/anaf-certs/cert.pem
+# Introduceți parola .p12 când e cerută
+
+# Exportați cheia privată (fără parolă pe fișier)
+openssl pkcs12 -in certificat.p12 -nocerts -nodes -out /etc/anaf-certs/key.pem
+# Introduceți parola .p12 când e cerută
+
+# Sau exportați cheia privată CU parolă (mai sigur):
+openssl pkcs12 -in certificat.p12 -nocerts -out /etc/anaf-certs/key.pem
+# Setați ANAF_CERT_PASSPHRASE în .env cu parola folosită
+```
+
+#### Din token USB / smart card (dacă nu aveți .p12):
+
+Contactați furnizorul certificatului digital (ex: certSIGN, DigiSign, Trans Sped) pentru export în format PEM sau PKCS#12.
+
+### Configurare fișiere și permisiuni
+
+```bash
+# Creați directorul pentru certificate
+mkdir -p /etc/anaf-certs
+chmod 700 /etc/anaf-certs
+
+# Copiați fișierele PEM
+cp certificat.pem /etc/anaf-certs/cert.pem
+cp cheie_privata.pem /etc/anaf-certs/key.pem
+
+# Setați permisiunile corecte (citibile doar de utilizatorul Node.js)
+chmod 600 /etc/anaf-certs/key.pem
+chmod 644 /etc/anaf-certs/cert.pem
+chown <utilizator-node> /etc/anaf-certs/cert.pem /etc/anaf-certs/key.pem
+```
+
+> ⚠️ **IMPORTANT**: Nu stocați fișierele .pem în directorul aplicației sau în repository!
+> Adăugați `*.pem`, `*.p12`, `certs/` în `.gitignore`.
+
+### Configurare variabile de mediu
+
+Adăugați în `server/.env`:
+
+```env
+# Mutual TLS – Certificat digital calificat ANAF
+ANAF_CERT_PATH=/etc/anaf-certs/cert.pem
+ANAF_KEY_PATH=/etc/anaf-certs/key.pem
+# ANAF_CERT_PASSPHRASE=parola_daca_cheia_este_criptata
+```
+
+### Verificare configurare
+
+```bash
+# Reporniți serverul și verificați log-ul de start:
+npm start 2>&1 | grep -E "\[SPV-V2\].*mTLS|certificat"
+
+# Mesaj de succes așteptat:
+# [SPV-V2] ✅ Certificat digital mTLS încărcat cu succes pentru autentificarea la ANAF.
+
+# Mesaj de eroare (variabile lipsă):
+# [SPV-V2] ⚠️  MUTUAL TLS NECONFIGURAT – variabilele ANAF_CERT_PATH și ANAF_KEY_PATH lipsesc...
+
+# Mesaj de eroare (fișiere inaccesibile):
+# [SPV-V2] ❌ Eroare la încărcarea certificatelor mTLS pentru ANAF: ...
+```
+
+### Testare cu curl (verificare mTLS independent)
+
+```bash
+# Test schimb token cu certificat (înlocuiți valorile)
+curl -v \
+  --cert /etc/anaf-certs/cert.pem \
+  --key /etc/anaf-certs/key.pem \
+  -X POST https://logincert.anaf.ro/anaf-oauth2/v1/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -H "Authorization: Basic $(echo -n 'CLIENT_ID:CLIENT_SECRET' | base64)" \
+  -d "grant_type=authorization_code&code=COD_PRIMIT&redirect_uri=REDIRECT_URI&client_id=CLIENT_ID&client_secret=CLIENT_SECRET"
+
+# Dacă curl returnează 200 → mTLS funcționează corect
+# Dacă returnează 500 fără --cert → confirmat că mTLS este necesar
+# Dacă returnează 500 și cu --cert → verificați validitatea/expirarea certificatului
+```
 
 ### Eroare la pornire server: `better-sqlite3` native module
 
