@@ -17,12 +17,19 @@ const exportCountersRouter = require("./routes/export-counters");
 const dayStatusRouter = require("./routes/day-status");
 const billingRouter = require("./routes/billing");
 const configRouter = require("./routes/config");
-const efacturaRouter = require("./routes/efactura");
+const efacturaRouter   = require("./routes/efactura");
+const efacturaV2Router = require("./routes/efactura-v2");
 const { generateLocalInvoice } = require("./routes/billing");
 const { initializeClientProducts } = require("./routes/client-products");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+// Trust proxy headers (X-Forwarded-For etc.) when running behind NAT/port-forwarding.
+// Set TRUST_PROXY=1 (or a specific IP) in .env to enable; leave unset for direct connections.
+if (process.env.TRUST_PROXY) {
+  app.set("trust proxy", process.env.TRUST_PROXY);
+}
 
 // Middleware
 app.use(cors());
@@ -41,6 +48,8 @@ app.use("/api/day-status", dayStatusRouter);
 app.use("/api/billing", billingRouter);
 app.use("/api/config", configRouter);
 app.use("/api/efactura", efacturaRouter);
+// E-factura SPV-V2 – modul complet separat cu suport IP extern / port-forwarding
+app.use("/api/efactura-v2", efacturaV2Router);
 
 // Health check
 app.get("/api/health", (req, res) => {
