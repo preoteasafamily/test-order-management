@@ -673,6 +673,40 @@ const createTables = () => {
   `);
   db.exec(`INSERT OR IGNORE INTO spv_settings (id) VALUES (1)`);
 
+  // ── E-factura SPV-V2 settings table (completely separate module) ──────────
+  // Supports external IP / port-forwarding via public_callback_url field.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS spv_v2_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      cif TEXT DEFAULT '',
+      environment TEXT DEFAULT 'test',
+      client_id TEXT DEFAULT '',
+      client_secret TEXT DEFAULT '',
+      redirect_uri TEXT DEFAULT '',
+      public_callback_url TEXT DEFAULT '',
+      oauth_token TEXT DEFAULT '',
+      refresh_token TEXT DEFAULT '',
+      token_expires_at TEXT DEFAULT '',
+      oauth_state TEXT DEFAULT '',
+      last_action TEXT DEFAULT '',
+      last_action_at TEXT DEFAULT '',
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  db.exec(`INSERT OR IGNORE INTO spv_v2_settings (id) VALUES (1)`);
+
+  // ── E-factura SPV-V2 action log table ────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS spv_v2_action_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      action TEXT NOT NULL,
+      details TEXT,
+      success INTEGER DEFAULT 1,
+      error_message TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   // SPV messages table – stores list of received/sent messages from ANAF
   db.exec(`
     CREATE TABLE IF NOT EXISTS spv_messages (
