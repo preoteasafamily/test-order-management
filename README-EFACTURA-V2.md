@@ -397,6 +397,16 @@ Serverul ANAF (`logincert.anaf.ro`) impune **Mutual TLS** – backend-ul trebuie
 
 Vedeți secțiunea completă **[Mutual TLS](#mutual-tls)** pentru instrucțiuni detaliate.
 
+### HTTP 400 „grant_type missing" deși parametrii există în payload
+
+**Cauza**: Serverul ANAF nu parsează corect body-urile `application/x-www-form-urlencoded` trimise cu `Transfer-Encoding: chunked` (comportamentul implicit al Node.js `https.request` când `Content-Length` lipsește). Rezultatul este că ANAF nu „vede" niciun parametru în body și raportează `"Required parameter (grant_type) is missing"`.
+
+**Fix aplicat** (v. `server/routes/efactura-v2.js`, funcția `fetchMtls`): header-ul `Content-Length` este calculat și adăugat automat la fiecare request POST, forțând transmisia fără chunked encoding.
+
+Dacă mai apare această eroare după actualizare, verificați că:
+- Nu există un proxy invers (nginx/apache) care să re-encodeze body-ul în modul chunked
+- Certificatul mTLS este configurat (fără mTLS, ANAF poate refuza parsarea body-ului)
+
 ---
 
 ## Configurare Mutual TLS (certificat digital ANAF) {#mutual-tls}
@@ -457,11 +467,15 @@ chown <utilizator-node> /etc/anaf-certs/cert.pem /etc/anaf-certs/key.pem
 Adăugați în `server/.env`:
 
 ```env
-# Mutual TLS – Certificat digital calificat ANAF
+# Mutual TLS – Certificat digital calificat ANAF (obligatoriu pentru POST /token)
 ANAF_CERT_PATH=/etc/anaf-certs/cert.pem
 ANAF_KEY_PATH=/etc/anaf-certs/key.pem
 # ANAF_CERT_PASSPHRASE=parola_daca_cheia_este_criptata
 ```
+
+> **Notă**: `ANAF_CERT_PASSPHRASE` este opțional – completați-l doar dacă fișierul `key.pem`
+> a fost generat cu parolă (opțiunea `-out` fără `-nodes` în openssl).
+> Dacă cheia este necriptată (`-nodes` folosit la export), lăsați comentat sau gol.
 
 ### Verificare configurare
 
