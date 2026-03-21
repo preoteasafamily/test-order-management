@@ -378,16 +378,25 @@ router.get('/oauth/callback', async (req, res) => {
     // Clear the used state immediately
     db.prepare(`UPDATE spv_settings SET oauth_state = '' WHERE id = 1`).run();
 
+    // RFC 6749 §2.3: use exactly ONE credential method.
+    // Postman uses "Client Authentication: Send as Basic Auth header" which puts
+    // client_id/client_secret only in the Authorization header (not in the body).
+    // Sending credentials in both places causes ANAF to return 500 server_error.
     const body = new URLSearchParams({
-      grant_type:    'authorization_code',
+      grant_type:   'authorization_code',
       code,
-      redirect_uri:  settings.redirect_uri,
-      client_id:     settings.client_id,
-      client_secret: settings.client_secret,
+      redirect_uri: settings.redirect_uri,
     });
 
-    // ANAF requires Basic Auth header (base64 client_id:client_secret) plus body params
     const basicAuth = Buffer.from(`${settings.client_id}:${settings.client_secret}`).toString('base64');
+
+    const tokenBodyStr = body.toString();
+    console.info('ANAF token exchange request:', {
+      url:          ANAF_TOKEN_URL,
+      body:         tokenBodyStr,
+      redirect_uri: settings.redirect_uri,
+      timestamp:    new Date().toISOString(),
+    });
 
     const tokenRes = await fetch(ANAF_TOKEN_URL, {
       method:  'POST',
@@ -395,14 +404,19 @@ router.get('/oauth/callback', async (req, res) => {
         'Content-Type':  'application/x-www-form-urlencoded',
         'Authorization': `Basic ${basicAuth}`,
       },
-      body: body.toString(),
+      body: tokenBodyStr,
     });
 
     const tokenData = await tokenRes.json().catch(() => ({}));
 
     if (!tokenRes.ok) {
       const errMsg = tokenData.error_description || tokenData.error || JSON.stringify(tokenData);
-      console.error('ANAF token exchange failed:', tokenRes.status, tokenData);
+      console.error('ANAF token exchange failed:', {
+        status:       tokenRes.status,
+        response:     tokenData,
+        redirect_uri: settings.redirect_uri,
+        timestamp:    new Date().toISOString(),
+      });
       return res.redirect(`${FRONTEND_URL}/?oauth_error=${encodeURIComponent(errMsg)}#efactura-spv`);
     }
 
@@ -438,14 +452,15 @@ router.post('/oauth/refresh', async (req, res) => {
       return res.status(400).json({ error: 'client_id / client_secret lipsă. Configurați credențialele OAuth2.' });
     }
 
+    // RFC 6749 §2.3: use exactly ONE credential method (Basic Auth header only).
+    // Sending client_id/client_secret in both body and Authorization header
+    // causes ANAF to return 500 server_error.
     const body = new URLSearchParams({
       grant_type:    'refresh_token',
       refresh_token: settings.refresh_token,
-      client_id:     settings.client_id,
-      client_secret: settings.client_secret,
     });
 
-    // ANAF requires Basic Auth header (base64 client_id:client_secret) plus body params
+    // ANAF uses Basic Auth (base64 client_id:client_secret) as the single auth method
     const basicAuth = Buffer.from(`${settings.client_id}:${settings.client_secret}`).toString('base64');
 
     const tokenRes = await fetch(ANAF_TOKEN_URL, {
