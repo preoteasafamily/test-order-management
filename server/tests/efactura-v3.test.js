@@ -332,31 +332,21 @@ test('stripSchemaLocation – leaves XML unchanged if no schemaLocation', () => 
   assert.strictEqual(result, xml, 'XML without schemaLocation should be unchanged');
 });
 
-// ─── ANAF Client – isMtlsConfigured Tests ───────────────────────────────────
+// ─── ANAF Client – no mTLS Tests ────────────────────────────────────────────
 
 console.log('\n═══ anaf-client.js ═════════════════════════════════════════');
 
-test('isMtlsConfigured – returns false when env vars missing', () => {
-  const original = { cert: process.env.ANAF_CERT_PATH, key: process.env.ANAF_KEY_PATH };
-  delete process.env.ANAF_CERT_PATH;
-  delete process.env.ANAF_KEY_PATH;
-
-  const result = anafClient.isMtlsConfigured();
-  assert.strictEqual(result, false, 'Should return false when certs not configured');
-
-  process.env.ANAF_CERT_PATH = original.cert || '';
-  process.env.ANAF_KEY_PATH  = original.key  || '';
+test('anaf-client exports request function', () => {
+  assert.strictEqual(typeof anafClient.request, 'function', 'request should be a function');
 });
 
-test('isMtlsConfigured – returns false when file does not exist', () => {
-  process.env.ANAF_CERT_PATH = '/tmp/nonexistent-cert-xyz.pem';
-  process.env.ANAF_KEY_PATH  = '/tmp/nonexistent-key-xyz.pem';
+test('anaf-client exports withRetry function', () => {
+  assert.strictEqual(typeof anafClient.withRetry, 'function', 'withRetry should be a function');
+});
 
-  const result = anafClient.isMtlsConfigured();
-  assert.strictEqual(result, false, 'Should return false for non-existent cert files');
-
-  delete process.env.ANAF_CERT_PATH;
-  delete process.env.ANAF_KEY_PATH;
+test('anaf-client does NOT export mTLS functions', () => {
+  assert.strictEqual(anafClient.getMtlsAgent, undefined, 'getMtlsAgent must not be exported');
+  assert.strictEqual(anafClient.isMtlsConfigured, undefined, 'isMtlsConfigured must not be exported');
 });
 
 // ─── Config – isJwt Tests (loaded via inline helper) ────────────────────────

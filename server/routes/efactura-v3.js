@@ -8,7 +8,7 @@
  *
  *   services/efactura-spv-v3/
  *     config.js      – citire/scriere setări din DB, validare token
- *     anaf-client.js – HTTP client cu suport mTLS, retry exponențial
+ *     anaf-client.js – HTTP client cu retry exponențial (fără mTLS)
  *     xml-builder.js – Generator XML UBL 2.1 CIUS-RO
  *
  * Rute (prefix /api/efactura-v3):
@@ -33,11 +33,12 @@
  *   POST /check-status-batch       – Verificare stare lot
  *
  * Cerințe .env (server/.env):
- *   ANAF_CERT_PATH       – cale absolută cert.pem (mTLS – obligatoriu pentru token exchange)
- *   ANAF_KEY_PATH        – cale absolută key.pem
- *   ANAF_CERT_PASSPHRASE – opțional, parola cheii private
  *   PUBLIC_CALLBACK_URL  – URL extern (ex: https://1.2.3.4:5000) pentru redirect_uri
  *   FRONTEND_URL         – URL frontend React (pentru redirect după callback)
+ *
+ * Autentificarea se face EXCLUSIV prin browser (OAuth2 cu certificat digital).
+ * mTLS nu este configurat pe server – cheia privată NU trebuie extrasă din token-ul USB.
+ * Tokenul JWT se importă manual după autentificarea prin browser sau Postman.
  */
 
 const express   = require('express');
@@ -50,7 +51,7 @@ const {
   hasValidToken, updateSettings, saveToken, logAction,
 } = require('../services/efactura-spv-v3/config');
 
-const { request, withRetry, isMtlsConfigured, sleep } =
+const { request, withRetry, sleep } =
   require('../services/efactura-spv-v3/anaf-client');
 
 const { buildUBL, stripSchemaLocation } =
@@ -113,7 +114,9 @@ const requireToken = (req, res, next) => {
 
 /**
  * Exchange an authorization code or refresh token with ANAF.
- * Uses mTLS (required by ANAF logincert.anaf.ro).
+ * Authentication is browser-based; this call is made without mTLS.
+ * If ANAF returns HTTP 500 (which can happen without client certificate),
+ * the user should import a JWT token obtained via Postman instead.
  * Throws on failure with useful error message.
  *
  * @param {object} params – URLSearchParams-compatible object
@@ -130,7 +133,6 @@ const exchangeToken = async (params, label = 'token_exchange') => {
   const res = await withRetry(
     () => request(ANAF_TOKEN_URL, {
       method:  'POST',
-      useMtls: true,
       headers: {
         'Content-Type':  'application/x-www-form-urlencoded',
         'Authorization': `Basic ${basicAuth}`,
@@ -145,11 +147,11 @@ const exchangeToken = async (params, label = 'token_exchange') => {
   try { data = JSON.parse(res._raw); } catch { /* non-JSON */ }
 
   if (!res.ok) {
-    const mtlsHint = res.status >= 500 && !isMtlsConfigured()
-      ? ' – ANAF impune mTLS; configurați ANAF_CERT_PATH și ANAF_KEY_PATH în server/.env'
+    const hint = res.status >= 500
+      ? ' – ANAF necesită certificat digital la schimbul de token. Importați tokenul JWT obținut prin browser sau Postman via POST /api/efactura-v3/oauth/token-import.'
       : '';
     const msg = data.error_description || data.error
-      || `ANAF HTTP ${res.status}${mtlsHint}`;
+      || `ANAF HTTP ${res.status}${hint}`;
     const err = Object.assign(new Error(msg), { status: res.status, anafData: data });
     throw err;
   }
@@ -298,8 +300,10 @@ router.get('/oauth/authorize', (req, res) => {
 
 /**
  * GET /api/efactura-v3/oauth/callback
- * ANAF redirects here after user authenticates with digital certificate.
- * Exchanges the authorization code for a JWT token (with mTLS).
+ * ANAF redirects here after user authenticates with digital certificate in browser.
+ * Attempts to exchange the authorization code for a JWT token.
+ * NOTE: ANAF may require mTLS at the token endpoint; if exchange fails (HTTP 500),
+ * the user should obtain the token via Postman and import it via /oauth/token-import.
  */
 router.get('/oauth/callback', async (req, res) => {
   const { code, state, error, error_description } = req.query;
@@ -355,7 +359,7 @@ router.get('/oauth/callback', async (req, res) => {
 
 /**
  * POST /api/efactura-v3/oauth/refresh
- * Renew access token using the stored refresh_token (with mTLS).
+ * Renew access token using the stored refresh_token.
  */
 router.post('/oauth/refresh', async (req, res) => {
   try {
@@ -446,7 +450,6 @@ router.get('/oauth/diagnostic', (req, res) => {
       hasClientId:          !!s.client_id,
       hasClientSecret:      !!s.client_secret,
       redirectUri:          getRedirectUri(s) || '(nesetat)',
-      mtlsConfigured:       isMtlsConfigured(),
       hasToken:             !!s.oauth_token,
       tokenIsJwt:           isJwt(s.oauth_token),
       tokenExpired:         isTokenExpired(s),
@@ -459,8 +462,6 @@ router.get('/oauth/diagnostic', (req, res) => {
     if (!config.hasClientSecret) issues.push('Client Secret lipsă');
     if (!config.redirectUri || config.redirectUri === '(nesetat)')
       issues.push('redirect_uri nesetat – completați Public Callback URL în Setări');
-    if (!config.mtlsConfigured)
-      issues.push('Certificat mTLS neconfigurat – adăugați ANAF_CERT_PATH și ANAF_KEY_PATH în server/.env');
     if (!config.hasToken)
       issues.push('Niciun token OAuth2 – autentificați-vă via /oauth/authorize sau importați cu /oauth/token-import');
     if (config.hasToken && !config.tokenIsJwt)
@@ -490,7 +491,6 @@ router.get('/status', (req, res) => {
       cif:           s.cif || null,
       tokenValid:    ready,
       tokenExpiresAt: s.token_expires_at || null,
-      mtlsConfigured: isMtlsConfigured(),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

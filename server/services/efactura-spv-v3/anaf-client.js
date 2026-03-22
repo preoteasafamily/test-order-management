@@ -4,82 +4,18 @@
  * SPV v3 – ANAF HTTP Client
  * ==========================
  * Wraps Node.js `https` module so we have full control over:
- *   - mTLS (Mutual TLS) – required by ANAF logincert.anaf.ro for token exchange
  *   - Retry with exponential backoff for transient 5xx errors
  *   - Consistent response shape { status, ok, headers, text(), json(), _raw }
  *
- * Environment variables:
- *   ANAF_CERT_PATH        – absolute path to client certificate (PEM)
- *   ANAF_KEY_PATH         – absolute path to private key (PEM)
- *   ANAF_CERT_PASSPHRASE  – optional passphrase for encrypted key
+ * Authentication is performed exclusively via browser OAuth2 flow.
+ * mTLS is NOT used – the private key from a USB token cannot be extracted
+ * and must never be configured server-side.
  */
 
 const https = require('https');
-const fs    = require('fs');
 
 const MAX_RETRY     = 3;
 const RETRY_BASE_MS = 1000;
-
-// ─── mTLS Agent (lazy, cached) ────────────────────────────────────────────────
-
-let _mtlsAgent      = null;
-let _mtlsWarnLogged = false;
-
-/**
- * Returns an https.Agent configured with ANAF client certificate for mTLS.
- * Lazy-initialised and cached across calls.
- * Returns null if ANAF_CERT_PATH / ANAF_KEY_PATH are not set.
- */
-const getMtlsAgent = () => {
-  if (_mtlsAgent !== null) return _mtlsAgent;
-
-  const certPath   = process.env.ANAF_CERT_PATH;
-  const keyPath    = process.env.ANAF_KEY_PATH;
-  const passphrase = process.env.ANAF_CERT_PASSPHRASE || undefined;
-
-  if (!certPath || !keyPath) {
-    if (!_mtlsWarnLogged) {
-      console.warn(
-        '[SPV-V3] ⚠ mTLS not configured – ANAF_CERT_PATH / ANAF_KEY_PATH missing.\n' +
-        '         Token exchange will fail (HTTP 500) without a qualified digital certificate.\n' +
-        '         Add to server/.env:\n' +
-        '           ANAF_CERT_PATH=/absolute/path/to/cert.pem\n' +
-        '           ANAF_KEY_PATH=/absolute/path/to/key.pem',
-      );
-      _mtlsWarnLogged = true;
-    }
-    return null;
-  }
-
-  try {
-    const agentOpts = {
-      cert: fs.readFileSync(certPath),
-      key:  fs.readFileSync(keyPath),
-    };
-    if (passphrase) agentOpts.passphrase = passphrase;
-    _mtlsAgent = new https.Agent(agentOpts);
-    console.log('[SPV-V3] ✓ mTLS certificate loaded successfully.');
-  } catch (err) {
-    console.error(`[SPV-V3] ✗ Failed to load mTLS certificates: ${err.message}`);
-    _mtlsAgent = null;
-  }
-
-  return _mtlsAgent;
-};
-
-/** True if mTLS is configured (certificates exist and are readable). */
-const isMtlsConfigured = () => {
-  const certPath = process.env.ANAF_CERT_PATH;
-  const keyPath  = process.env.ANAF_KEY_PATH;
-  if (!certPath || !keyPath) return false;
-  try {
-    fs.accessSync(certPath, fs.constants.R_OK);
-    fs.accessSync(keyPath,  fs.constants.R_OK);
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 // ─── Core HTTP helper ─────────────────────────────────────────────────────────
 
@@ -88,15 +24,13 @@ const isMtlsConfigured = () => {
  * Returns a Promise that resolves to { status, ok, headers, text(), json(), _raw }.
  *
  * @param {string} url
- * @param {{ method?, headers?, body?, useMtls? }} opts
+ * @param {{ method?, headers?, body? }} opts
  * @returns {Promise<object>}
  */
 const request = (url, opts = {}) =>
   new Promise((resolve, reject) => {
     const parsed = new URL(url);
-    const agent  = opts.useMtls ? getMtlsAgent() : undefined;
 
-    // Buffer the body and set Content-Length to avoid chunked transfer encoding.
     const bodyBuf = opts.body != null
       ? (Buffer.isBuffer(opts.body)
           ? opts.body
@@ -112,7 +46,6 @@ const request = (url, opts = {}) =>
       path:     parsed.pathname + (parsed.search || ''),
       method:   opts.method || 'GET',
       headers,
-      agent,
     };
 
     const req = https.request(reqOpts, (res) => {
@@ -178,4 +111,4 @@ const withRetry = async (fn, label = 'ANAF') => {
   return lastErr;
 };
 
-module.exports = { request, withRetry, getMtlsAgent, isMtlsConfigured, sleep };
+module.exports = { request, withRetry, sleep };
