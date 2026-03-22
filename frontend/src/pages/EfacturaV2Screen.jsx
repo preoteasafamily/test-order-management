@@ -40,6 +40,8 @@ import {
   BookOpen,
   Copy,
   Globe,
+  Shield,
+  Clipboard,
 } from "lucide-react";
 
 // ─── Status config ────────────────────────────────────────────────────────────
@@ -116,8 +118,8 @@ const ResponseModal = ({ invoice, onClose }) => {
  * Stochează setările separat față de V1 (tabel `spv_v2_settings`).
  * Suportă câmpul suplimentar `publicCallbackUrl` pentru IP extern.
  */
-const SettingsPanelV2 = ({ API_URL, onClose, onSaved }) => {
-  const [settingsTab, setSettingsTab] = useState("oauth");
+const SettingsPanelV2 = ({ API_URL, onClose, onSaved, defaultTab = "oauth" }) => {
+  const [settingsTab, setSettingsTab] = useState(defaultTab);
   const [form, setForm] = useState({
     cif: "", token: "", tokenExpiresAt: "", environment: "test",
     clientId: "", clientSecret: "", redirectUri: "", publicCallbackUrl: "",
@@ -131,6 +133,13 @@ const SettingsPanelV2 = ({ API_URL, onClose, onSaved }) => {
   const [copiedUri, setCopiedUri] = useState(false);
   const [diagnostic, setDiagnostic] = useState(null);
   const [diagLoading, setDiagLoading] = useState(false);
+  const [mtlsConfigured, setMtlsConfigured] = useState(null);
+
+  // State pentru importul tokenului JSON (tab USB Token)
+  const [tokenJson, setTokenJson] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState(null);
+  const [copiedCmd, setCopiedCmd] = useState(false);
 
   /**
    * Redirect URI recomandat pentru V2 – folosește IP-ul/domeniul public al
@@ -157,6 +166,11 @@ const SettingsPanelV2 = ({ API_URL, onClose, onSaved }) => {
         setHasClientSecret(!!d.hasClientSecret);
       })
       .catch(() => {});
+    // Verificare stare mTLS (certificat digital pentru backend)
+    fetch(`${API_URL}/api/efactura-v2/oauth/mtls-status`)
+      .then(r => r.json())
+      .then(d => setMtlsConfigured(d.mtlsConfigured))
+      .catch(() => setMtlsConfigured(false));
   }, [API_URL]);
 
   /** Salvează setările SPV-V2 pe server. */
@@ -233,6 +247,74 @@ const SettingsPanelV2 = ({ API_URL, onClose, onSaved }) => {
     }
   };
 
+  /**
+   * Importă un token obținut extern (Postman, curl, etc.) via endpoint-ul /token-import.
+   * Acceptă fie JSON complet {"access_token":"...","refresh_token":"...","expires_in":3600},
+   * fie doar stringul access_token.
+   */
+  const importTokenJson = async () => {
+    setImporting(true);
+    setImportMsg(null);
+    try {
+      if (!tokenJson.trim()) {
+        setImportMsg({ type: "error", text: "Introduceți tokenul sau JSON-ul complet de la ANAF." });
+        return;
+      }
+
+      let payload;
+      const trimmed = tokenJson.trim();
+
+      // Încercăm să parsăm ca JSON (răspuns complet de la ANAF)
+      if (trimmed.startsWith("{")) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (!parsed.access_token) {
+            setImportMsg({ type: "error", text: "JSON invalid: lipsă câmp access_token." });
+            return;
+          }
+          payload = {
+            access_token:  parsed.access_token,
+            refresh_token: parsed.refresh_token || "",
+            expires_in:    parsed.expires_in    || 0,
+            token_type:    parsed.token_type    || "Bearer",
+          };
+        } catch {
+          setImportMsg({ type: "error", text: "JSON invalid. Verificați că ați copiat corect răspunsul complet de la ANAF." });
+          return;
+        }
+      } else {
+        // Tratăm ca access_token simplu (string)
+        payload = { access_token: trimmed };
+      }
+
+      const r = await fetch(`${API_URL}/api/efactura-v2/oauth/token-import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await r.json();
+
+      if (r.ok) {
+        setImportMsg({
+          type: "success",
+          text: `✅ Token importat cu succes!${data.expiresAt ? ` Expiră la: ${new Date(data.expiresAt).toLocaleString("ro-RO")}` : ""}${data.hasRefreshToken ? " (include refresh_token)" : ""}`,
+        });
+        setTokenJson("");
+        onSaved?.();
+        // Reîncarcă setările pentru a actualiza token-ul afișat
+        const s = await fetch(`${API_URL}/api/efactura-v2/settings`).then(x => x.json());
+        setForm(f => ({ ...f, token: s.token || "", tokenExpiresAt: s.tokenExpiresAt || "" }));
+        setHasRefreshToken(!!s.hasRefreshToken);
+      } else {
+        setImportMsg({ type: "error", text: data.error || "Eroare la importul tokenului." });
+      }
+    } catch (e) {
+      setImportMsg({ type: "error", text: e.message });
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const tokenExpired    = form.tokenExpiresAt && new Date(form.tokenExpiresAt) < new Date();
   const tokenExpiresSoon = form.tokenExpiresAt && !tokenExpired &&
     new Date(form.tokenExpiresAt) < new Date(Date.now() + 10 * 60 * 1000);
@@ -249,22 +331,26 @@ const SettingsPanelV2 = ({ API_URL, onClose, onSaved }) => {
         </div>
 
         {/* Tabs interioare */}
-        <div className="flex border-b flex-shrink-0 px-4">
+        <div className="flex border-b flex-shrink-0 px-4 overflow-x-auto">
           {[
-            { id: "oauth",  label: "OAuth2 ANAF",      icon: ShieldCheck },
-            { id: "manual", label: "Token manual",      icon: Key },
-            { id: "general",label: "General",           icon: Settings },
-            { id: "guide",  label: "Ghid V2 (IP Extern)", icon: BookOpen },
+            { id: "oauth",    label: "OAuth2 ANAF",          icon: ShieldCheck },
+            { id: "usb",      label: "Token USB / Postman",  icon: Key },
+            { id: "manual",   label: "Token manual",         icon: Clipboard },
+            { id: "general",  label: "General",              icon: Settings },
+            { id: "guide",    label: "Ghid V2",              icon: BookOpen },
           ].map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               onClick={() => setSettingsTab(id)}
-              className={`flex items-center gap-1.5 px-3 py-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-3 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap ${
                 settingsTab === id
                   ? "border-blue-500 text-blue-700"
                   : "border-transparent text-gray-500 hover:text-gray-700"
               }`}>
               <Icon className="w-4 h-4" />{label}
+              {id === "usb" && mtlsConfigured === false && (
+                <span className="ml-1 w-2 h-2 rounded-full bg-amber-400 inline-block" title="mTLS neconfigurat – recomandăm fluxul USB Token" />
+              )}
             </button>
           ))}
         </div>
@@ -276,6 +362,31 @@ const SettingsPanelV2 = ({ API_URL, onClose, onSaved }) => {
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
                 <strong>🔐 E-Factura SPV-V2 – OAuth2 pentru IP Extern</strong> – Acest modul este configurat independent față de V1 și suportă IP extern / port-forwarding. Redirect URI-ul trebuie să fie accesibil din internet.
               </div>
+
+              {/* Avertisment mTLS neconfigurat */}
+              {mtlsConfigured === false && (
+                <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-sm">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-amber-800">⚠ Certificat digital (mTLS) neconfigurat pe server</p>
+                      <p className="text-amber-700 text-xs mt-1">
+                        Serverul ANAF impune prezentarea unui certificat digital calificat la schimbul de token (<code className="bg-amber-100 px-0.5 rounded">POST /token</code>).
+                        Fără certificat, ANAF returnează <strong>HTTP 500</strong> – autorizarea automată va eșua.
+                      </p>
+                      <p className="text-amber-700 text-xs mt-1">
+                        <strong>Dacă aveți certificatul ca fișier PEM/PFX</strong>: configurați <code className="bg-amber-100 px-0.5 rounded">ANAF_CERT_PATH</code> și <code className="bg-amber-100 px-0.5 rounded">ANAF_KEY_PATH</code> în <code className="bg-amber-100 px-0.5 rounded">server/.env</code>.
+                      </p>
+                      <p className="text-amber-700 text-xs mt-1">
+                        <strong>Dacă certificatul este pe token hardware USB</strong>:{" "}
+                        <button onClick={() => setSettingsTab("usb")} className="underline font-medium text-amber-800 hover:text-amber-900">
+                          folosiți fluxul Postman/curl →  tab „Token USB / Postman"
+                        </button>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Redirect URI recomandat */}
               <div className="bg-blue-50 border border-blue-300 rounded-lg p-3 text-sm">
@@ -464,11 +575,207 @@ const SettingsPanelV2 = ({ API_URL, onClose, onSaved }) => {
             </>
           )}
 
+          {/* ── USB Token / Postman Tab ───────────────────────────────────────── */}
+          {settingsTab === "usb" && (
+            <div className="space-y-4 text-sm text-gray-700">
+              {/* Explicație limită tehnică */}
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <div className="flex items-start gap-2">
+                  <Shield className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-red-800 text-sm">⛔ Limitare tehnică – mTLS din backend cu token hardware USB</p>
+                    <p className="text-red-700 text-xs mt-1">
+                      Serverul ANAF (<code className="bg-red-100 px-0.5 rounded">logincert.anaf.ro</code>) solicită prezentarea certificatului digital calificat
+                      la <strong>fiecare apel POST /token</strong> (Mutual TLS). Serverul Node.js backend nu poate accesa automat un certificat
+                      aflat pe un token hardware USB conectat la calculatorul utilizatorului – cheia privată nu părăsește niciodată dispozitivul hardware.
+                    </p>
+                    <p className="text-red-700 text-xs mt-2">
+                      <strong>De ce funcționează în Postman?</strong> Postman are acces nativ la certificate configurate în setările proprii sau
+                      în depozitul de certificate al sistemului de operare (Windows Certificate Store / macOS Keychain). Modul „Authorize using Browser"
+                      deschide browserul pentru autentificarea ANAF (selectarea certificatului), iar Postman efectuează schimbul de token
+                      cu propriul certificat configurat. Aceasta este interacțiunea manuală care nu poate fi automatizată complet de pe server.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Soluții alternative */}
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                <p className="font-semibold text-green-800 text-sm mb-2">✅ Soluții funcționale pentru token hardware USB</p>
+                <div className="space-y-3 text-xs text-green-800">
+                  <div className="flex items-start gap-2">
+                    <span className="font-bold text-green-700 min-w-[20px]">1.</span>
+                    <div>
+                      <strong>Postman (recomandat)</strong> – Folosiți Postman cu setarea „Authorize using browser" + certificat configurat
+                      în Postman → copiați răspunsul JSON cu tokenul → importați mai jos.
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="font-bold text-green-700 min-w-[20px]">2.</span>
+                    <div>
+                      <strong>curl cu fișier PEM/PFX</strong> – Dacă puteți exporta temporar certificatul din token pe calculator,
+                      folosiți comanda curl de mai jos pentru schimbul de token.
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="font-bold text-green-700 min-w-[20px]">3.</span>
+                    <div>
+                      <strong>Fișiere PEM pe server</strong> – Soluție permanentă: exportați certificatul + cheia privată din token
+                      (dacă tokenul permite), copiați fișierele pe server și configurați <code className="bg-green-100 px-0.5 rounded">ANAF_CERT_PATH</code>/<code className="bg-green-100 px-0.5 rounded">ANAF_KEY_PATH</code> în <code className="bg-green-100 px-0.5 rounded">server/.env</code>.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Ghid Postman pas cu pas */}
+              <div className="border border-gray-200 rounded-lg">
+                <div className="bg-gray-50 px-3 py-2 border-b rounded-t-lg">
+                  <p className="font-semibold text-gray-700 flex items-center gap-1.5">
+                    <BookOpen className="w-4 h-4" /> Ghid Postman – pas cu pas
+                  </p>
+                </div>
+                <ol className="p-3 space-y-3 text-xs list-decimal pl-7 text-gray-700">
+                  <li>
+                    <strong>Configurați certificatul în Postman</strong>: Settings (⚙) → Certificates → Add Certificate.
+                    Host: <code className="bg-gray-100 px-0.5 rounded">logincert.anaf.ro</code>.
+                    Adăugați fișierele <code className="bg-gray-100 px-0.5 rounded">cert.pem</code> și <code className="bg-gray-100 px-0.5 rounded">key.pem</code>{" "}
+                    (sau <code className="bg-gray-100 px-0.5 rounded">.p12/.pfx</code> cu parola).
+                  </li>
+                  <li>
+                    <strong>Creați un request OAuth2</strong>: New Request → Authorization tab → Type: <em>OAuth 2.0</em> → Get New Access Token.
+                    Completați:
+                    <ul className="mt-1 ml-3 list-disc space-y-0.5">
+                      <li>Grant Type: Authorization Code</li>
+                      <li>Callback URL: <code className="bg-gray-100 px-0.5 rounded">{window.location.origin}/api/efactura-v2/oauth/callback</code></li>
+                      <li>Auth URL: <code className="bg-gray-100 px-0.5 rounded">https://logincert.anaf.ro/anaf-oauth2/v1/authorize</code></li>
+                      <li>Access Token URL: <code className="bg-gray-100 px-0.5 rounded">https://logincert.anaf.ro/anaf-oauth2/v1/token</code></li>
+                      <li>Client ID și Client Secret (din ANAF)</li>
+                      <li>Scope: <code className="bg-gray-100 px-0.5 rounded">offline_access</code></li>
+                    </ul>
+                  </li>
+                  <li>
+                    <strong>Bifați „Authorize using Browser"</strong> (obligatoriu – browserul va prezenta certificatul de pe tokenul USB).
+                  </li>
+                  <li>
+                    <strong>Apăsați „Request Token"</strong> → browserul se deschide → selectați certificatul → introduceți PIN-ul.
+                  </li>
+                  <li>
+                    <strong>Copiați răspunsul JSON</strong> din secțiunea „Token Details" sau din consola Postman.
+                    Răspunsul arată astfel:
+                    <pre className="mt-1 bg-gray-100 rounded p-2 overflow-x-auto text-gray-800">{`{
+  "access_token": "eyJ...",
+  "token_type": "Bearer",
+  "refresh_token": "eyJ...",
+  "expires_in": 3600
+}`}</pre>
+                  </li>
+                  <li>
+                    <strong>Lipiți JSON-ul în câmpul de mai jos</strong> și apăsați „Importă token".
+                  </li>
+                </ol>
+              </div>
+
+              {/* Secțiunea import JSON */}
+              <div className="border border-blue-200 rounded-lg p-3 bg-blue-50">
+                <p className="font-semibold text-blue-800 text-sm mb-2 flex items-center gap-1.5">
+                  <Clipboard className="w-4 h-4" /> Importă token din Postman / curl
+                </p>
+                <p className="text-xs text-blue-700 mb-2">
+                  Lipiți răspunsul JSON complet de la ANAF (cu <code className="bg-blue-100 px-0.5 rounded">access_token</code>,{" "}
+                  <code className="bg-blue-100 px-0.5 rounded">refresh_token</code>, <code className="bg-blue-100 px-0.5 rounded">expires_in</code>)
+                  sau doar stringul <code className="bg-blue-100 px-0.5 rounded">access_token</code>:
+                </p>
+                <textarea
+                  className="w-full border rounded-lg px-3 py-2 text-sm font-mono text-xs focus:ring-2 focus:ring-blue-400 focus:border-blue-400 bg-white"
+                  rows={5}
+                  value={tokenJson}
+                  onChange={e => setTokenJson(e.target.value)}
+                  placeholder={'{"access_token":"eyJ...","token_type":"Bearer","refresh_token":"eyJ...","expires_in":3600}'}
+                />
+                <div className="flex gap-2 mt-2">
+                  <button
+                    onClick={importTokenJson}
+                    disabled={importing || !tokenJson.trim()}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+                    {importing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                    Importă token
+                  </button>
+                  <button
+                    onClick={() => setTokenJson("")}
+                    disabled={!tokenJson}
+                    className="px-3 py-2 border text-gray-600 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-40">
+                    Șterge
+                  </button>
+                </div>
+                {importMsg && (
+                  <div className={`mt-2 rounded-lg p-2 text-xs ${importMsg.type === "success" ? "bg-green-50 text-green-800 border border-green-200" : "bg-red-50 text-red-800 border border-red-200"}`}>
+                    {importMsg.text}
+                  </div>
+                )}
+              </div>
+
+              {/* Comandă curl de referință */}
+              <div className="border border-gray-200 rounded-lg">
+                <div className="bg-gray-50 px-3 py-2 border-b rounded-t-lg flex items-center justify-between">
+                  <p className="font-semibold text-gray-700 text-xs flex items-center gap-1.5">
+                    <FileCode className="w-4 h-4" /> Comandă curl de referință (dacă aveți cert.pem/key.pem local)
+                  </p>
+                  <button
+                    onClick={() => {
+                      const cmd = `curl -v \\
+  --cert /calea/spre/cert.pem \\
+  --key /calea/spre/key.pem \\
+  -X POST https://logincert.anaf.ro/anaf-oauth2/v1/token \\
+  -H "Content-Type: application/x-www-form-urlencoded" \\
+  -H "Authorization: Basic $(echo -n 'CLIENT_ID:CLIENT_SECRET' | base64)" \\
+  -d "grant_type=authorization_code&code=CODUL_PRIMIT&redirect_uri=REDIRECT_URI&client_id=CLIENT_ID&client_secret=CLIENT_SECRET"`;
+                      navigator.clipboard.writeText(cmd).then(() => {
+                        setCopiedCmd(true);
+                        setTimeout(() => setCopiedCmd(false), 2000);
+                      });
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 border border-gray-300 bg-white rounded text-xs text-gray-600 hover:bg-gray-50">
+                    {copiedCmd ? <CheckCircle className="w-3 h-3 text-green-600" /> : <Copy className="w-3 h-3" />}
+                    {copiedCmd ? "Copiat!" : "Copiază"}
+                  </button>
+                </div>
+                <pre className="p-3 text-xs font-mono text-gray-700 overflow-x-auto bg-gray-50 rounded-b-lg whitespace-pre-wrap">{`curl -v \\
+  --cert /calea/spre/cert.pem \\
+  --key /calea/spre/key.pem \\
+  -X POST https://logincert.anaf.ro/anaf-oauth2/v1/token \\
+  -H "Content-Type: application/x-www-form-urlencoded" \\
+  -H "Authorization: Basic $(echo -n 'CLIENT_ID:CLIENT_SECRET' | base64)" \\
+  -d "grant_type=authorization_code&code=CODUL_PRIMIT&redirect_uri=REDIRECT_URI&client_id=CLIENT_ID&client_secret=CLIENT_SECRET"`}
+                </pre>
+                <p className="px-3 pb-2 text-xs text-gray-500">
+                  Înlocuiți <code className="bg-gray-100 px-0.5 rounded">CLIENT_ID</code>, <code className="bg-gray-100 px-0.5 rounded">CLIENT_SECRET</code>,{" "}
+                  <code className="bg-gray-100 px-0.5 rounded">CODUL_PRIMIT</code> și <code className="bg-gray-100 px-0.5 rounded">REDIRECT_URI</code> cu valorile voastre.
+                  Codul de autorizare expiră în ~60 secunde după redirect.
+                </p>
+              </div>
+
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-600">
+                <p className="font-medium text-gray-700 mb-1">📖 Referință SAP Community – Ghid Postman complet:</p>
+                <a
+                  href="https://community.sap.com/t5/technology-blog-posts-by-sap/generating-an-authorization-token-in-romania-s-anaf-portal-using-postman/ba-p/13577060"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-blue-600 hover:underline break-all">
+                  <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
+                  Generating an Authorization Token in Romania ANAF Portal using Postman
+                </a>
+              </div>
+            </div>
+          )}
+
           {/* ── Manual token Tab ──────────────────────────────────────────────── */}
           {settingsTab === "manual" && (
             <>
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
-                <strong>⚠ Token manual V2</strong> – Introduceți direct un token Bearer obținut manual din portalul ANAF. Recomandăm fluxul OAuth2 automat din tab-ul anterior.
+                <strong>⚠ Token manual V2</strong> – Introduceți direct un token Bearer obținut manual.
+                Dacă aveți un token hardware USB, folosiți tab-ul{" "}
+                <button onClick={() => setSettingsTab("usb")} className="underline font-semibold">„Token USB / Postman"</button>{" "}
+                pentru instrucțiuni complete.
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Token OAuth2 ANAF (V2)</label>
@@ -598,7 +905,7 @@ const SettingsPanelV2 = ({ API_URL, onClose, onSaved }) => {
 
         <div className="flex justify-end gap-2 p-4 border-t flex-shrink-0">
           <button onClick={onClose} className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">Închide</button>
-          {settingsTab !== "guide" && (
+          {settingsTab !== "guide" && settingsTab !== "usb" && (
             <button onClick={save} disabled={saving} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2">
               {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : null}
               Salvează
@@ -758,6 +1065,7 @@ const MessagesTabV2 = ({ API_URL, showMessage }) => {
 const EfacturaV2Screen = ({ API_URL, showMessage }) => {
   const [activeTab, setActiveTab] = useState("upload");
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsDefaultTab, setSettingsDefaultTab] = useState("oauth");
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState({});
@@ -769,17 +1077,29 @@ const EfacturaV2Screen = ({ API_URL, showMessage }) => {
   const [filterStatus, setFilterStatus] = useState("all");
   const [expandedRows, setExpandedRows] = useState(new Set());
 
-  // Detectează parametrii OAuth2 callback în URL (oauth_success / oauth_error)
+  // Detectează parametrii OAuth2 callback în URL (oauth_success / oauth_error / mtls_required)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const oauthSuccess = params.get("oauth_success");
-    const oauthError   = params.get("oauth_error");
+    const oauthSuccess  = params.get("oauth_success");
+    const oauthError    = params.get("oauth_error");
+    const mtlsRequired  = params.get("mtls_required");
     if (oauthSuccess) {
       showMessage("✅ Autorizare ANAF V2 reușită! Token OAuth2 salvat cu succes.", "success");
       setShowSettings(true);
       window.history.replaceState({}, "", window.location.pathname);
     } else if (oauthError) {
-      showMessage(`❌ Eroare autorizare ANAF V2: ${oauthError}`, "error");
+      if (mtlsRequired === "1") {
+        // ANAF a returnat HTTP 500 din cauza lipsei mTLS (certificat digital neprezentat).
+        // Deschidem panoul de configurare direct pe tab-ul USB Token cu instrucțiuni.
+        showMessage(
+          "❌ ANAF a returnat HTTP 500 – certificatul digital nu a putut fi prezentat automat de server. " +
+          "Dacă aveți un token hardware USB, folosiți fluxul Postman din tab-ul „Token USB / Postman".",
+          "error"
+        );
+        setSettingsDefaultTab("usb");
+      } else {
+        showMessage(`❌ Eroare autorizare ANAF V2: ${oauthError}`, "error");
+      }
       setShowSettings(true);
       window.history.replaceState({}, "", window.location.pathname);
     }
@@ -1182,8 +1502,9 @@ const EfacturaV2Screen = ({ API_URL, showMessage }) => {
       {showSettings && (
         <SettingsPanelV2
           API_URL={API_URL}
-          onClose={() => setShowSettings(false)}
-          onSaved={() => setShowSettings(false)}
+          defaultTab={settingsDefaultTab}
+          onClose={() => { setShowSettings(false); setSettingsDefaultTab("oauth"); }}
+          onSaved={() => { setShowSettings(false); setSettingsDefaultTab("oauth"); }}
         />
       )}
 
