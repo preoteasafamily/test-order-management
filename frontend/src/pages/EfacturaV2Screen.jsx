@@ -139,6 +139,7 @@ const SettingsPanelV2 = ({ API_URL, onClose, onSaved, defaultTab = "oauth" }) =>
   const [tokenJson, setTokenJson] = useState("");
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState(null);
+  const [importWarn, setImportWarn] = useState(false);
   const [copiedCmd, setCopiedCmd] = useState(false);
 
   /**
@@ -299,6 +300,7 @@ const SettingsPanelV2 = ({ API_URL, onClose, onSaved, defaultTab = "oauth" }) =>
           type: "success",
           text: `✅ Token importat cu succes!${data.expiresAt ? ` Expiră la: ${new Date(data.expiresAt).toLocaleString("ro-RO")}` : ""}${data.hasRefreshToken ? " (include refresh_token)" : ""}`,
         });
+        setImportWarn(true);
         setTokenJson("");
         onSaved?.();
         // Reîncarcă setările pentru a actualiza token-ul afișat
@@ -307,9 +309,11 @@ const SettingsPanelV2 = ({ API_URL, onClose, onSaved, defaultTab = "oauth" }) =>
         setHasRefreshToken(!!s.hasRefreshToken);
       } else {
         setImportMsg({ type: "error", text: data.error || "Eroare la importul tokenului." });
+        setImportWarn(false);
       }
     } catch (e) {
       setImportMsg({ type: "error", text: e.message });
+      setImportWarn(false);
     } finally {
       setImporting(false);
     }
@@ -675,6 +679,26 @@ const SettingsPanelV2 = ({ API_URL, onClose, onSaved, defaultTab = "oauth" }) =>
                 </ol>
               </div>
 
+              {/* Avertisment Callback URL – cauza principală a invalid_token */}
+              <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-xs">
+                <p className="font-semibold text-amber-800 flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  ⚠ De ce apare eroarea «invalid_token» deși tokenul pare valid?
+                </p>
+                <p className="text-amber-700 mt-1">
+                  ANAF validează că tokenul a fost emis pentru același <strong>redirect_uri</strong> cu care a fost inițializat fluxul OAuth2.
+                  Dacă în Postman folosiți ca <strong>Callback URL</strong> adresa implicită Postman (ex: <code className="bg-amber-100 px-0.5 rounded">https://oauth.pstmn.io/v1/callback</code>),
+                  tokenul rezultat va fi respins de ANAF cu <code className="bg-amber-100 px-0.5 rounded">invalid_token</code> la orice apel API (upload, mesaje SPV).
+                </p>
+                <p className="text-amber-700 mt-1">
+                  <strong>Soluție:</strong> Setați în Postman câmpul <strong>Callback URL</strong> la exact:
+                </p>
+                <code className="block mt-1 bg-white border border-amber-300 rounded px-2 py-1 font-mono break-all text-amber-900">
+                  {window.location.origin}/api/efactura-v2/oauth/callback
+                </code>
+                <p className="text-amber-600 mt-1 text-xs">Acest URL trebuie înregistrat și în portalul ANAF (logincert.anaf.ro) ca Redirect URI valid.</p>
+              </div>
+
               {/* Secțiunea import JSON */}
               <div className="border border-blue-200 rounded-lg p-3 bg-blue-50">
                 <p className="font-semibold text-blue-800 text-sm mb-2 flex items-center gap-1.5">
@@ -711,6 +735,11 @@ const SettingsPanelV2 = ({ API_URL, onClose, onSaved, defaultTab = "oauth" }) =>
                 {importMsg && (
                   <div className={`mt-2 rounded-lg p-2 text-xs ${importMsg.type === "success" ? "bg-green-50 text-green-800 border border-green-200" : "bg-red-50 text-red-800 border border-red-200"}`}>
                     {importMsg.text}
+                  </div>
+                )}
+                {importWarn && (
+                  <div className="mt-2 rounded-lg p-2 text-xs bg-amber-50 text-amber-800 border border-amber-200">
+                    ⚠ Dacă uploadul sau mesajele SPV returnează <strong>invalid_token</strong>, verificați că <strong>Callback URL</strong> din Postman este exact: <code className="bg-amber-100 px-0.5 rounded">{window.location.origin}/api/efactura-v2/oauth/callback</code> — tokenul trebuie obținut cu același redirect_uri înregistrat la ANAF.
                   </div>
                 )}
               </div>
@@ -929,6 +958,7 @@ const MessagesTabV2 = ({ API_URL, showMessage }) => {
   const [zile, setZile] = useState(60);
   const [tip, setTip] = useState("T");
   const [fetchedAt, setFetchedAt] = useState(null);
+  const [fetchError, setFetchError] = useState(null);
 
   /** Încarcă mesajele cacheate local (fără apel la ANAF). */
   const loadLocal = useCallback(async () => {
@@ -943,10 +973,16 @@ const MessagesTabV2 = ({ API_URL, showMessage }) => {
   /** Preia mesajele direct de la ANAF prin API-ul V2. */
   const fetchFromANAF = async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       const r = await fetch(`${API_URL}/api/efactura-v2/messages?zile=${zile}&tip=${tip}`);
       const data = await r.json();
-      if (!r.ok) { showMessage(data.error || "Eroare la preluare mesaje V2.", "error"); return; }
+      if (!r.ok) {
+        const isInvalidToken = r.status === 401 && data.anafError === "invalid_token";
+        setFetchError({ isInvalidToken, message: data.error || "Eroare la preluare mesaje V2." });
+        showMessage(data.error || "Eroare la preluare mesaje V2.", "error");
+        return;
+      }
       setMessages(data.messages || []);
       setFetchedAt(new Date());
       showMessage(`${data.total || 0} mesaje preluate din SPV (V2).`, "success");
@@ -994,6 +1030,22 @@ const MessagesTabV2 = ({ API_URL, showMessage }) => {
         </button>
         {fetchedAt && <span className="text-xs text-gray-400">Actualizat: {fetchedAt.toLocaleTimeString("ro-RO")}</span>}
       </div>
+
+      {/* Eroare persistentă la preluare mesaje */}
+      {fetchError && (
+        <div className={`rounded-lg p-3 text-sm border ${fetchError.isInvalidToken ? "bg-amber-50 border-amber-300 text-amber-800" : "bg-red-50 border-red-200 text-red-800"}`}>
+          <p className="font-semibold flex items-center gap-1.5">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+            {fetchError.isInvalidToken ? "Token invalid (invalid_token) – acces refuzat de ANAF" : "Eroare la preluare mesaje"}
+          </p>
+          <p className="text-xs mt-1">{fetchError.message}</p>
+          {fetchError.isInvalidToken && (
+            <p className="text-xs mt-2 font-medium">
+              ℹ️ Dacă tokenul a fost obținut din Postman, asigurați-vă că <strong>Callback URL</strong> din configurarea OAuth2 Postman este exact: <code className="bg-amber-100 px-0.5 rounded">{window.location.origin}/api/efactura-v2/oauth/callback</code>
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Tabel mesaje */}
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">

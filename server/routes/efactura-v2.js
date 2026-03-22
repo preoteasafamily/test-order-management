@@ -1648,15 +1648,28 @@ router.post('/upload/:invoiceId', requireToken, async (req, res) => {
 
     if (!anafRes.ok || execStatus === 1) {
       const anafHttpStatus = anafRes.status;
+      const anafErrorCode = typeof anafBody === 'object' ? (anafBody?.error || null) : null;
       let errorDetail = 'Eroare la upload în SPV ANAF.';
-      if (anafHttpStatus === 401) errorDetail = 'Token invalid sau expirat (ANAF 401 Unauthorized). Reimportați tokenul din Postman.';
-      else if (anafHttpStatus === 403) errorDetail = 'Acces refuzat de ANAF (403 Forbidden). Verificați că CIF-ul și tokenul corespund.';
+      if (anafHttpStatus === 401) {
+        if (anafErrorCode === 'invalid_token') {
+          errorDetail =
+            'ANAF a respins tokenul ca invalid (invalid_token). Cauze frecvente: ' +
+            '(1) tokenul a fost obținut în Postman cu un Callback URL diferit față de redirect_uri-ul înregistrat la ANAF; ' +
+            '(2) tokenul nu deține scope-urile necesare pentru operațiuni API (upload); ' +
+            '(3) tokenul a expirat sau a fost revocat de ANAF. ' +
+            'Soluție: în Postman, setați Callback URL exact la valoarea redirect_uri a aplicației, obțineți un token nou și reimportați-l.';
+          console.error('[SPV-V2] ⚠ invalid_token la upload – tokenul importat poate proveni dintr-un flux Postman cu redirect_uri diferit față de cel al aplicației.');
+        } else {
+          errorDetail = 'Token invalid sau expirat (ANAF 401 Unauthorized). Reimportați tokenul din Postman.';
+        }
+      } else if (anafHttpStatus === 403) errorDetail = 'Acces refuzat de ANAF (403 Forbidden). Verificați că CIF-ul și tokenul corespund.';
       else if (anafHttpStatus === 415) errorDetail = 'Format XML neacceptat de ANAF (415 Unsupported Media Type).';
       else if (anafHttpStatus === 422) errorDetail = 'Date XML invalide respinse de ANAF (422 Unprocessable Entity).';
       else if (anafHttpStatus >= 500) errorDetail = `Eroare server ANAF (${anafHttpStatus}). Încercați din nou.`;
       return res.status(anafRes.ok ? 422 : anafRes.status).json({
         error: errorDetail,
         anafHttpStatus,
+        anafError: anafErrorCode,
         uploadId,
         status: newStatus,
         anafResponse: anafBody,
@@ -1702,10 +1715,18 @@ router.get('/check-status/:invoiceId', requireToken, async (req, res) => {
     }
 
     if (!anafRes.ok) {
-      return res.status(anafRes.status).json({ error: anafBody });
+      const anafErrCode = typeof anafBody === 'object' ? (anafBody?.error || null) : null;
+      let errMsg;
+      if (anafRes.status === 401 && anafErrCode === 'invalid_token') {
+        errMsg =
+          'ANAF a respins tokenul ca invalid (invalid_token) la verificarea stării. ' +
+          'Reimportați tokenul cu Callback URL identic cu redirect_uri-ul aplicației.';
+        console.error('[SPV-V2] ⚠ invalid_token la check-status – tokenul poate fi incompatibil cu aplicația.');
+      } else {
+        errMsg = typeof anafBody === 'string' ? anafBody : JSON.stringify(anafBody);
+      }
+      return res.status(anafRes.status).json({ error: errMsg, anafError: anafErrCode, anafResponse: anafBody });
     }
-
-    // Mapare stări ANAF la stări locale
     const anafStare = anafBody?.stare || '';
     let newStatus = inv.spv_status;
     if (anafStare === 'ok')                              newStatus = 'validated';
@@ -1819,7 +1840,21 @@ router.get('/messages', requireToken, async (req, res) => {
     }
 
     if (!anafRes.ok) {
-      return res.status(anafRes.status).json({ error: anafBody });
+      const anafErrCode = typeof anafBody === 'object' ? (anafBody?.error || null) : null;
+      let errMsg;
+      if (anafRes.status === 401 && anafErrCode === 'invalid_token') {
+        errMsg =
+          'ANAF a respins tokenul ca invalid (invalid_token) la citirea mesajelor SPV. ' +
+          'Cauze frecvente: (1) tokenul a fost obținut în Postman cu Callback URL diferit față de redirect_uri-ul aplicației; ' +
+          '(2) tokenul are scope-uri insuficiente sau a expirat. ' +
+          'Soluție: reimportați un token obținut cu Callback URL identic cu redirect_uri-ul aplicației.';
+        console.error('[SPV-V2] ⚠ invalid_token la listare mesaje SPV – tokenul importat poate proveni dintr-un flux cu redirect_uri diferit.');
+      } else if (anafRes.status === 401) {
+        errMsg = 'Token invalid sau expirat (ANAF 401). Reimportați tokenul.';
+      } else {
+        errMsg = typeof anafBody === 'string' ? anafBody : JSON.stringify(anafBody);
+      }
+      return res.status(anafRes.status).json({ error: errMsg, anafError: anafErrCode, anafResponse: anafBody });
     }
 
     // Cache local al mesajelor pentru acces offline

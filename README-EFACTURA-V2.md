@@ -414,7 +414,8 @@ Dacă ați importat cu succes tokenul din Postman, dar la upload primiți eroare
 
 | Cod HTTP ANAF | Cauza probabilă | Soluție |
 |---|---|---|
-| 401 Unauthorized | Token invalid, expirat sau format greșit | Reimportați tokenul proaspăt din Postman; nu includeți prefixul `Bearer ` |
+| 401 Unauthorized + `invalid_token` | Tokenul a fost emis pentru un alt `redirect_uri` (ex: cel implicit Postman) | Vedeți secțiunea [Eroarea `invalid_token` cu token din Postman](#invalid-token) |
+| 401 Unauthorized (alte cauze) | Token expirat sau format greșit | Reimportați tokenul proaspăt din Postman; nu includeți prefixul `Bearer ` |
 | 403 Forbidden | CIF-ul din setări nu corespunde tokenului sau aplicația ANAF nu are drept de upload | Verificați câmpul CIF din setările SPV-V2 |
 | 415 Unsupported Media Type | XML-ul nu este acceptat de ANAF în formatul trimis | Verificați că factura are toate câmpurile necesare |
 | 422 Unprocessable Entity | Date XML invalide respinse de ANAF | Verificați conținutul facturii (dată, sume, CIF etc.) |
@@ -426,11 +427,67 @@ Dacă ați importat cu succes tokenul din Postman, dar la upload primiți eroare
 3. Verificați consola serverului (`npm start` sau `pm2 logs`) pentru detalii complete.
 
 **Tokenul din Postman – ce funcționează și ce nu:**
-- ✅ **Funcționează**: Token obținut în Postman cu „Authorize using Browser" (browserul prezintă certificatul USB, Postman face POST /token cu certificatul configurat în Settings → Certificates), importat ca JSON complet sau doar `access_token` în aplicație.
+- ✅ **Funcționează**: Token obținut în Postman cu „Authorize using Browser", **cu Callback URL setat la redirect_uri-ul aplicației** (nu cel implicit Postman), importat ca JSON complet sau doar `access_token` în aplicație.
 - ✅ **Funcționează**: Token obținut cu `curl --cert cert.pem --key key.pem`, importat în aplicație.
 - ✅ **Funcționează**: Prefixul `Bearer ` este eliminat automat dacă este inclus accidental la import.
+- ❌ **Nu funcționează**: Token obținut cu Callback URL implicit Postman (`https://oauth.pstmn.io/v1/callback`) – returnează `invalid_token` la upload/mesaje.
 - ❌ **Nu funcționează**: Token obținut prin backend fără mTLS configurat (ANAF returnează 500).
 - ❌ **Nu funcționează**: Token expirat (implicit 1 oră de la emitere; verificați `expires_in` din răspunsul ANAF).
+
+---
+
+### Eroarea `invalid_token` cu token din Postman {#invalid-token}
+
+#### Ce înseamnă `invalid_token`?
+
+ANAF returnează eroarea `invalid_token` (HTTP 401) la apelurile API (upload factură, citire mesaje SPV) când tokenul nu îndeplinește una din condițiile:
+
+1. **`redirect_uri` mismatch** – tokenul a fost emis pentru un alt `redirect_uri` decât cel înregistrat la ANAF. Aceasta este **cauza cea mai frecventă** când se importează un token din Postman.
+2. **Token expirat sau revocat** – access_token-ul are o durată de viață de ~1 oră; după expirare, ANAF îl respinge.
+3. **`client_id` diferit** – tokenul a fost emis pentru o altă aplicație ANAF decât cea configurată.
+4. **Scope insuficient** – tokenul nu conține scope-ul `offline_access` necesar operațiunilor API.
+
+#### De ce se întâmplă cu tokenul din Postman?
+
+Postman are un **Callback URL implicit** (`https://oauth.pstmn.io/v1/callback`) care se completează automat dacă nu este specificat manual. Dacă folosiți acest URL implicit:
+- Fluxul de autorizare completează cu succes (browserul redirectează la `oauth.pstmn.io`)
+- Postman obține codul de autorizare și face schimbul POST /token cu succes
+- **Dar tokenul JWT emis de ANAF conține ca `redirect_uri` valoarea `https://oauth.pstmn.io/v1/callback`**
+- Când aplicația folosește acest token pentru upload/mesaje, ANAF verifică că `redirect_uri`-ul din token corespunde celui înregistrat pentru aplicație → **nu corespunde → `invalid_token`**
+
+#### Soluție: Setați Callback URL corect în Postman
+
+La configurarea OAuth2 în Postman (Authorization tab → Get New Access Token), setați câmpul **Callback URL** la:
+
+```
+https://IP_SERVER:PORT/api/efactura-v2/oauth/callback
+```
+
+Sau dacă aveți domeniu:
+```
+https://domeniu.dumneavoastra.ro/api/efactura-v2/oauth/callback
+```
+
+> ⚠️ **Obligatoriu**: Acest URL trebuie să fie înregistrat exact (fără slash final) în portalul ANAF la `logincert.anaf.ro` ca Redirect URI valid al aplicației.
+
+#### Verificare JWT (diagnosticare avansată)
+
+Puteți decodifica tokenul importat (fără a-l trimite nicăieri – este sigur local) pentru a inspecta claims-urile.
+
+**Varianta simplă (online, recomandat):** Lipiți valoarea `access_token` pe [jwt.io](https://jwt.io) – afișează automat claims-urile decodificate.
+
+**Varianta în linie de comandă (Linux):**
+```bash
+# Notă: JWT folosește base64url encoding; adăugați padding dacă comanda eșuează
+echo "VALOAREA_ACCESS_TOKEN" | cut -d'.' -f2 | base64 -d 2>/dev/null | python3 -m json.tool
+# Pe macOS, înlocuiți base64 -d cu base64 -D
+```
+
+Verificați în output:
+- `redirect_uri`: trebuie să fie URL-ul aplicației dvs., **nu** `https://oauth.pstmn.io/v1/callback`
+- `exp`: timestamp Unix – tokenul trebuie să nu fie expirat
+- `scope`: trebuie să includă `offline_access`
+- `iss`: trebuie să fie `https://logincert.anaf.ro/anaf-oauth2/v1`
 
 ---
 
