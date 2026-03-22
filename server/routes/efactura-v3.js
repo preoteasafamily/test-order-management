@@ -37,8 +37,11 @@
  *   FRONTEND_URL         – URL frontend React (pentru redirect după callback)
  *
  * Autentificarea se face EXCLUSIV prin browser (OAuth2 cu certificat digital).
- * mTLS nu este configurat pe server – cheia privată NU trebuie extrasă din token-ul USB.
- * Tokenul JWT se importă manual după autentificarea prin browser sau Postman.
+ * mTLS NU este configurat pe server – cheia privată NU trebuie extrasă din token-ul USB.
+ * Tokenul JWT se obține automat prin browser sau se importă manual din Postman.
+ *
+ * Modulul folosește services/anaf-oauth2/token-manager.js pentru nucleul OAuth2,
+ * cu auto-refresh automat al tokenului înainte de expirare.
  */
 
 const express   = require('express');
@@ -57,12 +60,16 @@ const { request, withRetry, sleep } =
 const { buildUBL, stripSchemaLocation } =
   require('../services/efactura-spv-v3/xml-builder');
 
+// Modul standalone OAuth2 JWT – folosit pentru buildAuthUrl, exchangeCode,
+// refreshAccessToken și scheduleAutoRefresh (auto-refresh înainte de expirare).
+const tokenManager = require('../services/anaf-oauth2/token-manager');
+
 const router = express.Router();
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
-const ANAF_AUTH_URL  = 'https://logincert.anaf.ro/anaf-oauth2/v1/authorize';
-const ANAF_TOKEN_URL = 'https://logincert.anaf.ro/anaf-oauth2/v1/token';
+const ANAF_AUTH_URL  = tokenManager.ANAF_AUTH_URL;
+const ANAF_TOKEN_URL = tokenManager.ANAF_TOKEN_URL;
 const FRONTEND_URL   = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
 const UPLOAD_DELAY   = 300;  // ms between consecutive batch uploads
 const STATUS_DELAY   = 200;  // ms between consecutive batch status checks
@@ -114,53 +121,33 @@ const requireToken = (req, res, next) => {
 
 /**
  * Exchange an authorization code or refresh token with ANAF.
+ * Delegates to tokenManager which handles retry, validation, and error hints.
  * Authentication is browser-based; this call is made without mTLS.
  * If ANAF returns HTTP 500 (which can happen without client certificate),
  * the user should import a JWT token obtained via Postman instead.
- * Throws on failure with useful error message.
  *
- * @param {object} params – URLSearchParams-compatible object
+ * @param {{ grant_type, code?, redirect_uri?, refresh_token? }} params
  * @param {string} label  – log label
  * @returns {Promise<object>} – token data
  */
 const exchangeToken = async (params, label = 'token_exchange') => {
-  const s         = getSettings();
-  const basicAuth = Buffer
-    .from(`${s.client_id}:${s.client_secret}`)
-    .toString('base64');
-  const body      = new URLSearchParams(params).toString();
-
-  const res = await withRetry(
-    () => request(ANAF_TOKEN_URL, {
-      method:  'POST',
-      headers: {
-        'Content-Type':  'application/x-www-form-urlencoded',
-        'Authorization': `Basic ${basicAuth}`,
-        'Accept':        'application/json',
-      },
-      body,
-    }),
-    label,
-  );
-
-  let data = {};
-  try { data = JSON.parse(res._raw); } catch { /* non-JSON */ }
-
-  if (!res.ok) {
-    const hint = res.status >= 500
-      ? ' – ANAF necesită certificat digital la schimbul de token. Importați tokenul JWT obținut prin browser sau Postman via POST /api/efactura-v3/oauth/token-import.'
-      : '';
-    const msg = data.error_description || data.error
-      || `ANAF HTTP ${res.status}${hint}`;
-    const err = Object.assign(new Error(msg), { status: res.status, anafData: data });
-    throw err;
+  const s = getSettings();
+  if (params.grant_type === 'authorization_code') {
+    return tokenManager.exchangeCode({
+      code:         params.code,
+      redirectUri:  params.redirect_uri,
+      clientId:     s.client_id,
+      clientSecret: s.client_secret,
+    });
   }
-
-  if (!data.access_token) {
-    throw new Error('Răspuns invalid de la ANAF: câmpul access_token lipsește.');
+  if (params.grant_type === 'refresh_token') {
+    return tokenManager.refreshAccessToken({
+      refreshToken:  params.refresh_token,
+      clientId:      s.client_id,
+      clientSecret:  s.client_secret,
+    });
   }
-
-  return data;
+  throw new Error(`grant_type necunoscut: ${params.grant_type}`);
 };
 
 // ─── Upload XML parsing helper ───────────────────────────────────────────────
@@ -272,24 +259,19 @@ router.get('/oauth/authorize', (req, res) => {
       });
     }
 
-    const state = crypto.randomBytes(32).toString('hex');
+    // Folosim tokenManager.buildAuthUrl care include automat token_content_type=jwt
+    // și generează state anti-CSRF cu 32 octeți cryptografici.
+    const { authUrl, state } = tokenManager.buildAuthUrl({
+      clientId:    s.client_id,
+      redirectUri,
+    });
 
     // Persist state + redirect_uri used (for CSRF check at callback time)
     updateSettings({
-      oauth_state:            state,
+      oauth_state:             state,
       oauth_redirect_uri_used: redirectUri,
     });
 
-    const params = new URLSearchParams({
-      response_type:       'code',
-      client_id:            s.client_id,
-      redirect_uri:         redirectUri,
-      scope:                'offline_access',
-      state,
-      token_content_type:   'jwt',  // ← CRITICAL: ensures JWT token (not opaque)
-    });
-
-    const authUrl = `${ANAF_AUTH_URL}?${params.toString()}`;
     logAction('oauth_authorize_generated', { redirectUri });
     res.json({ authUrl, state, redirectUri });
   } catch (err) {
@@ -963,3 +945,25 @@ router.get('/invoices', (req, res) => {
 });
 
 module.exports = router;
+
+// ─── Auto-Refresh Scheduler ───────────────────────────────────────────────────
+// Pornit la prima importare a modulului (odată cu serverul).
+// Se oprește automat la SIGTERM/SIGINT via handler-ul din server.js.
+// Reînnoiește tokenul JWT cu 10 minute înainte de expirare.
+
+const _stopAutoRefresh = tokenManager.scheduleAutoRefresh({
+  getToken:  () => getSettings(),
+  saveToken: (d) => {
+    // keepRefreshIfMissing=true → saveToken (config.js) păstrează refresh_token vechi
+    saveToken(d, /* keepRefreshIfMissing */ !d.refresh_token);
+    logAction('oauth_token_auto_refreshed', { expiresAt: d.token_expires_at });
+  },
+  onError: (err) => {
+    logAction('oauth_auto_refresh_failed', null, false, err);
+    console.error('[SPV-V3] Auto-refresh eșuat:', err.message);
+  },
+});
+
+// Curățare la oprirea procesului
+process.once('SIGTERM', _stopAutoRefresh);
+process.once('SIGINT',  _stopAutoRefresh);

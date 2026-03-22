@@ -1,15 +1,14 @@
 /**
  * E-Factura SPV-V2 – Modul nou, construit de la zero
  * ====================================================
- * Autentificare OAuth2 ANAF (cu mTLS obligatoriu pentru token exchange)
- * și încărcare/gestiune facturi în SPV ANAF.
+ * Autentificare OAuth2 ANAF exclusiv prin browser (fără mTLS server-side).
  *
  * Lecții aplicate din test-spv1, test-spv2, test-spv3 și documentația ANAF:
  *   - Content-Type: text/plain pentru upload (nu application/xml) – per test-spv2
  *   - token_content_type=jwt obligatoriu la authorize – tokenele opace returnează 401
  *   - Tokenele non-JWT sunt respinse explicit (nu doar avertizate)
  *   - Toate apelurile ANAF prin Node.js https (nu fetch) pentru control mai bun
- *   - mTLS configurat via ANAF_CERT_PATH / ANAF_KEY_PATH în .env
+ *   - Autentificare EXCLUSIV prin browser – fără mTLS sau chei private pe server
  *   - Retry cu backoff exponențial pentru erori 5xx ANAF
  *
  * URL-uri ANAF:
@@ -46,7 +45,6 @@ const router     = express.Router();
 const crypto     = require('crypto');
 const https      = require('https');
 const http       = require('http');
-const fs         = require('fs');
 const db         = require('../database');
 const rateLimit  = require('express-rate-limit');
 
@@ -73,74 +71,20 @@ router.use(rateLimit({
   message: { error: 'Prea multe cereri. Încercați din nou după 15 minute.' },
 }));
 
-// ── mTLS – certificat digital calificat ANAF ──────────────────────────────────
-//
-// ANAF impune prezentarea certificatului client (Mutual TLS) la:
-//   POST /token      – obținere access_token din authorization_code
-//   POST /token      – reînnoire token cu refresh_token
-//
-// Configurare în server/.env:
-//   ANAF_CERT_PATH       – cale absolută spre fișierul certificat (PEM)
-//   ANAF_KEY_PATH        – cale absolută spre fișierul cheie privată (PEM)
-//   ANAF_CERT_PASSPHRASE – (opțional) parola cheii private criptate
-
-let _mtlsAgent = null;
-let _mtlsWarnedOnce = false;
-
-/**
- * Returnează https.Agent configurat cu certificatul mTLS ANAF.
- * Lazy-initialized, cached. Returnează null dacă nu e configurat.
- */
-const getMtlsAgent = () => {
-  if (_mtlsAgent) return _mtlsAgent;
-
-  const certPath   = process.env.ANAF_CERT_PATH;
-  const keyPath    = process.env.ANAF_KEY_PATH;
-  const passphrase = process.env.ANAF_CERT_PASSPHRASE;
-
-  if (!certPath || !keyPath) {
-    if (!_mtlsWarnedOnce) {
-      console.warn(
-        '[SPV-V2] ⚠ mTLS NECONFIGURAT – ANAF_CERT_PATH / ANAF_KEY_PATH lipsesc din server/.env.\n' +
-        '         Token exchange va eșua (HTTP 500) fără certificat digital calificat.\n' +
-        '         Configurați:\n' +
-        '           ANAF_CERT_PATH=/cale/cert.pem\n' +
-        '           ANAF_KEY_PATH=/cale/key.pem\n' +
-        '           ANAF_CERT_PASSPHRASE=parola_optionala'
-      );
-      _mtlsWarnedOnce = true;
-    }
-    return null;
-  }
-
-  try {
-    const opts = {
-      cert: fs.readFileSync(certPath),
-      key:  fs.readFileSync(keyPath),
-    };
-    if (passphrase) opts.passphrase = passphrase;
-    _mtlsAgent = new https.Agent(opts);
-    console.log('[SPV-V2] ✓ Certificat mTLS ANAF încărcat cu succes.');
-    return _mtlsAgent;
-  } catch (err) {
-    console.error(`[SPV-V2] ✗ Eroare la încărcarea certificatelor mTLS: ${err.message}`);
-    return null;
-  }
-};
-
 // ── HTTP helper – toate apelurile ANAF prin Node.js https ─────────────────────
 
 /**
- * Efectuează un request HTTPS cu suport opțional mTLS.
+ * Efectuează un request HTTPS fără mTLS.
+ * Autentificarea se face EXCLUSIV prin browser – cheia privată a certificatului
+ * digital calificat rămâne pe token-ul USB și nu poate fi extrasă server-side.
  * Returnează { status, ok, headers, text(), json() }
  *
  * @param {string} url
- * @param {{ method?, headers?, body?, useMtls? }} opts
+ * @param {{ method?, headers?, body? }} opts
  */
 const anafRequest = (url, opts = {}) =>
   new Promise((resolve, reject) => {
     const parsed = new URL(url);
-    const agent  = opts.useMtls ? getMtlsAgent() : null;
 
     // Pregătim body-ul și calculăm Content-Length pentru a evita chunked transfer
     const bodyBuf = opts.body != null
@@ -156,7 +100,7 @@ const anafRequest = (url, opts = {}) =>
       path:     parsed.pathname + (parsed.search || ''),
       method:   opts.method || 'GET',
       headers,
-      ...(agent ? { agent } : {}),
+      // Fără agent mTLS – autentificarea se face EXCLUSIV prin browser
     };
 
     const req = https.request(reqOpts, (res) => {
@@ -485,9 +429,12 @@ const buildUBL = (inv) => {
 // ── Helper: efectuare token exchange / refresh ─────────────────────────────────
 
 /**
- * Efectuează POST la ANAF /token cu mTLS.
+ * Efectuează POST la ANAF /token fără mTLS (autentificare exclusiv prin browser).
  * Returnează { access_token, refresh_token, expires_in, ... }
  * Aruncă eroare dacă ANAF returnează eroare.
+ *
+ * ATENȚIE: ANAF poate returna HTTP 500 la acest pas dacă impune mTLS fără
+ * configurare client certificate. În acest caz importați tokenul din Postman.
  */
 const exchangeToken = async (params, label = 'token_exchange') => {
   const settings  = getSettings();
@@ -496,8 +443,7 @@ const exchangeToken = async (params, label = 'token_exchange') => {
 
   const res = await withRetry(
     () => anafRequest(ANAF_TOKEN_URL, {
-      method:   'POST',
-      useMtls:  true,
+      method:  'POST',
       headers: {
         'Content-Type':  'application/x-www-form-urlencoded',
         'Authorization': `Basic ${basicAuth}`,
@@ -513,8 +459,11 @@ const exchangeToken = async (params, label = 'token_exchange') => {
   try { data = JSON.parse(raw); } catch { data = {}; }
 
   if (!res.ok) {
-    const msg = data.error_description || data.error
-      || `ANAF HTTP ${res.status}${res.status >= 500 && !getMtlsAgent() ? ' – verificați configurarea mTLS (certificat digital)' : ''}`;
+    const hint = res.status >= 500
+      ? ' – ANAF necesită certificat client la schimbul de token. ' +
+        'Soluție: importați tokenul JWT obținut prin Postman via POST /api/efactura-v2/oauth/token-import.'
+      : '';
+    const msg = data.error_description || data.error || `ANAF HTTP ${res.status}${hint}`;
     throw Object.assign(new Error(msg), { status: res.status, anafData: data });
   }
   if (!data.access_token) {
@@ -645,7 +594,7 @@ router.get('/oauth/authorize', (req, res) => {
 /**
  * GET /api/efactura-v2/oauth/callback
  * Callback public – ANAF redirecționează aici cu ?code=...&state=...
- * Schimbă codul de autorizare cu access_token (necesită mTLS).
+ * Schimbă codul de autorizare cu access_token (fără mTLS – browser-only auth).
  */
 router.get('/oauth/callback', async (req, res) => {
   // The OAuth2 Authorization Code flow (RFC 6749 §4.1.2) requires receiving the
@@ -687,7 +636,6 @@ router.get('/oauth/callback', async (req, res) => {
     console.log('[SPV-V2] Schimb authorization_code → access_token...', {
       code_prefix: code.substring(0, 8) + '…',
       redirectUri,
-      mtls: !!getMtlsAgent(),
     });
 
     const tokenData = await exchangeToken({
@@ -705,10 +653,9 @@ router.get('/oauth/callback', async (req, res) => {
     return res.redirect(`${FRONTEND_URL}/?oauth_success=1&module=spv-v2#efactura-spv`);
   } catch (err) {
     console.error('[SPV-V2] OAuth callback error:', err.message);
-    const mtlsHint = (!getMtlsAgent() && (err.status || 0) >= 500) ? '&mtls_required=1' : '';
     log('oauth_callback_failed', null, false, err.message);
     return res.redirect(
-      `${FRONTEND_URL}/?oauth_error=${encodeURIComponent(err.message)}&module=spv-v2${mtlsHint}#efactura-spv`
+      `${FRONTEND_URL}/?oauth_error=${encodeURIComponent(err.message)}&module=spv-v2#efactura-spv`
     );
   }
 });
@@ -836,7 +783,6 @@ router.get('/oauth/diagnostic', (req, res) => {
   if (!s.client_secret) issues.push('❌ client_secret lipsă');
   if (!redirectUri)     issues.push('❌ redirect_uri lipsă – configurați redirect_uri sau public_callback_url');
   if (redirectUri && !redirectUri.startsWith('https://')) issues.push('⚠ redirect_uri nu folosește HTTPS');
-  if (!getMtlsAgent())  issues.push('⚠ mTLS neconfigurat – token exchange va eșua fără certificat digital');
   if (token && !isJwt(token)) issues.push('❌ Token stocat NU este JWT – va fi respins la upload cu 401');
   if (!s.cif)           issues.push('⚠ CIF furnizor lipsă – necesar pentru upload');
 
@@ -850,11 +796,11 @@ router.get('/oauth/diagnostic', (req, res) => {
       hasClientId:   !!s.client_id,
       hasClientSecret: !!s.client_secret,
       redirectUri,
-      mtlsConfigured: !!getMtlsAgent(),
       hasToken:       !!token,
       tokenIsJwt:     isJwt(token),
       tokenExpired:   isTokenExpired(s),
       tokenExpiresAt: s.token_expires_at || null,
+      authMethod:     'browser-only',  // autentificare exclusiv prin browser, fără mTLS
     },
   });
 });
@@ -877,7 +823,7 @@ router.get('/status', (req, res) => {
       tokenExpired,
       environment: s.environment || 'test',
       hasCif:      !!s.cif,
-      mtlsEnabled: !!getMtlsAgent(),
+      authMethod:  'browser-only',  // autentificare exclusiv prin browser, fără mTLS
       lastAction:  s.last_action || null,
       lastActionAt: s.last_action_at || null,
     });
