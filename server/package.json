@@ -5,7 +5,8 @@
   "scripts": {
     "start": "node server.js",
     "rebuild": "npm rebuild better-sqlite3",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node tests/efactura-v3.test.js",
+    "test:v3": "node tests/efactura-v3.test.js"
   },
   "keywords": [],
   "author": "",

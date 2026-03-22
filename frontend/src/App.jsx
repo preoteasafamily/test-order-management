@@ -22,6 +22,7 @@ import InvoicesScreen from "./pages/InvoicesScreen";
 import InvoicesV2Screen from "./pages/InvoicesV2Screen";
 import EfacturaScreen from "./pages/EfacturaScreen";
 import EfacturaV2Screen from "./pages/EfacturaV2Screen";
+import EfacturaV3Screen from "./pages/EfacturaV3Screen";
 
 const App = () => {
   // API Configuration
@@ -1412,6 +1413,13 @@ const App = () => {
           <EfacturaV2Screen
             API_URL={API_URL}
             showMessage={showMessage}
+          />
+        );
+      case "efactura-spv-v3":
+        /* Modul E-Factura SPV-V3: modul nou, curat, testat */
+        return (
+          <EfacturaV3Screen
+            apiUrl={API_URL}
           />
         );
       default:

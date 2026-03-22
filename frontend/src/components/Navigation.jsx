@@ -14,7 +14,8 @@ import {
   MapPin,
   Receipt,
   Send,
-  Globe
+  Globe,
+  Shield,
 } from 'lucide-react';
 
 const Navigation = ({ currentUser, activeSection, setActiveSection, mobileMenuOpen, setMobileMenuOpen }) => {
@@ -121,6 +122,13 @@ const Navigation = ({ currentUser, activeSection, setActiveSection, mobileMenuOp
       id: "efactura-spv-v2",
       label: "e-Factura SPV-V2",
       icon: Globe,
+      roles: ["admin", "birou"],
+    },
+    {
+      /* Modulul E-Factura SPV-V3: modul nou, curat, testat complet */
+      id: "efactura-spv-v3",
+      label: "e-Factura SPV-V3",
+      icon: Shield,
       roles: ["admin", "birou"],
     },
   ];
