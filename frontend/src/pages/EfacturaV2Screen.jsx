@@ -296,9 +296,12 @@ const SettingsPanelV2 = ({ API_URL, onClose, onSaved, defaultTab = "oauth" }) =>
       const data = await r.json();
 
       if (r.ok) {
+        const jwtWarning = data.warning || (!data.tokenIsJwt
+          ? "Tokenul importat NU este JWT. ANAF necesită token JWT (cu token_content_type=jwt). Uploadul și mesajele vor eșua cu 401 invalid_token."
+          : null);
         setImportMsg({
-          type: "success",
-          text: `✅ Token importat cu succes!${data.expiresAt ? ` Expiră la: ${new Date(data.expiresAt).toLocaleString("ro-RO")}` : ""}${data.hasRefreshToken ? " (include refresh_token)" : ""}`,
+          type: jwtWarning ? "warning" : "success",
+          text: `${jwtWarning ? "⚠️" : "✅"} ${data.message || "Token importat cu succes!"}${data.expiresAt ? ` Expiră la: ${new Date(data.expiresAt).toLocaleString("ro-RO")}` : ""}${data.hasRefreshToken ? " (include refresh_token)" : ""}${jwtWarning ? `\n${jwtWarning}` : ""}`,
         });
         setImportWarn(true);
         setTokenJson("");
@@ -956,7 +959,7 @@ const MessagesTabV2 = ({ API_URL, showMessage }) => {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [zile, setZile] = useState(60);
-  const [tip, setTip] = useState("T");
+  const [filtru, setFiltru] = useState("");
   const [fetchedAt, setFetchedAt] = useState(null);
   const [fetchError, setFetchError] = useState(null);
 
@@ -975,7 +978,10 @@ const MessagesTabV2 = ({ API_URL, showMessage }) => {
     setLoading(true);
     setFetchError(null);
     try {
-      const r = await fetch(`${API_URL}/api/efactura-v2/messages?zile=${zile}&tip=${tip}`);
+      // Parametrul ANAF corect este "filtru" (valorile: E, T, P, R)
+      const params = new URLSearchParams({ zile });
+      if (filtru) params.append("filtru", filtru);
+      const r = await fetch(`${API_URL}/api/efactura-v2/messages?${params.toString()}`);
       const data = await r.json();
       if (!r.ok) {
         const isInvalidToken = r.status === 401 && data.anafError === "invalid_token";
@@ -1006,12 +1012,14 @@ const MessagesTabV2 = ({ API_URL, showMessage }) => {
       {/* Bara de filtrare */}
       <div className="flex flex-wrap gap-3 items-end bg-white rounded-xl p-4 shadow-sm border">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Tip mesaj</label>
-          <select value={tip} onChange={e => setTip(e.target.value)}
+          <label className="block text-xs text-gray-500 mb-1">Filtru mesaj</label>
+          <select value={filtru} onChange={e => setFiltru(e.target.value)}
             className="border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400">
-            <option value="T">Toate</option>
-            <option value="P">Emise (trimise)</option>
-            <option value="C">Primite (de la parteneri)</option>
+            <option value="">Toate</option>
+            <option value="T">Trimise (emise de noi)</option>
+            <option value="P">Primite (de la parteneri)</option>
+            <option value="E">Erori</option>
+            <option value="R">În aprobare</option>
           </select>
         </div>
         <div>
