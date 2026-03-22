@@ -442,10 +442,30 @@ Dacă ați importat cu succes tokenul din Postman, dar la upload primiți eroare
 
 ANAF returnează eroarea `invalid_token` (HTTP 401) la apelurile API (upload factură, citire mesaje SPV) când tokenul nu îndeplinește una din condițiile:
 
-1. **`redirect_uri` mismatch** – tokenul a fost emis pentru un alt `redirect_uri` decât cel înregistrat la ANAF. Aceasta este **cauza cea mai frecventă** când se importează un token din Postman.
-2. **Token expirat sau revocat** – access_token-ul are o durată de viață de ~1 oră; după expirare, ANAF îl respinge.
-3. **`client_id` diferit** – tokenul a fost emis pentru o altă aplicație ANAF decât cea configurată.
-4. **Scope insuficient** – tokenul nu conține scope-ul `offline_access` necesar operațiunilor API.
+1. **Token opac (nu JWT)** – ANAF API validează tokeni JWT (3 segmente Base64 separate prin `.`). Dacă tokenul este un șir hex lung fără puncte, este un token opac și va fi **întotdeauna** respins cu `invalid_token`. Soluție: obțineți token JWT cu `token_content_type=jwt` (vezi mai jos).
+2. **`redirect_uri` mismatch** – tokenul a fost emis pentru un alt `redirect_uri` decât cel înregistrat la ANAF. Aceasta este **cauza cea mai frecventă** când se importează un token din Postman.
+3. **Token expirat sau revocat** – access_token-ul are o durată de viață de ~1 oră; după expirare, ANAF îl respinge.
+4. **`client_id` diferit** – tokenul a fost emis pentru o altă aplicație ANAF decât cea configurată.
+5. **Scope insuficient** – tokenul nu conține scope-ul `offline_access` necesar operațiunilor API.
+
+#### Cum știu dacă tokenul meu este JWT sau opac?
+
+- **JWT**: are forma `eyJhbGciOi....eyJzdWIiOi....SIGNATURE` (trei segmente Base64 separate prin `.`)
+- **Opac**: are forma `f7584c01843b44ef373abe83855c53b1...` (șir hexadecimal lung, fără puncte)
+
+Aplicația detectează automat tipul tokenului la import și afișează un avertisment dacă tokenul nu este JWT.
+
+#### Cum obțin un token JWT din Postman?
+
+La configurarea OAuth2 în Postman (Authorization tab → **Get New Access Token**), adăugați în câmpul **Advanced** (sau **Auth Parameters**) parametrul:
+
+```
+token_content_type = jwt
+```
+
+Aceasta instruiește ANAF să emită un token JWT în loc de un token opac.
+
+> ⚠️ **Fără `token_content_type=jwt`**: ANAF emite un token opac care este acceptat de interfața web ANAF dar respins de API-urile business (upload, mesaje SPV).
 
 #### De ce se întâmplă cu tokenul din Postman?
 

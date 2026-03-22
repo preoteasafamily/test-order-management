@@ -230,6 +230,74 @@ const fetchMtls = (url, options = {}) => {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
+ * Parsează răspunsul XML simplu de la ANAF (upload UBL).
+ *
+ * ANAF returnează XML la upload reușit sau cu erori de validare, de forma:
+ *   <header xmlns="mfinante.ro" dateResponse="20231015T1200"
+ *           ExecutionStatus="0" index_incarcare="12345"/>
+ * La eroare (ex: token invalid) returnează JSON.
+ *
+ * Logica din referința PHP (UBLUploadResponse.php):
+ *   - JSON → eroare ANAF
+ *   - XML cu ExecutionStatus="0" → succes, extrage index_incarcare
+ *   - XML cu ExecutionStatus≠"0" → eroare ANAF, extrage mesaj din Errors
+ *
+ * @param {string} xmlStr – răspunsul text brut de la ANAF
+ * @returns {{ index_incarcare: string|null, ExecutionStatus: string|null, dateResponse: string|null, errors: string[] }}
+ */
+const parseAnafUploadXml = (xmlStr) => {
+  const getAttr = (name) => {
+    // Escape special regex chars; attribute names used here are fixed literals (safe)
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const m = xmlStr.match(new RegExp(`${escaped}="([^"]*)"`, 'i'));
+    return m ? m[1] : null;
+  };
+
+  const index_incarcare = getAttr('index_incarcare');
+  const ExecutionStatus = getAttr('ExecutionStatus');
+  const dateResponse    = getAttr('dateResponse');
+
+  // Extrage mesajele de eroare din <Errors errorMessage="..."/>
+  const errors = [];
+  const errRegex = /errorMessage="([^"]*)"/gi;
+  let errMatch;
+  while ((errMatch = errRegex.exec(xmlStr)) !== null) {
+    if (errMatch[1]) errors.push(errMatch[1]);
+  }
+
+  return { index_incarcare, ExecutionStatus, dateResponse, errors };
+};
+
+/**
+ * Elimină atributul xsi:schemaLocation din XML-ul UBL înainte de upload.
+ * ANAF poate returna erori de validare dacă XML-ul conține schemaLocation.
+ * (Implementat după RemoveSchemaLocationAttribute din referința PHP ANAFAPIClient.php)
+ *
+ * @param {string} xmlStr – XML-ul UBL generat
+ * @returns {string} XML fără atributul schemaLocation
+ */
+const removeSchemaLocation = (xmlStr) => {
+  if (!xmlStr.includes('schemaLocation')) return xmlStr;
+  return xmlStr
+    .replace(/xsi:schemaLocation\s*=\s*"[^"]*"/gi, '')
+    .replace(/\s{2,}/g, ' ');
+};
+
+/**
+ * Verifică dacă un token arată ca JWT (3 segmente base64 separate prin punct).
+ * Tokenurile opace (hexazecimale/alfanumerice fără puncte) NU sunt JWT și vor fi
+ * respinse de ANAF API cu 401 invalid_token.
+ *
+ * @param {string} token
+ * @returns {boolean}
+ */
+const isJwtToken = (token) => {
+  if (!token || typeof token !== 'string') return false;
+  const parts = token.split('.');
+  return parts.length === 3 && parts.every((p) => p.length > 0);
+};
+
+/**
  * Citește setările SPV-V2 din baza de date.
  * @returns {object} Rândul din spv_v2_settings (sau {} dacă lipsă)
  */
@@ -1482,6 +1550,22 @@ router.post('/oauth/token-import', (req, res) => {
       ? new Date(Date.now() + Number(expires_in) * 1000).toISOString()
       : '';
 
+    // Verificare tip token: ANAF API (upload/mesaje) necesită token JWT.
+    // Tokenii opaci (hex fără puncte) sunt respinși cu 401 invalid_token.
+    // Această verificare este informativă – nu blocăm importul, dar avertizăm.
+    const tokenIsJwt = isJwtToken(trimmedToken);
+    if (!tokenIsJwt) {
+      console.warn(
+        '[SPV-V2] ⚠️  Token importat NU arată ca JWT (lipsesc cele 3 segmente base64 separate prin ".").\n' +
+        '          ANAF API (upload, mesaje SPV) necesită token JWT (obținut cu token_content_type=jwt în authorize URL).\n' +
+        '          Un token opac (hexadecimal) va fi respins cu 401 invalid_token la orice apel API.\n' +
+        '          Soluție: în Postman, la Authorization → OAuth 2.0, adăugați parametrul\n' +
+        '            "token_content_type" = "jwt" în "Advanced Options", obțineți un token nou și reimportați-l.'
+      );
+    } else {
+      console.log('[SPV-V2] ✅ Token importat este JWT (format corect pentru ANAF API).');
+    }
+
     db.prepare(`
       UPDATE spv_v2_settings SET
         oauth_token = ?,
@@ -1498,22 +1582,34 @@ router.post('/oauth/token-import', (req, res) => {
     logAction('oauth_token_imported', {
       source:          'manual_import',
       tokenType:       token_type || 'Bearer',
+      tokenIsJwt,
       hasRefreshToken: !!refresh_token,
       expiresAt:       expiresAt || 'necunoscut',
     });
 
     console.log('[SPV-V2] ✅ Token importat manual cu succes:', {
       source:          'token-import endpoint',
+      tokenIsJwt,
       hasRefreshToken: !!refresh_token,
       expiresAt:       expiresAt || 'necunoscut',
       timestamp:       new Date().toISOString(),
     });
 
+    const jwtWarning = tokenIsJwt
+      ? null
+      : 'Atenție: tokenul importat NU este JWT. ANAF API necesită token JWT (obținut cu token_content_type=jwt). ' +
+        'Uploadul și mesajele SPV vor eșua cu 401 invalid_token. ' +
+        'Configurați Postman cu parametrul Advanced: token_content_type=jwt și obțineți un token nou.';
+
     res.json({
       success:         true,
+      tokenIsJwt,
       expiresAt:       expiresAt || null,
       hasRefreshToken: !!refresh_token,
-      message:         'Token importat cu succes. Puteți acum transmite facturi.',
+      message:         tokenIsJwt
+        ? 'Token JWT importat cu succes. Puteți acum transmite facturi.'
+        : 'Token importat (atenție: nu este JWT – vedeți câmpul warning).',
+      warning:         jwtWarning,
     });
   } catch (err) {
     logAction('oauth_token_import_error', null, false, err.message);
@@ -1586,10 +1682,10 @@ router.post('/upload/:invoiceId', requireToken, async (req, res) => {
       return res.status(404).json({ error: 'Factura nu a fost găsită.' });
     }
 
-    // Generare XML UBL
+    // Generare XML UBL și eliminare schemaLocation (ANAF poate respinge XML cu schemaLocation)
     let xml;
     try {
-      xml = buildUBL(inv);
+      xml = removeSchemaLocation(buildUBL(inv));
     } catch (xmlErr) {
       logAction('upload_xml_build_error', { invoiceId: inv.id }, false, xmlErr.message);
       return res.status(500).json({ error: `Eroare generare XML: ${xmlErr.message}` });
@@ -1604,6 +1700,8 @@ router.post('/upload/:invoiceId', requireToken, async (req, res) => {
     ).run(inv.id);
 
     let anafRes, anafBody, anafRawText;
+    let uploadId = null;
+    let execStatus = null;
     try {
       anafRes = await fetch(uploadUrl, {
         method: 'POST',
@@ -1614,7 +1712,36 @@ router.post('/upload/:invoiceId', requireToken, async (req, res) => {
         body: Buffer.from(xml, 'utf8'),
       });
       anafRawText = await anafRes.text();
-      try { anafBody = JSON.parse(anafRawText); } catch { console.log('[SPV-V2] ℹ️ Răspuns ANAF non-JSON:', anafRawText.substring(0, 200)); anafBody = anafRawText; }
+
+      // ANAF returnează JSON la erori (401, 400 etc.) și XML la upload procesat (succes/eroare validare).
+      // Logica din referința PHP UBLUploadResponse.php:
+      //   - JSON → eroare autentificare/request
+      //   - XML cu ExecutionStatus="0" → upload acceptat, extrage index_incarcare
+      //   - XML cu ExecutionStatus≠"0" → eroare de validare ANAF, extrage mesaj din Errors
+      try {
+        anafBody = JSON.parse(anafRawText);
+        // JSON → eroare; uploadId rămâne null, execStatus se extrage dacă există
+        execStatus = anafBody?.ExecutionStatus != null ? String(anafBody.ExecutionStatus) : null;
+      } catch {
+        // Nu e JSON → interpretăm ca XML ANAF
+        const parsed = parseAnafUploadXml(anafRawText);
+        uploadId    = parsed.index_incarcare;
+        execStatus  = parsed.ExecutionStatus;
+        // Construim un obiect normalizat pentru a fi consistent cu răspunsul JSON
+        anafBody = {
+          index_incarcare: parsed.index_incarcare,
+          ExecutionStatus:  parsed.ExecutionStatus,
+          dateResponse:     parsed.dateResponse,
+          errors:           parsed.errors,
+          _rawXml:          anafRawText.substring(0, 500),
+        };
+        console.log('[SPV-V2] ℹ️ Răspuns ANAF XML (upload):', {
+          invoiceId:         inv.id,
+          uploadId,
+          execStatus,
+          errors:            parsed.errors,
+        });
+      }
     } catch (fetchErr) {
       db.prepare(`UPDATE billing_invoices SET spv_status = 'error' WHERE id = ?`).run(inv.id);
       logAction('upload_connection_error', { invoiceId: inv.id }, false, fetchErr.message);
@@ -1634,9 +1761,15 @@ router.post('/upload/:invoiceId', requireToken, async (req, res) => {
       });
     }
 
-    const uploadId   = anafBody?.index_incarcare || anafBody?.IndexIncarcare || null;
-    const execStatus = anafBody?.ExecutionStatus; // 0 = OK, 1 = eroare ANAF
-    const newStatus  = (!anafRes.ok || execStatus === 1) ? 'error' : 'uploaded';
+    // ExecutionStatus="0" = succes (referința PHP: "$success = ((string)$xml['ExecutionStatus'] === '0')")
+    const execStatusStr = execStatus != null ? String(execStatus) : null;
+    const isAnafError   = execStatusStr !== null && execStatusStr !== '0';
+    const newStatus     = (!anafRes.ok || isAnafError) ? 'error' : 'uploaded';
+
+    // uploadId din JSON (dacă ANAF a returnat JSON cu succes, rar dar posibil)
+    if (!uploadId && typeof anafBody === 'object' && anafBody !== null) {
+      uploadId = anafBody?.index_incarcare || anafBody?.IndexIncarcare || null;
+    }
 
     db.prepare(`
       UPDATE billing_invoices SET
@@ -1646,19 +1779,25 @@ router.post('/upload/:invoiceId', requireToken, async (req, res) => {
 
     logAction('upload', { invoiceId: inv.id, uploadId, status: newStatus, anafHttpStatus: anafRes.status });
 
-    if (!anafRes.ok || execStatus === 1) {
+    if (!anafRes.ok || isAnafError) {
       const anafHttpStatus = anafRes.status;
-      const anafErrorCode = typeof anafBody === 'object' ? (anafBody?.error || null) : null;
+      const anafErrorCode  = typeof anafBody === 'object' ? (anafBody?.error || null) : null;
+      const anafXmlErrors  = Array.isArray(anafBody?.errors) && anafBody.errors.length > 0
+        ? anafBody.errors.join('; ') : null;
       let errorDetail = 'Eroare la upload în SPV ANAF.';
-      if (anafHttpStatus === 401) {
+      if (isAnafError && anafXmlErrors) {
+        errorDetail = `ANAF a respins factura: ${anafXmlErrors}`;
+      } else if (anafHttpStatus === 401) {
         if (anafErrorCode === 'invalid_token') {
           errorDetail =
             'ANAF a respins tokenul ca invalid (invalid_token). Cauze frecvente: ' +
-            '(1) tokenul a fost obținut în Postman cu un Callback URL diferit față de redirect_uri-ul înregistrat la ANAF; ' +
-            '(2) tokenul nu deține scope-urile necesare pentru operațiuni API (upload); ' +
-            '(3) tokenul a expirat sau a fost revocat de ANAF. ' +
-            'Soluție: în Postman, setați Callback URL exact la valoarea redirect_uri a aplicației, obțineți un token nou și reimportați-l.';
-          console.error('[SPV-V2] ⚠ invalid_token la upload – tokenul importat poate proveni dintr-un flux Postman cu redirect_uri diferit față de cel al aplicației.');
+            '(1) tokenul importat este opac (nu JWT) – obțineți token JWT cu token_content_type=jwt; ' +
+            '(2) tokenul a fost obținut cu un Callback URL diferit față de redirect_uri-ul înregistrat la ANAF; ' +
+            '(3) tokenul nu deține scope-urile necesare pentru operațiuni API (upload); ' +
+            '(4) tokenul a expirat sau a fost revocat de ANAF. ' +
+            'Soluție: în Postman, adăugați Advanced param token_content_type=jwt, setați Callback URL exact la ' +
+            'valoarea redirect_uri a aplicației, obțineți un token nou și reimportați-l.';
+          console.error('[SPV-V2] ⚠ invalid_token la upload – verificați că tokenul este JWT (nu opac/hex).');
         } else {
           errorDetail = 'Token invalid sau expirat (ANAF 401 Unauthorized). Reimportați tokenul din Postman.';
         }
@@ -1670,6 +1809,7 @@ router.post('/upload/:invoiceId', requireToken, async (req, res) => {
         error: errorDetail,
         anafHttpStatus,
         anafError: anafErrorCode,
+        anafXmlErrors,
         uploadId,
         status: newStatus,
         anafResponse: anafBody,
@@ -1811,12 +1951,15 @@ router.get('/xml/:invoiceId', (req, res) => {
 });
 
 /**
- * GET /api/efactura-v2/messages?zile=60&tip=T
- * Listează mesajele din SPV ANAF (primite/emise/toate).
+ * GET /api/efactura-v2/messages?zile=60&filtru=T
+ * Listează mesajele din SPV ANAF (primite/emise/erori/toate).
  *
  * Query params:
- *   zile – număr de zile în urmă (max 60, conform ANAF)
- *   tip  – P=emise de noi, C=primite, T=toate
+ *   zile   – număr de zile în urmă (max 60, conform ANAF)
+ *   filtru – E=erori, T=trimise (emise de noi), P=primite, R=în aprobare; omis = toate
+ *
+ * Notă: parametrul ANAF este "filtru" (nu "tip"). Valorile acceptate de ANAF: E, T, P, R.
+ * Referință: ANAFAPIClient.php ValidateFilter() – ["E", "T", "P", "R"]
  */
 router.get('/messages', requireToken, async (req, res) => {
   try {
@@ -1825,11 +1968,15 @@ router.get('/messages', requireToken, async (req, res) => {
       return res.status(400).json({ error: 'CIF furnizor lipsă în setări SPV-V2.' });
     }
 
-    const zile = Math.min(Number(req.query.zile) || 60, 60); // ANAF limitează la 60 zile
-    const tip  = ['P', 'C', 'T'].includes(req.query.tip) ? req.query.tip : 'T';
+    const zile   = Math.min(Number(req.query.zile) || 60, 60); // ANAF limitează la 60 zile
+    // Acceptăm și parametrul legacy "tip" pentru compatibilitate cu versiunile anterioare ale UI
+    const filtruRaw = req.query.filtru || req.query.tip || '';
+    const filtru    = ['E', 'T', 'P', 'R'].includes(filtruRaw.toUpperCase())
+      ? filtruRaw.toUpperCase() : null;
 
     const baseUrl = getBaseUrl(settings);
-    const listUrl = `${baseUrl}/listaMesajeFactura?zile=${zile}&cif=${encodeURIComponent(settings.cif)}&tip=${tip}`;
+    let listUrl = `${baseUrl}/listaMesajeFactura?zile=${zile}&cif=${encodeURIComponent(settings.cif)}`;
+    if (filtru) listUrl += `&filtru=${filtru}`;
 
     let anafRes, anafBody;
     try {
@@ -1845,10 +1992,11 @@ router.get('/messages', requireToken, async (req, res) => {
       if (anafRes.status === 401 && anafErrCode === 'invalid_token') {
         errMsg =
           'ANAF a respins tokenul ca invalid (invalid_token) la citirea mesajelor SPV. ' +
-          'Cauze frecvente: (1) tokenul a fost obținut în Postman cu Callback URL diferit față de redirect_uri-ul aplicației; ' +
-          '(2) tokenul are scope-uri insuficiente sau a expirat. ' +
-          'Soluție: reimportați un token obținut cu Callback URL identic cu redirect_uri-ul aplicației.';
-        console.error('[SPV-V2] ⚠ invalid_token la listare mesaje SPV – tokenul importat poate proveni dintr-un flux cu redirect_uri diferit.');
+          'Cauze frecvente: (1) tokenul importat este opac (nu JWT) – obțineți token JWT cu token_content_type=jwt; ' +
+          '(2) tokenul a fost obținut cu Callback URL diferit față de redirect_uri-ul aplicației; ' +
+          '(3) tokenul are scope-uri insuficiente sau a expirat. ' +
+          'Soluție: în Postman, adăugați Advanced param token_content_type=jwt și reimportați.';
+        console.error('[SPV-V2] ⚠ invalid_token la listare mesaje SPV – verificați că tokenul este JWT (nu opac/hex).');
       } else if (anafRes.status === 401) {
         errMsg = 'Token invalid sau expirat (ANAF 401). Reimportați tokenul.';
       } else {
@@ -1878,7 +2026,7 @@ router.get('/messages', requireToken, async (req, res) => {
       }
     }
 
-    logAction('list_messages', { count: messages.length, zile, tip });
+    logAction('list_messages', { count: messages.length, zile, filtru });
     res.json({ messages, total: messages.length, raw: anafBody });
   } catch (err) {
     console.error('[SPV-V2] Messages error:', err);
@@ -1887,8 +2035,69 @@ router.get('/messages', requireToken, async (req, res) => {
 });
 
 /**
+ * GET /api/efactura-v2/messages-paged?startTime=...&endTime=...&cif=...&pagina=1&filtru=T
+ * Listează mesajele din SPV ANAF folosind endpoint-ul paginat.
+ * Util când lista depășește limita ANAF pentru /listaMesajeFactura.
+ *
+ * Query params:
+ *   startTime – timestamp Unix (secunde) start interval
+ *   endTime   – timestamp Unix (secunde) end interval (max = now - 5 min, ANAF)
+ *   pagina    – numărul paginii (1-based)
+ *   filtru    – E/T/P/R (opțional)
+ *
+ * Notă: ANAF /listaMesajePaginatieFactura necesită startTime/endTime în milisecunde!
+ */
+router.get('/messages-paged', requireToken, async (req, res) => {
+  try {
+    const settings = req.spvSettings;
+    if (!settings.cif) {
+      return res.status(400).json({ error: 'CIF furnizor lipsă în setări SPV-V2.' });
+    }
+
+    const now         = Math.floor(Date.now() / 1000);
+    const offsetSec   = 5 * 60; // ANAF: end date trebuie să fie cu cel puțin 5 minute în trecut
+    const DEFAULT_DAYS_BACK = 60; // Intervalul implicit de 60 de zile (limita ANAF)
+    const startTime   = Number(req.query.startTime) || (now - DEFAULT_DAYS_BACK * 24 * 3600);
+    const endTime     = Math.min(Number(req.query.endTime) || now, now - offsetSec);
+    const pagina      = Math.max(1, Number(req.query.pagina) || 1);
+    const filtruRaw   = req.query.filtru || '';
+    const filtru      = ['E', 'T', 'P', 'R'].includes(filtruRaw.toUpperCase())
+      ? filtruRaw.toUpperCase() : null;
+
+    const baseUrl = getBaseUrl(settings);
+    // ANAF necesită timestamps în milisecunde
+    let pagedUrl = `${baseUrl}/listaMesajePaginatieFactura?startTime=${startTime * 1000}&endTime=${endTime * 1000}&cif=${encodeURIComponent(settings.cif)}&pagina=${pagina}`;
+    if (filtru) pagedUrl += `&filtru=${filtru}`;
+
+    let anafRes, anafBody;
+    try {
+      anafRes  = await fetch(pagedUrl, { headers: bearerHeader(settings.oauth_token) });
+      anafBody = await anafRes.json().catch(async () => await anafRes.text());
+    } catch (fetchErr) {
+      return res.status(502).json({ error: `Eroare conexiune ANAF: ${fetchErr.message}` });
+    }
+
+    if (!anafRes.ok) {
+      const errMsg = typeof anafBody === 'object' ? JSON.stringify(anafBody) : String(anafBody);
+      return res.status(anafRes.status).json({ error: errMsg, anafResponse: anafBody });
+    }
+
+    const messages = anafBody?.mesaje || [];
+    logAction('list_messages_paged', { count: messages.length, pagina, filtru });
+    res.json({ messages, total: messages.length, pagina, raw: anafBody });
+  } catch (err) {
+    console.error('[SPV-V2] Messages-paged error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * GET /api/efactura-v2/download-message/:id_descarcare
  * Descarcă un mesaj specific din SPV ANAF ca fișier ZIP.
+ *
+ * Notă: ANAF folosește același endpoint /descarcare?id=... pentru descărcarea
+ * atât a răspunsurilor la facturi încărcate cât și a mesajelor din lista SPV.
+ * (Referință: ANAFAPIClient.php DownloadAnswer() – /{prod|test}/FCTEL/rest/descarcare?id=...)
  */
 router.get('/download-message/:id_descarcare', requireToken, async (req, res) => {
   try {
@@ -1896,7 +2105,8 @@ router.get('/download-message/:id_descarcare', requireToken, async (req, res) =>
     const { id_descarcare } = req.params;
 
     const baseUrl = getBaseUrl(settings);
-    const dlUrl   = `${baseUrl}/descarcareMesaj?id=${encodeURIComponent(id_descarcare)}`;
+    // Endpoint corect ANAF: /descarcare?id=... (nu /descarcareMesaj)
+    const dlUrl   = `${baseUrl}/descarcare?id=${encodeURIComponent(id_descarcare)}`;
 
     let anafRes;
     try {
@@ -1971,7 +2181,7 @@ router.post('/upload-batch', requireToken, async (req, res) => {
       }
 
       try {
-        const xml       = buildUBL(inv);
+        const xml       = removeSchemaLocation(buildUBL(inv));
         const uploadUrl = `${baseUrl}/upload?standard=UBL&cif=${encodeURIComponent(settings.cif)}`;
 
         db.prepare(
@@ -1986,11 +2196,31 @@ router.post('/upload-batch', requireToken, async (req, res) => {
           },
           body: Buffer.from(xml, 'utf8'),
         });
-        const anafBody = await anafRes.json().catch(() => anafRes.text());
+        const anafRawText = await anafRes.text();
 
-        const uploadId   = anafBody?.index_incarcare || anafBody?.IndexIncarcare || null;
-        const execStatus = anafBody?.ExecutionStatus;
-        const newStatus  = (!anafRes.ok || execStatus === 1) ? 'error' : 'uploaded';
+        let anafBody;
+        let uploadId   = null;
+        let execStatus = null;
+        try {
+          anafBody = JSON.parse(anafRawText);
+          execStatus = anafBody?.ExecutionStatus != null ? String(anafBody.ExecutionStatus) : null;
+        } catch {
+          const parsed = parseAnafUploadXml(anafRawText);
+          uploadId   = parsed.index_incarcare;
+          execStatus = parsed.ExecutionStatus;
+          anafBody   = {
+            index_incarcare: parsed.index_incarcare,
+            ExecutionStatus:  parsed.ExecutionStatus,
+            dateResponse:     parsed.dateResponse,
+            errors:           parsed.errors,
+            _rawXml:          anafRawText.substring(0, 500),
+          };
+        }
+        if (!uploadId && typeof anafBody === 'object' && anafBody !== null) {
+          uploadId = anafBody?.index_incarcare || anafBody?.IndexIncarcare || null;
+        }
+        const isAnafError = execStatus != null && String(execStatus) !== '0';
+        const newStatus   = (!anafRes.ok || isAnafError) ? 'error' : 'uploaded';
 
         db.prepare(`
           UPDATE billing_invoices SET
@@ -2000,7 +2230,7 @@ router.post('/upload-batch', requireToken, async (req, res) => {
 
         results.push({
           invoiceId,
-          success:      anafRes.ok && execStatus !== 1,
+          success:      anafRes.ok && !isAnafError,
           uploadId,
           status:       newStatus,
           anafResponse: anafBody,
