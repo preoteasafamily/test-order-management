@@ -19,6 +19,7 @@ const billingRouter = require("./routes/billing");
 const configRouter = require("./routes/config");
 const efacturaRouter   = require("./routes/efactura");
 const efacturaV2Router = require("./routes/efactura-v2");
+const efacturaV3Router = require("./routes/efactura-v3");
 const { generateLocalInvoice } = require("./routes/billing");
 const { initializeClientProducts } = require("./routes/client-products");
 
@@ -50,6 +51,8 @@ app.use("/api/config", configRouter);
 app.use("/api/efactura", efacturaRouter);
 // E-factura SPV-V2 – modul complet separat cu suport IP extern / port-forwarding
 app.use("/api/efactura-v2", efacturaV2Router);
+// E-factura SPV-V3 – modul nou, curat, testat
+app.use("/api/efactura-v3", efacturaV3Router);
 
 // Health check
 app.get("/api/health", (req, res) => {

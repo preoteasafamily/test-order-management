@@ -733,6 +733,40 @@ const createTables = () => {
     )
   `);
 
+  // ── E-factura SPV-V3 settings table (clean-slate v3 module) ──────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS spv_v3_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      cif TEXT DEFAULT '',
+      environment TEXT DEFAULT 'test',
+      client_id TEXT DEFAULT '',
+      client_secret TEXT DEFAULT '',
+      redirect_uri TEXT DEFAULT '',
+      public_callback_url TEXT DEFAULT '',
+      oauth_token TEXT DEFAULT '',
+      refresh_token TEXT DEFAULT '',
+      token_expires_at TEXT DEFAULT '',
+      oauth_state TEXT DEFAULT '',
+      oauth_redirect_uri_used TEXT DEFAULT '',
+      last_action TEXT DEFAULT '',
+      last_action_at TEXT DEFAULT '',
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  db.exec(`INSERT OR IGNORE INTO spv_v3_settings (id) VALUES (1)`);
+
+  // ── E-factura SPV-V3 action log table ─────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS spv_v3_action_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      action TEXT NOT NULL,
+      details TEXT,
+      success INTEGER DEFAULT 1,
+      error_message TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   console.log('Database tables initialized');
 };
 
