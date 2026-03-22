@@ -23,6 +23,8 @@
  *   GET  /oauth/callback        – callback public pentru redirect ANAF
  *   POST /oauth/refresh         – reînnoire access_token cu refresh_token
  *   GET  /oauth/diagnostic      – diagnosticare configurare OAuth2
+ *   GET  /oauth/mtls-status     – verificare stare Mutual TLS (certificat server)
+ *   POST /oauth/token-import    – import token obținut extern (Postman/curl/USB token)
  *   GET  /status                – stare token și modul
  *   GET  /action-log            – jurnalul de acțiuni
  *   POST /upload/:invoiceId     – încărcare factură XML în SPV
@@ -1116,7 +1118,11 @@ router.get('/oauth/callback', async (req, res) => {
         description: tokenData.error_description,
         raw_snippet: rawBody.substring(0, 200),
       }, false, errMsg);
-      return res.redirect(`${FRONTEND_URL}/?oauth_error=${encodeURIComponent(errMsg)}&module=spv-v2#efactura-spv`);
+      // Când ANAF returnează 500 și mTLS nu este configurat, adăugăm indicatorul
+      // `mtls_required=1` în redirect pentru ca frontend-ul să afișeze ghidul
+      // specific tokenelor hardware USB (Postman / import manual).
+      const mtlsHint = (tokenRes.status >= 500 && !getMtlsAgent()) ? '&mtls_required=1' : '';
+      return res.redirect(`${FRONTEND_URL}/?oauth_error=${encodeURIComponent(errMsg)}&module=spv-v2${mtlsHint}#efactura-spv`);
     }
 
     // Validare câmpuri obligatorii din răspuns
@@ -1394,6 +1400,117 @@ router.get('/oauth/diagnostic', (req, res) => {
       ].filter(Boolean),
     });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/efactura-v2/oauth/mtls-status
+ * ────────────────────────────────────────
+ * Returnează dacă Mutual TLS este configurat pentru schimbul de token ANAF.
+ * Folosit de frontend pentru a afișa avertismente și ghidul pentru token USB.
+ *
+ * Returnează:
+ *   { mtlsConfigured: bool, hint: string }
+ */
+router.get('/oauth/mtls-status', (req, res) => {
+  const certPath = process.env.ANAF_CERT_PATH || null;
+  const keyPath  = process.env.ANAF_KEY_PATH  || null;
+  const mtlsConfigured = !!(certPath && keyPath);
+
+  res.json({
+    mtlsConfigured,
+    certPathSet: !!certPath,
+    keyPathSet:  !!keyPath,
+    hint: mtlsConfigured
+      ? 'mTLS configurat – schimbul de token se va efectua automat.'
+      : [
+          'mTLS neconfigurat. Dacă aveți certificatul ca fișier PEM/PFX, adăugați în server/.env:',
+          '  ANAF_CERT_PATH=/cale/absoluta/certificat.pem',
+          '  ANAF_KEY_PATH=/cale/absoluta/cheie_privata.pem',
+          'Dacă certificatul este pe un token hardware USB, folosiți fluxul Postman sau importați',
+          'tokenul manual din tab-ul "Token USB / Postman" din configurare.',
+        ].join('\n'),
+  });
+});
+
+/**
+ * POST /api/efactura-v2/oauth/token-import
+ * ──────────────────────────────────────────
+ * Importă un token OAuth2 obținut extern (Postman, curl, alt tool) și îl salvează
+ * în baza de date. Acesta este fluxul alternativ pentru utilizatorii cu certificate
+ * pe token hardware USB care nu pot fi prezentate automat de backend.
+ *
+ * Body JSON:
+ *   {
+ *     access_token:  string  (obligatoriu)
+ *     refresh_token: string  (opțional)
+ *     expires_in:    number  (secunde, opțional – folosit pentru calculul expirării)
+ *     token_type:    string  (opțional, default: "Bearer")
+ *   }
+ *
+ * Returnează: { success: true, expiresAt: string|null }
+ */
+router.post('/oauth/token-import', (req, res) => {
+  try {
+    const { access_token, refresh_token, expires_in, token_type } = req.body || {};
+
+    if (!access_token || typeof access_token !== 'string' || !access_token.trim()) {
+      return res.status(400).json({
+        error: 'access_token lipsă sau invalid. Furnizați un token Bearer valid.',
+        code: 'MISSING_ACCESS_TOKEN',
+      });
+    }
+
+    const trimmedToken = access_token.trim();
+
+    // Verificare minimă: tokenul nu trebuie să conțină spații (Bearer tokens sunt compacți)
+    if (/\s/.test(trimmedToken)) {
+      return res.status(400).json({
+        error: 'access_token invalid: conține spații. Asigurați-vă că ați copiat tokenul complet, fără spații suplimentare.',
+        code: 'INVALID_TOKEN_FORMAT',
+      });
+    }
+
+    const expiresAt = expires_in && Number(expires_in) > 0
+      ? new Date(Date.now() + Number(expires_in) * 1000).toISOString()
+      : '';
+
+    db.prepare(`
+      UPDATE spv_v2_settings SET
+        oauth_token = ?,
+        refresh_token = ?,
+        token_expires_at = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = 1
+    `).run(
+      trimmedToken,
+      refresh_token ? String(refresh_token).trim() : '',
+      expiresAt,
+    );
+
+    logAction('oauth_token_imported', {
+      source:          'manual_import',
+      tokenType:       token_type || 'Bearer',
+      hasRefreshToken: !!refresh_token,
+      expiresAt:       expiresAt || 'necunoscut',
+    });
+
+    console.log('[SPV-V2] ✅ Token importat manual cu succes:', {
+      source:          'token-import endpoint',
+      hasRefreshToken: !!refresh_token,
+      expiresAt:       expiresAt || 'necunoscut',
+      timestamp:       new Date().toISOString(),
+    });
+
+    res.json({
+      success:         true,
+      expiresAt:       expiresAt || null,
+      hasRefreshToken: !!refresh_token,
+      message:         'Token importat cu succes. Puteți acum transmite facturi.',
+    });
+  } catch (err) {
+    logAction('oauth_token_import_error', null, false, err.message);
     res.status(500).json({ error: err.message });
   }
 });

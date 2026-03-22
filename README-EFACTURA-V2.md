@@ -15,6 +15,7 @@ Modul complet separat de E-factura SPV original, implementat pentru integrare cu
 7. [Variabile de mediu](#variabile-de-mediu)
 8. [Depanare probleme frecvente](#depanare)
 9. [Mutual TLS – Certificat digital ANAF](#mutual-tls)
+10. [Token hardware USB – Soluții alternative](#usb-token)
 
 ---
 
@@ -522,5 +523,154 @@ Reconstruiți modulul nativ pentru versiunea curentă de Node.js:
 cd server
 npm run rebuild
 npm start
+```
+
+---
+
+## Token hardware USB – Soluții alternative {#usb-token}
+
+### Limitare tehnică – de ce eșuează mTLS din backend cu token hardware USB
+
+Serverul ANAF (`logincert.anaf.ro`) solicită **Mutual TLS (mTLS)** la fiecare apel `POST /token`.
+Aceasta înseamnă că serverul Node.js trebuie să prezinte un **certificat digital calificat** la nivelul conexiunii HTTPS.
+
+**Problema cu token-ul hardware USB:**
+
+- Cheia privată a unui certificat pe token hardware (SafeNet, eToken, IDPrime etc.) **nu poate fi exportată** din dispozitiv – aceasta este o măsură de securitate fundamentală.
+- Serverul Node.js backend rulează pe un VPS/server remote. Tokenul USB este conectat la calculatorul **utilizatorului** (client), nu la server.
+- Node.js nu poate accesa direct PKCS#11 (interfața pentru token-uri hardware) fără integrare nativă complexă (openssl engine pkcs11, node-pkcs11).
+- Prin urmare, **serverul NU poate prezenta automat certificatul de pe tokenul USB al utilizatorului** la POST /token.
+
+**De ce funcționează în Postman cu „Authorize using Browser"?**
+
+1. Postman deschide browserul pentru URL-ul de autorizare ANAF (`/authorize`).
+2. Browserul face mTLS cu ANAF folosind certificatul din depozitul de certificate al OS (Windows Certificate Store / macOS Keychain) – **acesta este locul unde driverul tokenului USB înregistrează certificatul**.
+3. Utilizatorul selectează certificatul și introduce PIN-ul.
+4. ANAF redirectează cu codul de autorizare.
+5. **Postman** (nu browserul!) face `POST /token` cu mTLS – Postman are certificate configurate explicit în Settings → Certificates (PEM sau PKCS#12).
+
+Deci Postman funcționează datorită a **două** componente: browserul (pentru `/authorize`) + Postman nativ (pentru `/token` cu certificat configurat explicit).
+
+---
+
+### Soluții funcționale pentru utilizatorii cu token hardware USB
+
+#### Opțiunea 1: Postman (recomandat) – flux complet cu import JSON
+
+**Condiție**: Postman instalat pe același calculator unde este conectat tokenul USB.
+
+**Pași:**
+
+1. Deschideți Postman → **Settings (⚙)** → **Certificates** → **Add Certificate**:
+   - Host: `logincert.anaf.ro`
+   - Adăugați `cert.pem` și `key.pem` (sau fișier `.p12`/`.pfx` + passphrase)
+   - Dacă nu aveți fișiere, exportați certificatul din token (dacă tokenul permite) sau obțineți de la autoritatea emitentă
+
+2. Creați un nou request → **Authorization** → Type: **OAuth 2.0** → **Get New Access Token**:
+   ```
+   Grant Type:         Authorization Code
+   Callback URL:       https://IP_EXTERN:PORT/api/efactura-v2/oauth/callback
+   Auth URL:           https://logincert.anaf.ro/anaf-oauth2/v1/authorize
+   Access Token URL:   https://logincert.anaf.ro/anaf-oauth2/v1/token
+   Client ID:          [client_id din ANAF]
+   Client Secret:      [client_secret din ANAF]
+   Scope:              offline_access
+   ```
+
+3. **Bifați „Authorize using Browser"** (esențial pentru selectarea certificatului din token)
+
+4. Apăsați **„Request Token"** → browserul se deschide → selectați certificatul → introduceți PIN-ul
+
+5. Postman obține tokenul. Copiați răspunsul JSON complet din **„Token Details"**:
+   ```json
+   {
+     "access_token": "eyJ...",
+     "token_type": "Bearer",
+     "refresh_token": "eyJ...",
+     "expires_in": 3600
+   }
+   ```
+
+6. În aplicație → **Configurare OAuth2 V2** → tab **„Token USB / Postman"** → lipiți JSON-ul → **„Importă token"**
+
+**Referință**: [Generating an Authorization Token in Romania's ANAF Portal using Postman](https://community.sap.com/t5/technology-blog-posts-by-sap/generating-an-authorization-token-in-romania-s-anaf-portal-using-postman/ba-p/13577060)
+
+---
+
+#### Opțiunea 2: Import direct via API (curl / Postman spre aplicație)
+
+Dacă ați obținut tokenul prin orice mijloace (Postman, curl, alt tool), îl puteți importa direct via API:
+
+```bash
+curl -X POST https://IP_EXTERN:PORT/api/efactura-v2/oauth/token-import \
+  -H "Content-Type: application/json" \
+  -d '{
+    "access_token":  "eyJ...",
+    "refresh_token": "eyJ...",
+    "expires_in":    3600,
+    "token_type":    "Bearer"
+  }'
+```
+
+Sau doar `access_token`:
+```bash
+curl -X POST https://IP_EXTERN:PORT/api/efactura-v2/oauth/token-import \
+  -H "Content-Type: application/json" \
+  -d '{"access_token": "eyJ..."}'
+```
+
+---
+
+#### Opțiunea 3: Fișiere PEM pe server (soluție permanentă)
+
+Dacă tokenul hardware USB permite exportul cheii private (unele token-uri permit cu PIN):
+
+```bash
+# Export din token PKCS#12 (P12) – introduceți parola token-ului când este cerută
+openssl pkcs12 -in certificat_din_token.p12 -clcerts -nokeys -out /etc/anaf-certs/cert.pem
+openssl pkcs12 -in certificat_din_token.p12 -nocerts -nodes  -out /etc/anaf-certs/key.pem
+
+# Copiați fișierele securizat pe server:
+scp cert.pem key.pem user@server:/etc/anaf-certs/
+
+# Configurați în server/.env:
+ANAF_CERT_PATH=/etc/anaf-certs/cert.pem
+ANAF_KEY_PATH=/etc/anaf-certs/key.pem
+
+# Reporniți serverul:
+npm --prefix server start
+```
+
+> ⚠️ **Atenție la securitate**: Dacă exportul cheii private este posibil, depozitați fișierele cu permisiuni restrictive (`chmod 600`) și nu le includeți în repository.
+
+---
+
+#### Opțiunea 4: Token temporar (refresh automat)
+
+Dacă tokenul ANAF include `refresh_token` (cerere cu scope `offline_access`), aplicația poate reînnoi automat `access_token` fără intervenție manuală timp de mai multe luni.
+
+Fluxul recomandat:
+1. Obțineți tokenul inițial via Postman (o singură dată)
+2. Importați-l cu `refresh_token` inclus
+3. Aplicația va folosi `POST /api/efactura-v2/oauth/refresh` automat pentru reînnoire
+
+> **Notă**: `refresh_token` are de obicei o valabilitate de 6-12 luni la ANAF. Verificați documentația ANAF pentru termenii exacți.
+
+---
+
+### Verificare stare mTLS
+
+```bash
+curl https://IP_EXTERN:PORT/api/efactura-v2/oauth/mtls-status
+```
+
+Răspuns când mTLS **este** configurat:
+```json
+{"mtlsConfigured": true, "certPathSet": true, "keyPathSet": true, "hint": "mTLS configurat – schimbul de token se va efectua automat."}
+```
+
+Răspuns când mTLS **nu este** configurat:
+```json
+{"mtlsConfigured": false, "certPathSet": false, "keyPathSet": false, "hint": "mTLS neconfigurat. Dacă aveți certificatul ca fișier PEM/PFX..."}
 ```
 
