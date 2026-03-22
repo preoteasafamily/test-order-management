@@ -1462,12 +1462,18 @@ router.post('/oauth/token-import', (req, res) => {
       });
     }
 
-    const trimmedToken = access_token.trim();
+    let trimmedToken = access_token.trim();
+
+    // Dacă utilizatorul a copiat prefixul "Bearer " din Postman/curl, îl eliminăm automat
+    if (/^bearer\s+/i.test(trimmedToken)) {
+      trimmedToken = trimmedToken.replace(/^bearer\s+/i, '');
+      console.log('[SPV-V2] ℹ️  Prefix "Bearer " detectat și eliminat automat din access_token importat.');
+    }
 
     // Verificare minimă: tokenul nu trebuie să conțină spații (Bearer tokens sunt compacți)
     if (/\s/.test(trimmedToken)) {
       return res.status(400).json({
-        error: 'access_token invalid: conține spații. Asigurați-vă că ați copiat tokenul complet, fără spații suplimentare.',
+        error: 'access_token invalid: conține spații în interiorul valorii. Asigurați-vă că ați copiat doar valoarea tokenului fără caractere suplimentare.',
         code: 'INVALID_TOKEN_FORMAT',
       });
     }
@@ -1597,7 +1603,7 @@ router.post('/upload/:invoiceId', requireToken, async (req, res) => {
       `UPDATE billing_invoices SET spv_status = 'uploading', spv_uploaded_at = CURRENT_TIMESTAMP WHERE id = ?`
     ).run(inv.id);
 
-    let anafRes, anafBody;
+    let anafRes, anafBody, anafRawText;
     try {
       anafRes = await fetch(uploadUrl, {
         method: 'POST',
@@ -1607,14 +1613,27 @@ router.post('/upload/:invoiceId', requireToken, async (req, res) => {
         },
         body: Buffer.from(xml, 'utf8'),
       });
-      anafBody = await anafRes.json().catch(() => anafRes.text());
+      anafRawText = await anafRes.text();
+      try { anafBody = JSON.parse(anafRawText); } catch { console.log('[SPV-V2] ℹ️ Răspuns ANAF non-JSON:', anafRawText.substring(0, 200)); anafBody = anafRawText; }
     } catch (fetchErr) {
       db.prepare(`UPDATE billing_invoices SET spv_status = 'error' WHERE id = ?`).run(inv.id);
       logAction('upload_connection_error', { invoiceId: inv.id }, false, fetchErr.message);
       return res.status(502).json({ error: `Eroare conexiune ANAF: ${fetchErr.message}` });
     }
 
-    // Analiză răspuns ANAF
+    // Analiză răspuns ANAF – logare explicită pentru depanare
+    if (!anafRes.ok) {
+      console.error('[SPV-V2] ❌ Upload factură eșuat – răspuns ANAF:', {
+        invoiceId:  inv.id,
+        httpStatus: anafRes.status,
+        httpText:   anafRes.statusText,
+        headers:    Object.fromEntries(anafRes.headers.entries()),
+        body:       anafRawText,
+        uploadUrl,
+        timestamp:  new Date().toISOString(),
+      });
+    }
+
     const uploadId   = anafBody?.index_incarcare || anafBody?.IndexIncarcare || null;
     const execStatus = anafBody?.ExecutionStatus; // 0 = OK, 1 = eroare ANAF
     const newStatus  = (!anafRes.ok || execStatus === 1) ? 'error' : 'uploaded';
@@ -1625,11 +1644,19 @@ router.post('/upload/:invoiceId', requireToken, async (req, res) => {
       WHERE id = ?
     `).run(uploadId, newStatus, JSON.stringify(anafBody), inv.id);
 
-    logAction('upload', { invoiceId: inv.id, uploadId, status: newStatus });
+    logAction('upload', { invoiceId: inv.id, uploadId, status: newStatus, anafHttpStatus: anafRes.status });
 
     if (!anafRes.ok || execStatus === 1) {
+      const anafHttpStatus = anafRes.status;
+      let errorDetail = 'Eroare la upload în SPV ANAF.';
+      if (anafHttpStatus === 401) errorDetail = 'Token invalid sau expirat (ANAF 401 Unauthorized). Reimportați tokenul din Postman.';
+      else if (anafHttpStatus === 403) errorDetail = 'Acces refuzat de ANAF (403 Forbidden). Verificați că CIF-ul și tokenul corespund.';
+      else if (anafHttpStatus === 415) errorDetail = 'Format XML neacceptat de ANAF (415 Unsupported Media Type).';
+      else if (anafHttpStatus === 422) errorDetail = 'Date XML invalide respinse de ANAF (422 Unprocessable Entity).';
+      else if (anafHttpStatus >= 500) errorDetail = `Eroare server ANAF (${anafHttpStatus}). Încercați din nou.`;
       return res.status(anafRes.ok ? 422 : anafRes.status).json({
-        error: 'Eroare la upload în SPV ANAF.',
+        error: errorDetail,
+        anafHttpStatus,
         uploadId,
         status: newStatus,
         anafResponse: anafBody,

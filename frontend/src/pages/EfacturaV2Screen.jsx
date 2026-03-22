@@ -683,7 +683,8 @@ const SettingsPanelV2 = ({ API_URL, onClose, onSaved, defaultTab = "oauth" }) =>
                 <p className="text-xs text-blue-700 mb-2">
                   Lipiți răspunsul JSON complet de la ANAF (cu <code className="bg-blue-100 px-0.5 rounded">access_token</code>,{" "}
                   <code className="bg-blue-100 px-0.5 rounded">refresh_token</code>, <code className="bg-blue-100 px-0.5 rounded">expires_in</code>)
-                  sau doar stringul <code className="bg-blue-100 px-0.5 rounded">access_token</code>:
+                  sau doar stringul <code className="bg-blue-100 px-0.5 rounded">access_token</code>.{" "}
+                  <span className="text-blue-600">Puteți include sau omite prefixul <code className="bg-blue-100 px-0.5 rounded">Bearer </code> – backendul îl elimină automat dacă este prezent.</span>
                 </p>
                 <textarea
                   className="w-full border rounded-lg px-3 py-2 text-sm font-mono text-xs focus:ring-2 focus:ring-blue-400 focus:border-blue-400 bg-white"
@@ -1160,8 +1161,16 @@ const EfacturaV2Screen = ({ API_URL, showMessage }) => {
     try {
       const r = await fetch(`${API_URL}/api/efactura-v2/upload/${inv.id}`, { method: "POST" });
       const data = await r.json();
-      if (data.success) showMessage(`Factura ${inv.invoice_code || inv.id} transmisă (V2) – ID: ${data.uploadId}.`, "success");
-      else showMessage(`Eroare transmitere V2: ${data.error || JSON.stringify(data.anafResponse)}`, "error");
+      if (r.ok && !data.error) showMessage(`Factura ${inv.invoice_code || inv.id} transmisă (V2) – ID: ${data.uploadId}.`, "success");
+      else {
+        const statusInfo = data.anafHttpStatus ? ` [ANAF HTTP ${data.anafHttpStatus}]` : "";
+        const anafDetail = data.anafResponse
+          ? (typeof data.anafResponse === "string"
+              ? data.anafResponse.substring(0, 200)
+              : JSON.stringify(data.anafResponse).substring(0, 200))
+          : "";
+        showMessage(`Eroare transmitere V2${statusInfo}: ${data.error || "Eroare necunoscută"}${anafDetail ? ` – ${anafDetail}` : ""}`, "error");
+      }
       await loadInvoices();
     } catch (e) { showMessage(e.message, "error"); }
     finally { setUploading(u => ({ ...u, [inv.id]: false })); }
