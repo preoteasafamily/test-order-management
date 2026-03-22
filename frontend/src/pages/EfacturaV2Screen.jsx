@@ -1091,9 +1091,10 @@ const EfacturaV2Screen = ({ API_URL, showMessage }) => {
       if (mtlsRequired === "1") {
         // ANAF a returnat HTTP 500 din cauza lipsei mTLS (certificat digital neprezentat).
         // Deschidem panoul de configurare direct pe tab-ul USB Token cu instrucțiuni.
+        // A nu se folosi ghilimele Unicode în stringuri JS/JSX!
         showMessage(
           "❌ ANAF a returnat HTTP 500 – certificatul digital nu a putut fi prezentat automat de server. " +
-          "Dacă aveți un token hardware USB, folosiți fluxul Postman din tab-ul „Token USB / Postman".",
+          "Dacă aveți un token hardware USB, folosiți fluxul Postman din tab-ul \"Token USB / Postman\".",
           "error"
         );
         setSettingsDefaultTab("usb");
