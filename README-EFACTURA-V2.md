@@ -408,6 +408,30 @@ Dacă mai apare această eroare după actualizare, verificați că:
 - Nu există un proxy invers (nginx/apache) care să re-encodeze body-ul în modul chunked
 - Certificatul mTLS este configurat (fără mTLS, ANAF poate refuza parsarea body-ului)
 
+### Eroare la upload factură în SPV ANAF (token obținut din Postman)
+
+Dacă ați importat cu succes tokenul din Postman, dar la upload primiți eroare, verificați:
+
+| Cod HTTP ANAF | Cauza probabilă | Soluție |
+|---|---|---|
+| 401 Unauthorized | Token invalid, expirat sau format greșit | Reimportați tokenul proaspăt din Postman; nu includeți prefixul `Bearer ` |
+| 403 Forbidden | CIF-ul din setări nu corespunde tokenului sau aplicația ANAF nu are drept de upload | Verificați câmpul CIF din setările SPV-V2 |
+| 415 Unsupported Media Type | XML-ul nu este acceptat de ANAF în formatul trimis | Verificați că factura are toate câmpurile necesare |
+| 422 Unprocessable Entity | Date XML invalide respinse de ANAF | Verificați conținutul facturii (dată, sume, CIF etc.) |
+| 500 Server Error | Eroare internă ANAF (de obicei tranzitorie) | Așteptați și reîncercați |
+
+**Cum să vedeți detaliile erorii:**
+1. Eroarea afișată în UI include acum codul HTTP ANAF (`[ANAF HTTP 401]` etc.) și detalii din body-ul răspunsului.
+2. Log-ul serverului afișează explicit: `[SPV-V2] ❌ Upload factură eșuat – răspuns ANAF: { httpStatus, body, ... }`.
+3. Verificați consola serverului (`npm start` sau `pm2 logs`) pentru detalii complete.
+
+**Tokenul din Postman – ce funcționează și ce nu:**
+- ✅ **Funcționează**: Token obținut în Postman cu „Authorize using Browser" (browserul prezintă certificatul USB, Postman face POST /token cu certificatul configurat în Settings → Certificates), importat ca JSON complet sau doar `access_token` în aplicație.
+- ✅ **Funcționează**: Token obținut cu `curl --cert cert.pem --key key.pem`, importat în aplicație.
+- ✅ **Funcționează**: Prefixul `Bearer ` este eliminat automat dacă este inclus accidental la import.
+- ❌ **Nu funcționează**: Token obținut prin backend fără mTLS configurat (ANAF returnează 500).
+- ❌ **Nu funcționează**: Token expirat (implicit 1 oră de la emitere; verificați `expires_in` din răspunsul ANAF).
+
 ---
 
 ## Configurare Mutual TLS (certificat digital ANAF) {#mutual-tls}
