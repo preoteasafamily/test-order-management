@@ -169,12 +169,25 @@ const fetchMtls = (url, options = {}) => {
     const parsed = new URL(url);
     const mtlsAgent = getMtlsAgent();
 
+    // Calculăm Content-Length din body pentru a evita Transfer-Encoding: chunked.
+    // ANAF returnează 400 "grant_type missing" când primește body chunked
+    // deoarece serverul lor nu parsează corect form-data în modul chunked.
+    const headers = { ...(options.headers || {}) };
+    if (options.body != null) {
+      const bodyStr = Buffer.isBuffer(options.body)
+        ? options.body
+        : (typeof options.body === 'string'
+            ? Buffer.from(options.body, 'utf8')
+            : Buffer.from(String(options.body), 'utf8'));
+      headers['Content-Length'] = bodyStr.length;
+    }
+
     const reqOptions = {
       hostname: parsed.hostname,
       port:     parsed.port || 443,
       path:     parsed.pathname + (parsed.search || ''),
       method:   options.method || 'GET',
-      headers:  options.headers || {},
+      headers,
       // Attach the mTLS agent when available; omit when null so Node uses the default agent
       ...(mtlsAgent ? { agent: mtlsAgent } : {}),
     };
