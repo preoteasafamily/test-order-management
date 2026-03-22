@@ -3,6 +3,9 @@
 Modul complet nou pentru integrarea cu **SPV ANAF** (Spațiul Virtual Privat).
 Construit de la zero cu o arhitectură clară, servicii separate și teste unitare.
 
+**Autentificarea se face EXCLUSIV prin browser** – cheia privată a certificatului
+digital NU trebuie extrasă sau configurată pe server.
+
 ---
 
 ## Cuprins
@@ -11,14 +14,13 @@ Construit de la zero cu o arhitectură clară, servicii separate și teste unita
 2. [Cum funcționează autentificarea ANAF](#autentificare)
 3. [De ce tokenul din Postman returnează 401](#token-401)
 4. [Configurare rapidă](#configurare-rapida)
-5. [Mutual TLS – certificat digital](#mtls)
-6. [Flux OAuth2 complet](#flux-oauth2)
-7. [Import token JWT din Postman](#token-import)
-8. [Upload factură](#upload)
-9. [Endpoint-uri API](#api)
-10. [Variabile de mediu](#env)
-11. [Rulare teste](#teste)
-12. [Depanare](#depanare)
+5. [Flux OAuth2 complet](#flux-oauth2)
+6. [Import token JWT din Postman](#token-import)
+7. [Upload factură](#upload)
+8. [Endpoint-uri API](#api)
+9. [Variabile de mediu](#env)
+10. [Rulare teste](#teste)
+11. [Cauze erori frecvente și troubleshooting](#depanare)
 
 ---
 
@@ -31,10 +33,10 @@ server/
   services/
     efactura-spv-v3/
       config.js               ← Gestionare setări DB, validare token
-      anaf-client.js          ← Client HTTP cu mTLS și retry exponențial
+      anaf-client.js          ← Client HTTP cu retry exponențial (fără mTLS)
       xml-builder.js          ← Generator XML UBL 2.1 CIUS-RO
   tests/
-    efactura-v3.test.js       ← 42 teste unitare (Node built-in assert)
+    efactura-v3.test.js       ← 43 teste unitare (Node built-in assert)
 
 frontend/src/pages/
   EfacturaV3Screen.jsx        ← UI React cu 6 tab-uri
@@ -47,7 +49,7 @@ server/database.js            ← Tabele: spv_v3_settings, spv_v3_action_log
 | Fișier | Responsabilitate |
 |--------|-----------------|
 | `config.js` | Citire/scriere setări din DB, validare JWT, gestionare token |
-| `anaf-client.js` | HTTP cu mTLS (https.Agent), retry exponențial (3×) |
+| `anaf-client.js` | HTTP cu retry exponențial (3×), fără mTLS |
 | `xml-builder.js` | Generare XML UBL 2.1 CIUS-RO din factura billing |
 | `efactura-v3.js` | Rute Express, validare input, orchestrare servicii |
 
@@ -57,11 +59,19 @@ server/database.js            ← Tabele: spv_v3_settings, spv_v3_action_log
 
 ANAF folosește **OAuth2 Authorization Code Grant** cu două particularități esențiale:
 
-### 2.1 Mutual TLS (mTLS)
+### 2.1 Autentificare exclusiv prin browser
 
-La apelul `POST /token` (schimb cod → access_token și refresh_token),
-serverul ANAF `logincert.anaf.ro` impune **Mutual TLS**: clientul trebuie să prezinte
-certificatul digital calificat. Fără certificat, ANAF returnează `HTTP 500`.
+Certificatul digital calificat SPV se utilizează **NUMAI în browser** la pasul de
+autorizare (`GET /authorize`). Browserul gestionează prezentarea certificatului
+nativ (dialog de selectare certificat + PIN). Cheia privată **nu poate și nu trebuie**
+extrasă din token-ul USB hardware.
+
+**De ce nu se poate exporta cheia privată?**
+Token-urile USB de semnătură digitală (ex: SafeNet, eToken, Bit4ID) sunt proiectate să
+**nu permită exportul cheii private** din motive de securitate. Cel mult se poate
+exporta fișierul `.cer` (certificatul public), dar acesta nu este suficient pentru mTLS
+server-side. Prin urmare, autentificarea server-to-server cu mTLS NU este posibilă fără
+cheia privată.
 
 ### 2.2 Token JWT obligatoriu
 
@@ -104,7 +114,7 @@ f7584c01843b44ef373abe83855c53b15357d3bd...
 ### Pasul 1: Înregistrare aplicație la ANAF
 
 1. Accesați: https://logincert.anaf.ro/anaf-oauth2/v1/
-2. Autentificați-vă cu certificatul digital calificat SPV
+2. Autentificați-vă cu certificatul digital calificat SPV **din browser**
 3. Înregistrați aplicație nouă:
    - **Redirect URI**: `https://IP_EXTERN:5000/api/efactura-v3/oauth/callback`
    - **Scope**: `offline_access`
@@ -114,15 +124,13 @@ f7584c01843b44ef373abe83855c53b15357d3bd...
 
 Creați sau editați `server/.env`:
 ```bash
-# Certificat digital pentru mTLS (obligatoriu pentru token exchange)
-ANAF_CERT_PATH=/cale/absoluta/certificat.pem
-ANAF_KEY_PATH=/cale/absoluta/cheie_privata.pem
-ANAF_CERT_PASSPHRASE=parola_optionala  # dacă cheia e criptată
-
 # URL extern accesibil din internet (pentru redirect ANAF)
 PUBLIC_CALLBACK_URL=https://IP_EXTERN:5000
 FRONTEND_URL=https://IP_EXTERN:5000
 ```
+
+> **NOTĂ:** Nu sunt necesare variabile pentru certificate mTLS.
+> Autentificarea se face exclusiv prin browser.
 
 ### Pasul 3: Configurare în aplicație
 
@@ -133,47 +141,20 @@ Accesați UI → **e-Factura SPV-V3** → tab **Setări**:
 - **Public Callback URL**: `https://IP_EXTERN:5000`
 - **Mediu**: `test` pentru testare, `prod` pentru producție
 
----
+### Pasul 4: Obținere token JWT
 
-## 5. Mutual TLS – certificat digital {#mtls}
+Varianta A – prin browser (dacă callback-ul funcționează):
+1. Click **Autentificare ANAF** → Deschide browser
+2. Selectați certificatul, introduceți PIN-ul
+3. Dacă redirect-ul reușește, tokenul e salvat automat
 
-### Exportare certificat în format PEM
-
-```bash
-# Din token USB (SafeNet, eToken, etc.)
-openssl pkcs12 -in certificat.p12 -nokeys -out cert.pem -clcerts
-openssl pkcs12 -in certificat.p12 -nocerts -out key.pem -nodes
-
-# Cu parolă criptată:
-openssl pkcs12 -in certificat.p12 -nocerts -out key.pem
-# (va cere parola)
-```
-
-### Verificare
-
-```bash
-node -e "
-const fs = require('fs');
-const https = require('https');
-const agent = new https.Agent({
-  cert: fs.readFileSync('/cale/cert.pem'),
-  key: fs.readFileSync('/cale/key.pem'),
-});
-console.log('✓ mTLS agent creat cu succes');
-"
-```
-
-### Verificare în diagnosticare
-
-```bash
-curl https://SERVER:5000/api/efactura-v3/oauth/diagnostic | python3 -m json.tool
-```
-
-Căutați `"mtlsConfigured": true` în răspuns.
+Varianta B – prin Postman (recomandat, întotdeauna funcționează):
+1. Urmați instrucțiunile din secțiunea [Import token JWT din Postman](#token-import)
+2. Importați tokenul via `POST /api/efactura-v3/oauth/token-import`
 
 ---
 
-## 6. Flux OAuth2 complet {#flux-oauth2}
+## 5. Flux OAuth2 complet {#flux-oauth2}
 
 ```
 [Browser]
@@ -182,28 +163,34 @@ Căutați `"mtlsConfigured": true` în răspuns.
    │    → { authUrl: "https://logincert.anaf.ro/...?token_content_type=jwt&..." }
    │
    │ 2. Deschide authUrl în browser
-   │    → Autentificare cu certificat digital la ANAF
+   │    → Selectare certificat digital + PIN (browserul gestionează TLS mutual)
    │
    │ 3. ANAF → redirect la /api/efactura-v3/oauth/callback?code=...&state=...
    │
 [Server]
    │
    │ 4. Verifică state (anti-CSRF)
-   │    POST logincert.anaf.ro/token (cu mTLS) → JWT
-   │    Salvează token în DB (spv_v3_settings)
-   │    Logează acțiunea (spv_v3_action_log)
+   │    POST logincert.anaf.ro/token (fără mTLS) → poate returna HTTP 500
+   │    dacă ANAF impune mTLS la acest pas → utilizatorul folosește Postman
    │
-   │ 5. Redirect la FRONTEND_URL?oauth_success=1&section=efactura-v3
+   │ 5a. Dacă exchange reușit: redirect la FRONTEND_URL?oauth_success=1
+   │ 5b. Dacă exchange eșuează: redirect la FRONTEND_URL?oauth_error=...
+   │     → utilizatorul importă tokenul din Postman
    │
 [Browser]
    │
-   │ 6. UI detectează oauth_success → afișează mesaj de succes
-   │    Token JWT e gata pentru upload facturi
+   │ 6. Token JWT valid → upload facturi
 ```
+
+**De ce poate eșua pasul 4?**
+
+ANAF poate impune mTLS la `POST /token`. Fără certificat configurat pe server,
+ANAF returnează HTTP 500. Aceasta este comportarea așteptată când cheia privată
+nu poate fi extrasă din tokenul USB. **Soluția: import token din Postman (Varianta B).**
 
 ---
 
-## 7. Import token JWT din Postman {#token-import}
+## 6. Import token JWT din Postman {#token-import}
 
 ### Configurare Postman
 
@@ -218,7 +205,7 @@ Căutați `"mtlsConfigured": true` în răspuns.
    ```
    token_content_type = jwt
    ```
-4. Click **Get New Access Token** → autentificați cu certificat digital
+4. Click **Get New Access Token** → selectați certificatul digital în browser
 5. Copiați **Access Token** (trebuie să aibă 3 segmente separate prin `.`)
 
 ### Import în aplicație
@@ -235,7 +222,7 @@ curl -X POST https://SERVER:5000/api/efactura-v3/oauth/token-import \
 
 ---
 
-## 8. Upload factură {#upload}
+## 7. Upload factură {#upload}
 
 ### Cerințe
 
@@ -275,7 +262,7 @@ curl -X POST https://SERVER:5000/api/efactura-v3/upload/INVOICE_ID
 
 ---
 
-## 9. Endpoint-uri API {#api}
+## 8. Endpoint-uri API {#api}
 
 Prefix: `/api/efactura-v3`
 
@@ -331,17 +318,12 @@ Prefix: `/api/efactura-v3`
 
 ---
 
-## 10. Variabile de mediu {#env}
+## 9. Variabile de mediu {#env}
 
 ```bash
 # server/.env
 
-# Certificat digital mTLS (OBLIGATORIU pentru token exchange)
-ANAF_CERT_PATH=/cale/absoluta/cert.pem
-ANAF_KEY_PATH=/cale/absoluta/key.pem
-ANAF_CERT_PASSPHRASE=parola_optionala
-
-# URL-uri pentru redirect OAuth2
+# URL-uri pentru redirect OAuth2 (OBLIGATORIU)
 PUBLIC_CALLBACK_URL=https://IP_EXTERN_SAU_DOMENIU:5000
 FRONTEND_URL=https://IP_EXTERN_SAU_DOMENIU:5000
 
@@ -350,9 +332,13 @@ PORT=5000
 TRUST_PROXY=1  # dacă serverul e în spatele proxy/NAT
 ```
 
+> **NOTĂ:** Variabilele `ANAF_CERT_PATH`, `ANAF_KEY_PATH`, `ANAF_CERT_PASSPHRASE`
+> **NU sunt suportate și NU trebuie configurate**. Autentificarea cu certificat
+> digital se face exclusiv prin browser. Cheia privată rămâne pe token-ul USB.
+
 ---
 
-## 11. Rulare teste {#teste}
+## 10. Rulare teste {#teste}
 
 ```bash
 cd server
@@ -366,9 +352,9 @@ Ieșire așteptată:
 ═══ xml-builder.js ═══════════════════════════════════════
   ✓ buildUBL – returns a string
   ✓ buildUBL – starts with XML declaration
-  ... (42 teste în total)
+  ... (43 teste în total)
 
-Results: 42 passed, 0 failed
+Results: 43 passed, 0 failed
 ✅ All tests passed!
 ```
 
@@ -384,9 +370,9 @@ Results: 42 passed, 0 failed
   - vatCategory (S/Z)
   - computeTotals
 
-- **anaf-client.js**: 2 teste
-  - isMtlsConfigured (fără env vars → false)
-  - isMtlsConfigured (fișiere inexistente → false)
+- **anaf-client.js**: 3 teste
+  - Exportă funcțiile `request` și `withRetry`
+  - Nu exportă funcții mTLS (getMtlsAgent, isMtlsConfigured)
 
 - **config helpers**: 10 teste
   - isJwt (valid/opac/gol/null/2 segmente/4 segmente)
@@ -394,31 +380,106 @@ Results: 42 passed, 0 failed
 
 ---
 
-## 12. Depanare {#depanare}
+## 11. Cauze erori frecvente și troubleshooting {#depanare}
 
-### 401 Unauthorized la upload
+### Eroarea `error=access_denied`
+
+**URL exemplu:**
+```
+https://IP:5000/?oauth_error=access_denied&section=efactura-v3
+```
+
+**Cauze posibile:**
+1. Utilizatorul a apăsat "Anulare" la dialogul de selectare certificat în browser
+2. `redirect_uri` din cererea de autorizare nu coincide EXACT cu cel înregistrat la ANAF
+   - Exemplu: `http://` vs `https://`, port lipsă sau diferit, `/` final în plus sau lipsă
+3. Certificatul digital nu are rolul **e-Factura** activat în SPV
+4. Aplicația OAuth2 nu este asociată cu CIF-ul dorit la ANAF
+5. Sesiunea de browser a expirat sau există o problemă cu cookie-urile
+
+**Acțiuni:**
+- Verificați redirect_uri în Setări și la portalul ANAF (trebuie să fie identice caracter cu caracter)
+- Verificați că certificatul are dreptul e-Factura la https://logincert.anaf.ro
+- Reîncercați fluxul de autorizare dintr-o fereastră de browser curată (incognito)
+
+---
+
+### Eroarea `HTTP 500` la schimbul de cod (authorization_code_exchange)
+
+**Simptom în loguri:**
+```
+[SPV-V3] authorization_code_exchange – HTTP 500, retry 1/3 in 1000ms
+[SPV-V3] authorization_code_exchange – HTTP 500, retry 2/3 in 2000ms
+```
+
+**Cauza:**
+ANAF impune Mutual TLS (mTLS) la `POST /token` (schimbul de cod → access_token).
+Serverul backend nu trimite certificat client (cheia privată nu poate fi extrasă
+din token-ul USB), deci ANAF returnează HTTP 500.
+
+**Acesta este comportamentul așteptat** când autentificarea server-to-server nu e posibilă.
+
+**Acțiuni:**
+- **Soluție principală:** Obțineți tokenul JWT prin **Postman** (Postman gestionează
+  selectarea certificatului în browser la pasul de autorizare):
+  1. Configurați Postman conform secțiunii [Import token JWT din Postman](#token-import)
+  2. Importați tokenul via `POST /api/efactura-v3/oauth/token-import`
+
+- **Nu configurați** `ANAF_CERT_PATH`/`ANAF_KEY_PATH` – aceste variabile nu mai sunt suportate
+
+---
+
+### Eroarea `error=Internal server error` (redirect cu eroare)
+
+**URL exemplu:**
+```
+https://IP:5000/?oauth_error=Internal%20server%20error&section=efactura-v3
+```
+
+**Cauza:**
+Schimbul de cod a eșuat pe server (de obicei HTTP 500 de la ANAF, vezi mai sus),
+iar serverul a redirecționat utilizatorul cu mesajul de eroare în URL.
+
+**Acțiuni:**
+- Verificați logurile serverului pentru detalii exacte
+- Urmați aceeași soluție ca la eroarea HTTP 500: importați tokenul din Postman
+
+---
+
+### Eroarea `Cannot GET /`
+
+**Simptom:**
+```
+Cannot GET /
+```
+apare pe fond alb la `https://IP:5000/`
+
+**Cauze:**
+1. `FRONTEND_URL` este setat la adresa serverului backend (port 5000), iar după
+   redirect, Express nu servește niciun fișier la ruta `/`
+2. `FRONTEND_URL` este gol, deci redirect-ul merge la `/` pe serverul backend
+
+**Acțiuni:**
+- Setați `FRONTEND_URL` la URL-ul **frontend-ului** (nu la serverul backend):
+  - În producție (Express servește UI): lăsați gol sau setați la același host
+  - În development (Vite pe port 5173): `FRONTEND_URL=https://IP:5173`
+- Verificați că frontend-ul React este pornit și accesibil la URL-ul configurat
+
+---
+
+### 401 Unauthorized la upload factură
 
 **Cauza 1 (cea mai frecventă):** Token non-JWT.
 - Un token JWT are forma: `xxx.yyy.zzz` (3 segmente base64)
-- Soluție: Importați token JWT cu `token_content_type=jwt` în Postman
+- Soluție: Importați token JWT cu `token_content_type=jwt` din Postman
 
 **Cauza 2:** Token expirat.
-- Soluție: `POST /api/efactura-v3/oauth/refresh` sau autentificați-vă din nou
+- Soluție: `POST /api/efactura-v3/oauth/refresh` sau importați un token nou
 
 **Cauza 3:** CIF incorect sau lipsă.
 - Soluție: Verificați CIF-ul în setări
 
-### 500 la token exchange
-
-**Cauza:** mTLS neconfigurat sau certificat invalid.
-- Soluție: Configurați `ANAF_CERT_PATH` și `ANAF_KEY_PATH` în `server/.env`
-
-### access_denied la autorizare
-
-**Cauze posibile:**
-- `redirect_uri` nu coincide EXACT cu cel înregistrat la ANAF
-- Certificatul digital nu are rolul e-Factura activat în SPV
-- Aplicația OAuth2 nu e asociată cu CIF-ul dorit
+---
 
 ### Diagnostic complet
 
@@ -436,10 +497,11 @@ Răspuns ideal:
     "hasCif": true,
     "hasClientId": true,
     "hasClientSecret": true,
-    "mtlsConfigured": true,
+    "redirectUri": "https://IP:5000/api/efactura-v3/oauth/callback",
     "hasToken": true,
     "tokenIsJwt": true,
-    "tokenExpired": false
+    "tokenExpired": false,
+    "hasRefreshToken": true
   }
 }
 ```
@@ -447,6 +509,19 @@ Răspuns ideal:
 ---
 
 ## Note tehnice
+
+### De ce NU se folosește mTLS server-side
+
+1. **Imposibilitate tehnică**: Token-urile USB hardware de semnătură digitală (SafeNet,
+   eToken, Bit4ID etc.) **nu permit exportul cheii private**. Cel mult se poate exporta
+   fișierul `.cer` (cheia publică), insuficient pentru mTLS.
+
+2. **Securitate**: Extragerea cheii private dintr-un token hardware ar compromite
+   securitatea certificatului digital calificat.
+
+3. **Alternativă funcțională**: Browserul gestionează nativ prezentarea certificatului
+   la pasul `GET /authorize`. Pentru `POST /token`, Postman poate media conexiunea
+   prin browser, obținând un JWT valid care poate fi importat în aplicație.
 
 ### Content-Type upload
 
