@@ -15,14 +15,15 @@ digital NU trebuie extrasă sau configurată pe server.
 3. [De ce tokenul din Postman returnează 401](#token-401)
 4. [Configurare rapidă](#configurare-rapida)
 5. [Flux OAuth2 complet](#flux-oauth2)
-6. [Import token JWT din Postman](#token-import)
-7. [Upload factură](#upload)
-8. [Endpoint-uri API](#api)
-9. [Variabile de mediu](#env)
-10. [Rulare teste](#teste)
-11. [Cauze erori frecvente și troubleshooting](#depanare)
-12. [Auto-Refresh token JWT](#auto-refresh)
-13. [Microserviciu PHP separat (opțional)](#microserviciu-php)
+6. [Meniu Autentificare-Php (tab UI)](#autentificare-php)
+7. [Import token JWT din Postman](#token-import)
+8. [Upload factură](#upload)
+9. [Endpoint-uri API](#api)
+10. [Variabile de mediu](#env)
+11. [Rulare teste – anaf-oauth2.test.js](#teste)
+12. [Cauze erori frecvente și troubleshooting](#depanare)
+13. [Auto-Refresh token JWT](#auto-refresh)
+14. [Microserviciu PHP separat (opțional)](#microserviciu-php)
 
 ---
 
@@ -197,7 +198,69 @@ nu poate fi extrasă din tokenul USB. **Soluția: import token din Postman (Vari
 
 ---
 
-## 6. Import token JWT din Postman {#token-import}
+## 6. Meniu Autentificare-Php (tab UI) {#autentificare-php}
+
+Tab-ul **Autentificare-Php** din modulul SPV V3 oferă un meniu complet pentru
+gestionarea autentificării ANAF, inspirat direct din fluxul PHP documentat public
+de Lorand Szekely (autentificare-oauth-anaf-php) și referit în documentația ANAF.
+
+### 6.1 Unde se găsește
+
+În aplicație → **e-Factura SPV V3** → tab **Autentificare-Php**
+
+### 6.2 Meniu principal – acțiuni disponibile
+
+| Acțiune | Echivalent PHP | Descriere |
+|---------|---------------|-----------|
+| **Autentificare nouă** | `action=new` | Generează URL autorizare ANAF + deschide browser |
+| **Reînnoire token** | `action=refresh` | Reînnoire via refresh_token (fără certificat) |
+| **Info debug token** | `action=info` | Diagnosticare completă: stare, tip JWT, expirare |
+| **Deconectare** | `action=logout` | Șterge tokenul local (logout din SPV) |
+
+### 6.3 Flux complet (PHP → Node.js echivalent)
+
+```
+1. action=new  → GET /api/efactura-v3/oauth/authorize
+               → { authUrl: "https://logincert.anaf.ro/...?token_content_type=jwt" }
+               → Utilizatorul deschide URL în browser, selectează certificat digital
+
+2. Callback    → ANAF trimite: GET /api/efactura-v3/oauth/callback?code=XXX&state=YYY
+               → Serverul verifică state (anti-CSRF), face POST /token
+
+3. Schimb cod  → POST logincert.anaf.ro/anaf-oauth2/v1/token
+               → grant_type=authorization_code
+               → Authorization: Basic base64(client_id:client_secret)
+               → Returnează: access_token (90 zile) + refresh_token (365 zile)
+
+4. action=refresh → POST /api/efactura-v3/oauth/refresh
+                  → grant_type=refresh_token
+                  → Nu necesită certificat digital
+                  → Funcționează chiar dacă access_token a expirat, cât timp refresh_token
+                     este valabil (365 zile de la emiterea tokenului inițial)
+                  → Token nou cu 90 zile valabilitate
+
+5. action=info → GET /api/efactura-v3/oauth/diagnostic
+               → Status token, tip JWT, expirare, mediu, configurare
+```
+
+### 6.4 Status token vizibil
+
+Tab-ul afișează un card de status prominent cu:
+- ✓ **Verde**: token JWT valid și activ (expiră la data X)
+- ⚠ **Portocaliu**: token expirat – necesită reînnoire
+- ✗ **Roșu**: niciun token – necesită autentificare nouă
+
+Badge-uri suplimentare: `Format JWT`, `Activ/Expirat`, `Mediu: test/prod`.
+
+### 6.5 Import token JWT din Postman (alternativă)
+
+Dacă schimbul de cod eșuează (ANAF returnează HTTP 500 la token exchange),
+importați manual tokenul JWT obținut din Postman sau curl. Formularul de import
+este disponibil direct în tab-ul **Autentificare-Php**.
+
+---
+
+## 7. Import token JWT din Postman {#token-import}
 
 ### Configurare Postman
 
@@ -345,62 +408,79 @@ TRUST_PROXY=1  # dacă serverul e în spatele proxy/NAT
 
 ---
 
-## 10. Rulare teste {#teste}
+## 11. Rulare teste – anaf-oauth2.test.js {#teste}
+
+### Locație fișier teste
+
+```
+server/
+  tests/
+    anaf-oauth2.test.js   ← 53 teste pentru token-manager (OAuth2 flow)
+    efactura-v3.test.js   ← 43 teste pentru module SPV v3 (XML, config, client)
+```
+
+### Cum se rulează
 
 ```bash
 cd server
-npm test
-# sau separat:
-node tests/efactura-v3.test.js
+
+# Teste OAuth2 (anaf-oauth2.test.js):
 node tests/anaf-oauth2.test.js
+# sau via npm script:
+npm run test:oauth2
+
+# Teste SPV v3 (efactura-v3.test.js):
+node tests/efactura-v3.test.js
+# sau via npm script:
+npm run test:v3
+
+# Toate testele:
+npm test
 ```
 
-Ieșire așteptată:
-```
-═══ xml-builder.js ═══════════════════════════════════════
-  ✓ buildUBL – returns a string
-  ... (43 teste efactura-v3)
-Results: 43 passed, 0 failed
-✅ All tests passed!
+### Ieșire așteptată – anaf-oauth2.test.js
 
-═══ token-manager exports ═══════════════════════════════════
+```
+═══ token-manager exports ══════════════════════════════════
   ✓ module exports ANAF_AUTH_URL
-  ... (53 teste anaf-oauth2)
+  ✓ module exports ANAF_TOKEN_URL
+  ✓ module exports isJwt function
+  ✓ module exports buildAuthUrl function
+  ✓ module exports exchangeCode function
+  ✓ module exports refreshAccessToken function
+  ✓ module exports scheduleAutoRefresh function
+  ✓ module exports saveTokenToFile function
+  ✓ module exports loadTokenFromFile function
+  ✓ module does NOT export mTLS functions
+  ... (53 teste total)
 Results: 53 passed, 0 failed
 ✅ All tests passed!
 ```
 
-### Ce se testează
+### Ce se testează (anaf-oauth2.test.js – 53 teste)
 
-- **xml-builder.js**: 30 teste
-  - Structura XML (namespace, CustomizationID, InvoiceTypeCode)
-  - Calculul TVA (grupare pe cote, totale)
-  - Escape caractere speciale XML
-  - Prioritate date snapshot vs câmpuri BT
-  - Facturi cu mai multe linii și cote mixte
-  - stripSchemaLocation
-  - vatCategory (S/Z)
-  - computeTotals
+**Fișier**: `server/tests/anaf-oauth2.test.js`  
+**Modul testat**: `server/services/anaf-oauth2/token-manager.js`
 
-- **anaf-client.js**: 3 teste
-  - Exportă funcțiile `request` și `withRetry`
-  - Nu exportă funcții mTLS (getMtlsAgent, isMtlsConfigured)
+- **Exports corecte**: Verifică că modulul exportă funcțiile necesare și NU exportă funcții mTLS
+- **isJwt**: valid JWT / token opac (hex) / gol / null / undefined / 2 segmente / 4 segmente
+- **isExpired**: token null / fără expirare / expirat în trecut / valid în viitor
+- **expiresWithin**: margine de reînnoire (5 min vs 10 min margin)
+- **buildAuthUrl**: include `token_content_type=jwt`, `response_type=code`, `scope=offline_access`, state unic per apel; throws dacă lipsesc clientId sau redirectUri
+- **exchangeCode**: validare parametri obligatorii (code, redirectUri, clientId, clientSecret)
+- **refreshAccessToken**: validare parametri obligatorii (refreshToken, clientId, clientSecret)
+- **scheduleAutoRefresh**: validare callbacks, returnează funcție stop
+- **saveTokenToFile / loadTokenFromFile**: roundtrip criptat, permisiuni 0o600, cheie greșită returnează null
 
-- **config helpers**: 10 teste
-  - isJwt (valid/opac/gol/null/2 segmente/4 segmente)
-  - isTokenExpired (fără dată/dată în trecut/dată în viitor)
+### Ce se testează (efactura-v3.test.js – 43 teste)
 
-- **token-manager.js**: 53 teste
-  - Exports corecte (fără funcții mTLS)
-  - isJwt, isExpired, expiresWithin
-  - buildAuthUrl (token_content_type=jwt, state unic, validări)
-  - exchangeCode / refreshAccessToken (validări parametri)
-  - scheduleAutoRefresh (validări, stop funcție)
-  - saveTokenToFile / loadTokenFromFile (roundtrip, permisiuni, cheie greșită)
+- **xml-builder.js**: 30 teste – structură XML, TVA, escape caractere, linii multiple
+- **anaf-client.js**: 3 teste – exports corecte, fără mTLS
+- **config helpers**: 10 teste – isJwt, isTokenExpired
 
 ---
 
-## 11. Cauze erori frecvente și troubleshooting {#depanare}
+## 12. Cauze erori frecvente și troubleshooting {#depanare}
 
 ### Eroarea `error=access_denied`
 
