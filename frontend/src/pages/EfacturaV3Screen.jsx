@@ -4,7 +4,7 @@
  * Ecranul principal pentru modulul E-Factura SPV-V3.
  *
  * Modul complet nou (clean slate) cu:
- *   - Autentificare OAuth2 ANAF cu suport mTLS
+ *   - Autentificare OAuth2 ANAF exclusiv prin browser (fără mTLS)
  *   - Import token JWT din Postman/curl
  *   - Încărcare facturi XML UBL 2.1 CIUS-RO
  *   - Verificare stare, descărcare răspuns

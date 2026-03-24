@@ -21,6 +21,8 @@ digital NU trebuie extrasă sau configurată pe server.
 9. [Variabile de mediu](#env)
 10. [Rulare teste](#teste)
 11. [Cauze erori frecvente și troubleshooting](#depanare)
+12. [Auto-Refresh token JWT](#auto-refresh)
+13. [Microserviciu PHP separat (opțional)](#microserviciu-php)
 
 ---
 
@@ -31,12 +33,16 @@ server/
   routes/
     efactura-v3.js            ← Rute Express (strat subțire)
   services/
+    anaf-oauth2/
+      token-manager.js        ← Modul standalone JWT: buildAuthUrl, exchangeCode,
+                                 refreshAccessToken, scheduleAutoRefresh, stocare criptată
     efactura-spv-v3/
       config.js               ← Gestionare setări DB, validare token
       anaf-client.js          ← Client HTTP cu retry exponențial (fără mTLS)
       xml-builder.js          ← Generator XML UBL 2.1 CIUS-RO
   tests/
     efactura-v3.test.js       ← 43 teste unitare (Node built-in assert)
+    anaf-oauth2.test.js       ← 53 teste pentru token-manager
 
 frontend/src/pages/
   EfacturaV3Screen.jsx        ← UI React cu 6 tab-uri
@@ -48,6 +54,7 @@ server/database.js            ← Tabele: spv_v3_settings, spv_v3_action_log
 
 | Fișier | Responsabilitate |
 |--------|-----------------|
+| `services/anaf-oauth2/token-manager.js` | Nucleul OAuth2: buildAuthUrl, exchangeCode, refresh, auto-refresh, stocare criptată |
 | `config.js` | Citire/scriere setări din DB, validare JWT, gestionare token |
 | `anaf-client.js` | HTTP cu retry exponențial (3×), fără mTLS |
 | `xml-builder.js` | Generare XML UBL 2.1 CIUS-RO din factura billing |
@@ -343,18 +350,23 @@ TRUST_PROXY=1  # dacă serverul e în spatele proxy/NAT
 ```bash
 cd server
 npm test
-# sau
+# sau separat:
 node tests/efactura-v3.test.js
+node tests/anaf-oauth2.test.js
 ```
 
 Ieșire așteptată:
 ```
 ═══ xml-builder.js ═══════════════════════════════════════
   ✓ buildUBL – returns a string
-  ✓ buildUBL – starts with XML declaration
-  ... (43 teste în total)
-
+  ... (43 teste efactura-v3)
 Results: 43 passed, 0 failed
+✅ All tests passed!
+
+═══ token-manager exports ═══════════════════════════════════
+  ✓ module exports ANAF_AUTH_URL
+  ... (53 teste anaf-oauth2)
+Results: 53 passed, 0 failed
 ✅ All tests passed!
 ```
 
@@ -377,6 +389,14 @@ Results: 43 passed, 0 failed
 - **config helpers**: 10 teste
   - isJwt (valid/opac/gol/null/2 segmente/4 segmente)
   - isTokenExpired (fără dată/dată în trecut/dată în viitor)
+
+- **token-manager.js**: 53 teste
+  - Exports corecte (fără funcții mTLS)
+  - isJwt, isExpired, expiresWithin
+  - buildAuthUrl (token_content_type=jwt, state unic, validări)
+  - exchangeCode / refreshAccessToken (validări parametri)
+  - scheduleAutoRefresh (validări, stop funcție)
+  - saveTokenToFile / loadTokenFromFile (roundtrip, permisiuni, cheie greșită)
 
 ---
 
@@ -561,3 +581,221 @@ spv_v3_action_log (id, action, details, success, error_message, created_at)
 ```
 
 Mesajele SPV sunt stocate în `spv_messages` (tabel comun cu V2).
+
+---
+
+## 12. Auto-Refresh token JWT {#auto-refresh}
+
+Modulul pornește automat un scheduler de reînnoire a tokenului în background.
+Verifică la fiecare **1 minut** dacă tokenul expiră în mai puțin de **10 minute**
+și, dacă da, îl reînnoiește automat cu `refresh_token`.
+
+### Cum funcționează
+
+```
+[Server startup]
+       │
+       │ efactura-v3.js importat → scheduleAutoRefresh() pornit
+       │
+[La fiecare 60s]
+       │
+       │ Citește tokenul din DB
+       │ Dacă token expiră în < 10 min și există refresh_token:
+       │   → POST /token cu refresh_token → token nou JWT
+       │   → Salvat în DB
+       │   → Logat în spv_v3_action_log (oauth_token_auto_refreshed)
+       │
+[La SIGTERM/SIGINT]
+       │
+       └─ Scheduler oprit
+```
+
+### Condiții pentru auto-refresh
+
+1. Token JWT valid stocat în DB
+2. `refresh_token` disponibil
+3. `client_id` și `client_secret` configurate în Setări
+4. Token expiră în mai puțin de 10 minute
+
+### Dacă auto-refresh eșuează
+
+- Eroarea este logată în `spv_v3_action_log` (acțiunea `oauth_auto_refresh_failed`)
+- Eroarea apare și în logurile serverului: `[SPV-V3] Auto-refresh eșuat: ...`
+- Tokenul vechi rămâne în DB până expiră
+- Soluție: autentificați-vă din nou sau importați un token nou din Postman
+
+---
+
+## 13. Microserviciu PHP separat (opțional) {#microserviciu-php}
+
+Dacă doriți să rulați componenta de autentificare ANAF ca microserviciu PHP
+separat (inspirat din exemplul Lorand Szekely), mai jos sunt cerințele și structura.
+
+> **NOTĂ**: Modulul Node.js curent este complet funcțional și nu necesită PHP.
+> Această secțiune este pentru echipele care preferă PHP sau doresc un microserviciu dedicat.
+
+### Cerințe server PHP
+
+```
+PHP >= 7.4
+  - ext-curl       (pentru requesturi HTTPS)
+  - ext-json       (pentru parsare răspunsuri)
+  - ext-openssl    (pentru generare state randomizat)
+
+Composer packages:
+  - (opțional) guzzlehttp/guzzle ^7.0  – client HTTP mai elegant
+  - (opțional) firebase/php-jwt        – decodare token JWT local
+```
+
+### Instalare dependențe PHP
+
+```bash
+composer require guzzlehttp/guzzle firebase/php-jwt
+```
+
+### Structura microserviciu PHP
+
+```
+anaf-oauth2-php/
+  .env                    ← CLIENT_ID, CLIENT_SECRET, REDIRECT_URI, FRONTEND_URL
+  index.php               ← Entry point (routing)
+  src/
+    AnafOAuth2.php        ← Clasă principală OAuth2 (buildAuthUrl, exchangeCode, refresh)
+    TokenStorage.php      ← Stocare token (DB sau fișier criptat)
+    routes/
+      authorize.php       ← GET /authorize → redirect la ANAF
+      callback.php        ← GET /callback  → schimb cod → token
+      refresh.php         ← POST /refresh  → reînnoire token
+      token-import.php    ← POST /token-import → import din Postman
+      status.php          ← GET /status    → verificare stare
+```
+
+### Flux PHP (AnafOAuth2.php)
+
+```php
+<?php
+// Pasul 1: Generare URL autorizare (cu token_content_type=jwt OBLIGATORIU)
+function buildAuthUrl(string $clientId, string $redirectUri): array {
+    $state = bin2hex(random_bytes(32));  // anti-CSRF
+    $_SESSION['oauth_state'] = $state;
+
+    $params = http_build_query([
+        'response_type'     => 'code',
+        'client_id'         => $clientId,
+        'redirect_uri'      => $redirectUri,
+        'scope'             => 'offline_access',
+        'state'             => $state,
+        'token_content_type' => 'jwt',  // CRITIC
+    ]);
+    return [
+        'authUrl' => 'https://logincert.anaf.ro/anaf-oauth2/v1/authorize?' . $params,
+        'state'   => $state,
+    ];
+}
+
+// Pasul 2: Schimb cod → token (fără mTLS)
+function exchangeCode(string $code, string $redirectUri, string $clientId, string $clientSecret): array {
+    $ch = curl_init('https://logincert.anaf.ro/anaf-oauth2/v1/token');
+    curl_setopt_array($ch, [
+        CURLOPT_POST           => true,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER     => [
+            'Content-Type: application/x-www-form-urlencoded',
+            'Authorization: Basic ' . base64_encode("$clientId:$clientSecret"),
+        ],
+        CURLOPT_POSTFIELDS     => http_build_query([
+            'grant_type'   => 'authorization_code',
+            'code'         => $code,
+            'redirect_uri' => $redirectUri,
+        ]),
+    ]);
+    $raw  = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($code >= 500) {
+        throw new Exception("ANAF HTTP $code – importați tokenul JWT din Postman.");
+    }
+    $data = json_decode($raw, true);
+    if (empty($data['access_token'])) {
+        throw new Exception('Răspuns invalid ANAF: lipsă access_token.');
+    }
+    return $data;
+}
+
+// Pasul 3: Refresh token
+function refreshToken(string $refreshToken, string $clientId, string $clientSecret): array {
+    // identic cu exchangeCode dar cu grant_type=refresh_token
+}
+```
+
+### Endpoint-uri PHP recomandate
+
+| Metodă | Rută | Descriere |
+|--------|------|-----------|
+| GET | `/authorize` | Redirect la ANAF (generează state anti-CSRF) |
+| GET | `/callback` | Primește codul, face schimbul, salvează token |
+| POST | `/refresh` | Reînnoire token cu refresh_token |
+| POST | `/token-import` | Import token din Postman |
+| GET | `/status` | Verificare stare token |
+
+### Stocare token PHP (TokenStorage.php)
+
+```php
+<?php
+class TokenStorage {
+    private PDO $db;  // SQLite sau MySQL
+
+    // Stocare în DB (preferată)
+    public function saveToken(array $data): void {
+        $stmt = $this->db->prepare(
+            'UPDATE oauth_tokens SET access_token=?, refresh_token=?, expires_at=? WHERE id=1'
+        );
+        $expiresAt = date('Y-m-d H:i:s', time() + ($data['expires_in'] ?? 3600));
+        $stmt->execute([$data['access_token'], $data['refresh_token'], $expiresAt]);
+    }
+
+    // Fallback: fișier criptat AES-256-GCM
+    public function saveTokenToFile(array $data, string $path): void {
+        $key     = $this->getOrCreateKey($path);
+        $iv      = random_bytes(12);
+        $payload = json_encode($data);
+        $encrypted = openssl_encrypt($payload, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag);
+        file_put_contents($path, json_encode([
+            'iv'   => bin2hex($iv),
+            'tag'  => bin2hex($tag),
+            'data' => bin2hex($encrypted),
+        ]), LOCK_EX);
+        chmod($path, 0600);
+    }
+}
+```
+
+### Rulare microserviciu PHP cu PHP built-in server
+
+```bash
+cd anaf-oauth2-php
+cp .env.example .env
+# Editați .env cu CLIENT_ID, CLIENT_SECRET, REDIRECT_URI
+
+php -S 0.0.0.0:8080 index.php
+# Accesibil la http://localhost:8080/
+```
+
+### Integrare cu Nginx (producție)
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name anaf-oauth.myserver.ro;
+
+    location / {
+        fastcgi_pass 127.0.0.1:9000;
+        fastcgi_param SCRIPT_FILENAME /var/www/anaf-oauth2-php/index.php;
+        include fastcgi_params;
+    }
+}
+```
+
+> **IMPORTANT**: Nu configurați certificat client SSL (`ssl_certificate_key` pentru mTLS client)
+> în Nginx. Autentificarea se face EXCLUSIV prin browser.
