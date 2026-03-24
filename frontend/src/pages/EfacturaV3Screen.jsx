@@ -20,6 +20,7 @@ import {
   Clock, AlertTriangle, FileText, FileCode, ChevronDown, ChevronUp,
   Send, Inbox, Eye, X, Info, Key, ExternalLink, ShieldCheck,
   Copy, Globe, Shield, Clipboard, Trash2, Plus, Activity,
+  Terminal, LogOut, Zap, BookOpen,
 } from "lucide-react";
 
 // ─── Status config ────────────────────────────────────────────────────────────
@@ -393,12 +394,13 @@ const EfacturaV3Screen = ({ apiUrl }) => {
   // ─────────────────────────────────────────────────────────────────────────
 
   const tabs = [
-    { id: "invoices",   label: "Facturi",      icon: FileText },
-    { id: "auth",       label: "Autentificare", icon: Key },
-    { id: "settings",   label: "Setări",        icon: Settings },
-    { id: "messages",   label: "Mesaje SPV",    icon: Inbox },
-    { id: "diagnostic", label: "Diagnosticare", icon: Activity },
-    { id: "log",        label: "Jurnal",        icon: Clock },
+    { id: "invoices",   label: "Facturi",           icon: FileText },
+    { id: "auth",       label: "Autentificare",      icon: Key },
+    { id: "auth-php",   label: "Autentificare-Php",  icon: Terminal },
+    { id: "settings",   label: "Setări",             icon: Settings },
+    { id: "messages",   label: "Mesaje SPV",         icon: Inbox },
+    { id: "diagnostic", label: "Diagnosticare",      icon: Activity },
+    { id: "log",        label: "Jurnal",             icon: Clock },
   ];
 
   return (
@@ -743,6 +745,378 @@ const EfacturaV3Screen = ({ apiUrl }) => {
                 </button>
               </form>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB: AUTENTIFICARE-PHP ──────────────────────────────────────────── */}
+      {activeTab === "auth-php" && (
+        <div className="space-y-6">
+
+          {/* Titlu și descriere */}
+          <div className="bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl border border-indigo-100 p-5">
+            <div className="flex items-start gap-3">
+              <Terminal className="w-7 h-7 text-indigo-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <h2 className="text-lg font-bold text-indigo-900">Autentificare ANAF – Flux complet (inspirat din PHP)</h2>
+                <p className="text-sm text-indigo-700 mt-1">
+                  Meniu complet pentru gestionarea autentificării ANAF OAuth2, bazat pe fluxul demonstrat în exemple PHP.
+                  Toate operațiunile se efectuează exclusiv prin browser (fără mTLS / fără extragere cheie privată din stick).
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* STATUS TOKEN – card proeminent */}
+          <div className={`rounded-xl border-2 p-5 ${
+            tokenReady
+              ? "bg-green-50 border-green-300"
+              : settings?.tokenExpired
+                ? "bg-orange-50 border-orange-300"
+                : "bg-red-50 border-red-200"
+          }`}>
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div className="flex items-start gap-3">
+                {tokenReady
+                  ? <ShieldCheck className="w-8 h-8 text-green-600 flex-shrink-0" />
+                  : settings?.tokenExpired
+                    ? <AlertTriangle className="w-8 h-8 text-orange-500 flex-shrink-0" />
+                    : <XCircle className="w-8 h-8 text-red-500 flex-shrink-0" />
+                }
+                <div>
+                  <p className={`font-bold text-lg ${
+                    tokenReady ? "text-green-800" : settings?.tokenExpired ? "text-orange-800" : "text-red-800"
+                  }`}>
+                    {tokenReady
+                      ? "✓ Autentificat în ANAF SPV"
+                      : settings?.tokenExpired
+                        ? "⚠ Token expirat – reînnoire necesară"
+                        : "✗ Neautentificat"}
+                  </p>
+                  <p className="text-sm mt-0.5 text-gray-600">
+                    {tokenReady
+                      ? `Token JWT valid · Expiră: ${settings?.tokenExpiresAt ? new Date(settings.tokenExpiresAt).toLocaleString("ro-RO") : "—"}`
+                      : settings?.hasToken && !settings?.tokenIsJwt
+                        ? "Tokenul stocat nu este JWT. Importați un token JWT (cu 3 segmente base64 separate prin punct)."
+                        : settings?.tokenExpired
+                          ? "Tokenul a expirat. Folosiți «Reînnoire token» sau porniți un flux nou."
+                          : "Niciun token. Porniți fluxul de autentificare din Pasul 1."
+                    }
+                  </p>
+                  {settings?.hasToken && (
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                      <span className={`px-2 py-0.5 rounded-full font-medium ${settings.tokenIsJwt ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                        {settings.tokenIsJwt ? "✓ Format JWT" : "✗ Nu este JWT"}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full font-medium ${!settings.tokenExpired ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"}`}>
+                        {settings.tokenExpired ? "⚠ Expirat" : "✓ Activ"}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
+                        Mediu: {settings?.environment || "test"}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Acțiuni rapide status */}
+              <div className="flex flex-wrap gap-2">
+                {settings?.hasToken && settings?.tokenExpiresAt && (
+                  <button
+                    onClick={refreshToken}
+                    disabled={loading}
+                    className="flex items-center gap-1.5 px-3 py-2 text-sm bg-white border border-orange-300 text-orange-700 rounded-lg hover:bg-orange-50 disabled:opacity-50 font-medium"
+                  >
+                    <RefreshCw className="w-4 h-4" /> Reînnoire token
+                  </button>
+                )}
+                {settings?.hasToken && (
+                  <button
+                    onClick={clearToken}
+                    className="flex items-center gap-1.5 px-3 py-2 text-sm bg-white border border-red-200 text-red-600 rounded-lg hover:bg-red-50 font-medium"
+                  >
+                    <LogOut className="w-4 h-4" /> Deconectare
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* MENIU PRINCIPAL – Pași flux OAuth2 (inspirat din PHP) */}
+          <div className="bg-white rounded-xl border shadow-sm p-5">
+            <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <Zap className="w-5 h-5 text-blue-500" />
+              Meniu Autentificare ANAF – Flux complet OAuth2
+            </h3>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+
+              {/* Acțiunea 1: Autentificare nouă */}
+              <div className="flex flex-col gap-3 p-4 bg-blue-50 rounded-xl border border-blue-100">
+                <div className="flex items-center gap-2">
+                  <span className="w-7 h-7 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">1</span>
+                  <span className="font-semibold text-blue-900 text-sm">Autentificare nouă</span>
+                </div>
+                <p className="text-xs text-blue-700">
+                  Generați URL-ul ANAF și autentificați-vă cu certificatul digital calificat în browser.
+                  <br /><span className="font-mono text-xs opacity-70">→ action=new</span>
+                </p>
+                <button
+                  onClick={getAuthUrl}
+                  disabled={loading}
+                  className="mt-auto w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+                >
+                  <Globe className="w-4 h-4" />
+                  Generează URL autorizare
+                </button>
+                {authUrl && (
+                  <button
+                    onClick={openAuthUrl}
+                    className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white border border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 text-xs"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    Deschide din nou
+                  </button>
+                )}
+              </div>
+
+              {/* Acțiunea 2: Reînnoire token */}
+              <div className="flex flex-col gap-3 p-4 bg-orange-50 rounded-xl border border-orange-100">
+                <div className="flex items-center gap-2">
+                  <span className="w-7 h-7 bg-orange-500 text-white rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">2</span>
+                  <span className="font-semibold text-orange-900 text-sm">Reînnoire token</span>
+                </div>
+                <p className="text-xs text-orange-700">
+                  Obțineți un token de acces nou folosind refresh_token, fără certificat digital.
+                  Funcționează chiar dacă access_token a expirat, cât timp refresh_token este valabil (365 zile de la emitere).
+                  <br /><span className="font-mono text-xs opacity-70">→ action=refresh</span>
+                </p>
+                <button
+                  onClick={refreshToken}
+                  disabled={loading || !settings?.hasToken}
+                  className="mt-auto w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50 text-sm font-medium"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Reînnoire token
+                </button>
+              </div>
+
+              {/* Acțiunea 3: Info / Status token */}
+              <div className="flex flex-col gap-3 p-4 bg-purple-50 rounded-xl border border-purple-100">
+                <div className="flex items-center gap-2">
+                  <span className="w-7 h-7 bg-purple-600 text-white rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">3</span>
+                  <span className="font-semibold text-purple-900 text-sm">Info debug token</span>
+                </div>
+                <p className="text-xs text-purple-700">
+                  Vizualizați detalii complete despre configurare: stare token, tip, expirare, mediu.
+                  Util pentru depanare și audit.
+                  <br /><span className="font-mono text-xs opacity-70">→ action=info</span>
+                </p>
+                <button
+                  onClick={() => { loadDiagnostic(); setActiveTab("diagnostic"); }}
+                  className="mt-auto w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium"
+                >
+                  <Activity className="w-4 h-4" />
+                  Diagnosticare completă
+                </button>
+              </div>
+
+              {/* Acțiunea 4: Deconectare */}
+              <div className="flex flex-col gap-3 p-4 bg-red-50 rounded-xl border border-red-100">
+                <div className="flex items-center gap-2">
+                  <span className="w-7 h-7 bg-red-500 text-white rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">4</span>
+                  <span className="font-semibold text-red-900 text-sm">Deconectare</span>
+                </div>
+                <p className="text-xs text-red-700">
+                  Ștergeți tokenul salvat local. Modulul SPV va fi deconectat. Va fi necesară o nouă autentificare.
+                  <br /><span className="font-mono text-xs opacity-70">→ action=logout</span>
+                </p>
+                <button
+                  onClick={clearToken}
+                  disabled={!settings?.hasToken}
+                  className="mt-auto w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 text-sm font-medium"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Deconectare
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* URL autorizare generat */}
+          {authUrl && (
+            <div className="bg-white rounded-xl border shadow-sm p-5 space-y-3">
+              <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+                <Globe className="w-4 h-4 text-blue-500" />
+                URL autorizare generat (copiați în browser cu certificat)
+              </h3>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={authUrl}
+                  readOnly
+                  className="flex-1 text-xs bg-gray-50 border rounded px-3 py-2 font-mono"
+                />
+                <button
+                  onClick={() => navigator.clipboard.writeText(authUrl)}
+                  className="p-2 hover:bg-gray-100 rounded border"
+                  title="Copiați URL"
+                >
+                  <Copy className="w-4 h-4" />
+                </button>
+              </div>
+              <button
+                onClick={openAuthUrl}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+              >
+                <ExternalLink className="w-4 h-4" />
+                Deschide browser nou (autentificare cu certificat digital)
+              </button>
+              <Alert type="info">
+                <p className="font-medium mb-1">Pași de urmat după deschiderea browserului:</p>
+                <ol className="list-decimal list-inside space-y-1 text-xs">
+                  <li>Selectați certificatul digital calificat din lista browserului</li>
+                  <li>Introduceți PIN-ul token-ului USB dacă este solicitat</li>
+                  <li>ANAF va redirecta automat înapoi – token-ul este salvat</li>
+                  <li>Pagina curentă va afișa statusul «Autentificat»</li>
+                </ol>
+              </Alert>
+            </div>
+          )}
+
+          {/* Flux PHP documentat */}
+          <div className="bg-white rounded-xl border shadow-sm p-5 space-y-4">
+            <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-indigo-500" />
+              Flux OAuth2 ANAF – Referință PHP (implementare echivalentă în Node.js)
+            </h3>
+            <div className="space-y-3 text-sm text-gray-700">
+              <div className="flex gap-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                <span className="font-mono text-blue-600 font-bold text-xs whitespace-nowrap mt-0.5">Pas 1</span>
+                <div>
+                  <p className="font-medium text-blue-900">Inițiere autentificare (action=new)</p>
+                  <p className="text-xs text-blue-700 mt-0.5">
+                    Se generează URL-ul de autorizare ANAF cu <code className="bg-blue-100 px-1 rounded">response_type=code&amp;token_content_type=jwt</code>.
+                    Utilizatorul este redirectat în browser unde se autentifică cu certificatul digital.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-3 p-3 bg-cyan-50 rounded-lg border border-cyan-100">
+                <span className="font-mono text-cyan-600 font-bold text-xs whitespace-nowrap mt-0.5">Pas 2</span>
+                <div>
+                  <p className="font-medium text-cyan-900">Callback – primire cod de autorizare</p>
+                  <p className="text-xs text-cyan-700 mt-0.5">
+                    ANAF apelează <code className="bg-cyan-100 px-1 rounded">/api/efactura-v3/oauth/callback?code=XXX&amp;state=YYY</code>.
+                    Serverul verifică parametrul <code className="bg-cyan-100 px-1 rounded">state</code> anti-CSRF.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-3 p-3 bg-green-50 rounded-lg border border-green-100">
+                <span className="font-mono text-green-600 font-bold text-xs whitespace-nowrap mt-0.5">Pas 3</span>
+                <div>
+                  <p className="font-medium text-green-900">Schimb cod → token (grant_type=authorization_code)</p>
+                  <p className="text-xs text-green-700 mt-0.5">
+                    POST la <code className="bg-green-100 px-1 rounded">https://logincert.anaf.ro/anaf-oauth2/v1/token</code> cu
+                    <code className="bg-green-100 px-1 rounded ml-1">Authorization: Basic base64(client_id:client_secret)</code>.
+                    Returnează <strong>access_token</strong> (90 zile) și <strong>refresh_token</strong> (365 zile).
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-3 p-3 bg-orange-50 rounded-lg border border-orange-100">
+                <span className="font-mono text-orange-600 font-bold text-xs whitespace-nowrap mt-0.5">Pas 4</span>
+                <div>
+                  <p className="font-medium text-orange-900">Reînnoire token (action=refresh)</p>
+                  <p className="text-xs text-orange-700 mt-0.5">
+                    Înainte de expirare, POST cu <code className="bg-orange-100 px-1 rounded">grant_type=refresh_token</code>.
+                    Nu necesită certificat digital – se face automat din backend.
+                    Token-ul nou are o nouă perioadă de valabilitate de 90 de zile.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Import token JWT din Postman */}
+          <div className="bg-white rounded-xl border shadow-sm p-5 space-y-4">
+            <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+              <Clipboard className="w-4 h-4 text-purple-500" />
+              Import token JWT din Postman / curl (alternativă)
+            </h3>
+            <Alert type="warning">
+              <p className="font-medium mb-1">Obligatoriu în Postman:</p>
+              <p className="text-xs">
+                La cererea de token, adăugați parametrul extra: <code className="bg-yellow-100 px-1 rounded font-mono">token_content_type = jwt</code><br />
+                Fără acest parametru, ANAF emite un token opac (hex) care returnează <strong>401</strong> la orice apel API.
+              </p>
+            </Alert>
+            <form onSubmit={importJwt} className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Access Token JWT <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={importToken.access_token}
+                  onChange={(e) => setImportToken((p) => ({ ...p, access_token: e.target.value }))}
+                  placeholder="eyJhbGciOiJSUz..."
+                  rows={3}
+                  required
+                  className="w-full text-xs border rounded-lg px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-purple-300"
+                />
+                <p className="text-xs text-gray-400 mt-0.5">Trebuie să aibă 3 segmente base64 separate prin punct (header.payload.signature)</p>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Refresh Token (opțional)</label>
+                  <input
+                    type="text"
+                    value={importToken.refresh_token}
+                    onChange={(e) => setImportToken((p) => ({ ...p, refresh_token: e.target.value }))}
+                    placeholder="refresh_token_..."
+                    className="w-full text-xs border rounded-lg px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-purple-300"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Valabilitate (secunde)</label>
+                  <input
+                    type="number"
+                    value={importToken.expires_in}
+                    onChange={(e) => setImportToken((p) => ({ ...p, expires_in: e.target.value }))}
+                    placeholder="3600"
+                    className="w-full text-xs border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-300"
+                  />
+                </div>
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 font-medium text-sm"
+              >
+                <Clipboard className="w-4 h-4" />
+                Importă Token JWT
+              </button>
+            </form>
+          </div>
+
+          {/* Teste și diagnosticare */}
+          <div className="bg-white rounded-xl border shadow-sm p-5 space-y-3">
+            <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+              <Terminal className="w-4 h-4 text-gray-500" />
+              Script de diagnosticare – <code className="text-xs bg-gray-100 px-1 rounded">anaf-oauth2.test.js</code>
+            </h3>
+            <div className="bg-gray-900 rounded-lg p-4 text-xs font-mono text-green-400 space-y-1">
+              <p className="text-gray-400"># Rulare teste unitare OAuth2 (din directorul server/):</p>
+              <p>cd server</p>
+              <p>node tests/anaf-oauth2.test.js</p>
+              <p className="text-gray-400 mt-2"># Sau via npm script:</p>
+              <p>npm run test:oauth2</p>
+              <p className="text-gray-400 mt-2"># Toate testele:</p>
+              <p>npm test</p>
+            </div>
+            <p className="text-xs text-gray-600">
+              Fișierul <code className="bg-gray-100 px-1 rounded">server/tests/anaf-oauth2.test.js</code> conține teste unitare pentru
+              modulul <code className="bg-gray-100 px-1 rounded">services/anaf-oauth2/token-manager.js</code>:
+              validare JWT, construire URL autorizare, schimb cod-token, refresh token, stocare criptată.
+              Consultați <strong>README-EFACTURA-V3.md</strong> pentru documentație completă.
+            </p>
           </div>
         </div>
       )}
