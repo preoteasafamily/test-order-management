@@ -397,6 +397,11 @@ const refreshAccessToken = async ({ refreshToken, clientId, clientSecret }) => {
  * Apel intern la endpoint-ul ANAF /token cu Basic Auth (fără mTLS).
  * Folosit de exchangeCode și refreshAccessToken.
  *
+ * NOTĂ: exchangeCode (authorization_code) nu reîncercă niciodată – codul de
+ * autorizare este de unică folosință și expiră în ~60s.  Reîncercarea ar
+ * folosi un cod deja consumat și ar pierde din fereastra de timp disponibilă.
+ * refreshAccessToken poate reîncerca (erori 5xx tranzitorii la token endpoint).
+ *
  * @private
  */
 const _callTokenEndpoint = async ({
@@ -411,18 +416,21 @@ const _callTokenEndpoint = async ({
 
   const body = new URLSearchParams(bodyParams).toString();
 
-  const res = await withRetry(
-    () => httpsRequest(ANAF_TOKEN_URL, {
-      method:  'POST',
-      headers: {
-        'Content-Type':  'application/x-www-form-urlencoded',
-        'Authorization': `Basic ${basicAuth}`,
-        'Accept':        'application/json',
-      },
-      body,
-    }),
-    label,
-  );
+  const doRequest = () => httpsRequest(ANAF_TOKEN_URL, {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/x-www-form-urlencoded',
+      'Authorization': `Basic ${basicAuth}`,
+      'Accept':        'application/json',
+    },
+    body,
+  });
+
+  // Authorization codes are single-use and expire in ~60 s – never retry them.
+  // Refresh tokens are longer-lived; retry is acceptable for transient 5xx errors.
+  const res = grant_type === 'authorization_code'
+    ? await doRequest()
+    : await withRetry(doRequest, label);
 
   let data = {};
   try { data = JSON.parse(res._raw); } catch { /* non-JSON */ }
