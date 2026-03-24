@@ -284,35 +284,104 @@ router.get('/oauth/authorize', (req, res) => {
  * GET /api/efactura-v3/oauth/callback
  * ANAF redirects here after user authenticates with digital certificate in browser.
  * Attempts to exchange the authorization code for a JWT token.
- * NOTE: ANAF may require mTLS at the token endpoint; if exchange fails (HTTP 500),
- * the user should obtain the token via Postman and import it via /oauth/token-import.
+ *
+ * ANAF redirect parameters (RFC 6749 §4.1.2):
+ *   Success: ?code=<auth_code>&state=<csrf_state>
+ *   Error:   ?error=<code>&error_description=<msg>&state=<csrf_state>
+ *
+ * Common ANAF errors:
+ *   access_denied        – User rejected or certificate lacks SPV role
+ *   internal_server_error – ANAF server-side issue
  */
 router.get('/oauth/callback', async (req, res) => {
   const { code, state, error, error_description } = req.query;
 
-  // ANAF sent an error (e.g., access_denied)
+  // ── Helper: send self-contained HTML result page ─────────────────────────
+  // Used when FRONTEND_URL is not configured so the user gets a readable
+  // response instead of a 404 at the server root.
+  const sendResultPage = (success, message) => {
+    const title = success ? 'Autentificare reușită' : 'Eroare autentificare ANAF';
+    const color = success ? '#28a745' : '#dc3545';
+    const icon  = success ? '✅' : '❌';
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.status(success ? 200 : 400).send(`<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${title}</title>
+  <style>
+    body { font-family: sans-serif; display: flex; align-items: center;
+           justify-content: center; min-height: 100vh; margin: 0; background: #f8f9fa; }
+    .card { max-width: 520px; width: 90%; padding: 2rem; border-radius: 8px;
+            box-shadow: 0 2px 16px rgba(0,0,0,.15); background: #fff; text-align: center; }
+    h1 { color: ${color}; margin-bottom: .5rem; font-size: 1.4rem; }
+    p  { color: #555; margin: 1rem 0; word-break: break-word; }
+    a  { display: inline-block; margin-top: 1rem; padding: .5rem 1.5rem;
+         background: #0d6efd; color: #fff; text-decoration: none; border-radius: 4px; }
+    a:hover { background: #0a58ca; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>${icon} ${title}</h1>
+    <p>${message}</p>
+    <a href="/">Înapoi la aplicație</a>
+  </div>
+</body>
+</html>`);
+  };
+
+  // ── Helper: redirect to frontend or fall back to HTML page ───────────────
+  const redirectOrRender = (success, msgText) => {
+    const encoded = encodeURIComponent(msgText);
+    if (FRONTEND_URL) {
+      const param = success ? `oauth_success=1` : `oauth_error=${encoded}`;
+      return res.redirect(`${FRONTEND_URL}?${param}&section=efactura-v3`);
+    }
+    return sendResultPage(success, msgText);
+  };
+
+  // ── 1. Handle ANAF error redirect ────────────────────────────────────────
   if (error) {
     logAction('oauth_callback_error', { error, error_description }, false);
-    const msg = encodeURIComponent(error_description || error);
-    const dest = FRONTEND_URL || '/';
-    return res.redirect(`${dest}?oauth_error=${msg}&section=efactura-v3`);
+    let msg = error_description || error;
+    if (error === 'access_denied' && !error_description) {
+      msg = 'Autorizarea a fost refuzată (access_denied). Cauze posibile: certificatul nu are rolul e-Factura în SPV, utilizatorul a refuzat accesul, sau aplicația nu este autorizată pentru CIF-ul respectiv.';
+    }
+    return redirectOrRender(false, msg);
   }
 
+  // ── 2. Code must be present ──────────────────────────────────────────────
   if (!code) {
     logAction('oauth_callback_no_code', { query: req.query }, false);
-    return res.status(400).json({ error: 'Parametrul code lipsește din callback.' });
+    return redirectOrRender(false, 'Codul de autorizare lipsește din callback-ul ANAF. Reîncercați autentificarea.');
   }
 
   const s = getSettings();
 
-  // CSRF state verification
-  if (state && s.oauth_state && state !== s.oauth_state) {
+  // ── 3. Strict CSRF state verification (RFC 6749 §10.12) ──────────────────
+  // Both sides must have a state value; if either is missing the session is
+  // invalid (e.g., no prior authorize call, session replay, or CSRF attempt).
+  if (!state || !s.oauth_state) {
+    logAction('oauth_callback_state_missing', { hasState: !!state, hasStored: !!s.oauth_state }, false);
+    return redirectOrRender(false,
+      'Parametrul state lipsește din sesiunea OAuth2. Sesiunea a expirat sau a apărut o eroare CSRF. Reîncercați autentificarea.');
+  }
+  if (state !== s.oauth_state) {
     logAction('oauth_callback_state_mismatch', { received: state }, false);
-    return res.status(400).json({ error: 'State OAuth2 invalid – posibil atac CSRF.' });
+    return redirectOrRender(false,
+      'State OAuth2 invalid – posibil atac CSRF. Reîncercați autentificarea.');
   }
 
   const redirectUri = s.oauth_redirect_uri_used || getRedirectUri(s);
 
+  // ── 4. Clear session state before exchange ───────────────────────────────
+  // Clears state before the exchange so any retry of the callback URL fails
+  // the state check (auth codes are single-use; a retry always needs re-auth).
+  updateSettings({ oauth_state: '', oauth_redirect_uri_used: '' });
+
+  // ── 5. Exchange authorization code for JWT token ──────────────────────────
   try {
     const tokenData = await exchangeToken(
       {
@@ -326,16 +395,10 @@ router.get('/oauth/callback', async (req, res) => {
     saveToken(tokenData);
     logAction('oauth_token_obtained', { environment: s.environment });
 
-    // Clear the temporary state
-    updateSettings({ oauth_state: '', oauth_redirect_uri_used: '' });
-
-    const dest = FRONTEND_URL || '/';
-    res.redirect(`${dest}?oauth_success=1&section=efactura-v3`);
+    return redirectOrRender(true, 'Autentificare ANAF reușită! Tokenul JWT a fost obținut.');
   } catch (err) {
     logAction('oauth_token_exchange_failed', null, false, err);
-    const dest = FRONTEND_URL || '/';
-    const msg  = encodeURIComponent(err.message);
-    res.redirect(`${dest}?oauth_error=${msg}&section=efactura-v3`);
+    return redirectOrRender(false, err.message);
   }
 });
 
